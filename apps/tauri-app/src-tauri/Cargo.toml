@@ -53,7 +53,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "5"
 
 # HTTP client for remote mode
-reqwest = { version = "0.12", features = ["json"] }
+# Using rustls-tls for cross-platform compatibility (avoids OpenSSL issues on iOS/mobile)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
