@@ -212,7 +212,14 @@ describe("API Client", () => {
     });
 
     it("updateRepositorySettings calls invoke with correct parameters", async () => {
-      const settings = { automation: { autoFixReviewComments: true } };
+      const settings = {
+        automation: {
+          autoFixReviewComments: true,
+          autoFixReviewCommentsFilter: "",
+          autoFixCIFailures: false,
+          maxAutoFixAttempts: 3,
+        },
+      };
       vi.mocked(invoke).mockResolvedValue(settings);
 
       const result = await updateRepositorySettings("repo-1", settings);

@@ -73,19 +73,6 @@ fn validate_and_sanitize_description(description: &str) -> Result<String, AppErr
     Ok(sanitized)
 }
 
-/// Validates workspace name (legacy function for backward compatibility).
-fn validate_workspace_name(name: &str) -> Result<(), AppError> {
-    validate_and_sanitize_name(name)?;
-    Ok(())
-}
-
-/// Validates workspace description (legacy function for backward
-/// compatibility).
-fn validate_workspace_description(description: &str) -> Result<(), AppError> {
-    validate_and_sanitize_description(description)?;
-    Ok(())
-}
-
 /// Parameters for creating a workspace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

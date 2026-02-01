@@ -85,7 +85,7 @@ describe("Card", () => {
   });
 
   it("forwards refs correctly", () => {
-    const { container } = render(<Card ref={(node) => node}>Content</Card>);
+    const { container } = render(<Card ref={() => {}}>Content</Card>);
     expect(container.firstChild).toBeInTheDocument();
   });
 });
