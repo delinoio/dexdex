@@ -769,7 +769,8 @@ impl TaskStore for SqliteTaskStore {
         .bind(&sessions_json)
         .bind(
             task.ai_agent_type
-                .map(|t| serde_json::to_string(&t).unwrap()),
+                .map(|t| serde_json::to_string(&t))
+                .transpose()?,
         )
         .bind(&task.ai_agent_model)
         .bind(task.created_at.to_rfc3339())
@@ -825,7 +826,8 @@ impl TaskStore for SqliteTaskStore {
         .bind(&sessions_json)
         .bind(
             task.ai_agent_type
-                .map(|t| serde_json::to_string(&t).unwrap()),
+                .map(|t| serde_json::to_string(&t))
+                .transpose()?,
         )
         .bind(&task.ai_agent_model)
         .bind(task.id.to_string())
@@ -861,7 +863,7 @@ impl TaskStore for SqliteTaskStore {
         )
         .bind(session.id.to_string())
         .bind(session.agent_task_id.to_string())
-        .bind(serde_json::to_string(&session.ai_agent_type).unwrap())
+        .bind(serde_json::to_string(&session.ai_agent_type)?)
         .bind(&session.ai_agent_model)
         .bind(session.started_at.map(|t| t.to_rfc3339()))
         .bind(session.completed_at.map(|t| t.to_rfc3339()))
@@ -966,7 +968,7 @@ impl TaskStore for SqliteTaskStore {
              started_at = ?, completed_at = ?, output_log = ? WHERE id = ?",
         )
         .bind(session.agent_task_id.to_string())
-        .bind(serde_json::to_string(&session.ai_agent_type).unwrap())
+        .bind(serde_json::to_string(&session.ai_agent_type)?)
         .bind(&session.ai_agent_model)
         .bind(session.started_at.map(|t| t.to_rfc3339()))
         .bind(session.completed_at.map(|t| t.to_rfc3339()))
