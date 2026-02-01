@@ -1,12 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
+import { PlusIcon, RefreshIcon, AlertCircleIcon } from "@/components/ui/Icons";
 import { KanbanBoard } from "@/components/dashboard/KanbanBoard";
 import { useTasks } from "@/hooks/useTasks";
 import { useUiStore } from "@/stores/uiStore";
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { data, isLoading, error } = useTasks({});
+  const { data, isLoading, error, refetch, isRefetching } = useTasks({});
   const setTaskCreationOpen = useUiStore((state) => state.setTaskCreationOpen);
 
   const handleTaskClick = (taskId: string, isUnit: boolean) => {
@@ -22,22 +23,47 @@ export function Dashboard() {
     navigate("/tasks/new");
   };
 
+  const handleRetry = () => {
+    refetch();
+  };
+
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-[hsl(var(--muted-foreground))]">Loading...</div>
+      <div className="flex h-full items-center justify-center" role="status" aria-live="polite">
+        <div className="text-[hsl(var(--muted-foreground))]">Loading tasks...</div>
       </div>
     );
   }
 
   if (error) {
+    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
+    const isNetworkError = errorMessage.toLowerCase().includes("network") ||
+                           errorMessage.toLowerCase().includes("fetch");
+
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <p className="text-[hsl(var(--destructive))]">Failed to load tasks</p>
-          <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
-            {error instanceof Error ? error.message : "Unknown error"}
+      <div className="flex h-full items-center justify-center" role="alert" aria-live="assertive">
+        <div className="text-center max-w-md px-4">
+          <AlertCircleIcon size={48} className="mx-auto mb-4 text-[hsl(var(--destructive))]" />
+          <h2 className="text-lg font-semibold text-[hsl(var(--destructive))]">
+            Failed to load tasks
+          </h2>
+          <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
+            {errorMessage}
           </p>
+          <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+            {isNetworkError
+              ? "Please check your connection and try again."
+              : "Please try again or contact support if the problem persists."}
+          </p>
+          <Button
+            onClick={handleRetry}
+            disabled={isRefetching}
+            className="mt-4"
+            aria-label="Retry loading tasks"
+          >
+            <RefreshIcon size={16} className={`mr-2 ${isRefetching ? "animate-spin" : ""}`} />
+            {isRefetching ? "Retrying..." : "Try Again"}
+          </Button>
         </div>
       </div>
     );
@@ -55,22 +81,8 @@ export function Dashboard() {
             {data?.totalCount ?? 0} total tasks
           </p>
         </div>
-        <Button onClick={handleNewTask}>
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mr-2"
-          >
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
+        <Button onClick={handleNewTask} aria-label="Create new task">
+          <PlusIcon size={16} className="mr-2" />
           New Task
         </Button>
       </div>

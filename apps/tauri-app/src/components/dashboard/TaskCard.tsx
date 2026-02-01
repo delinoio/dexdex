@@ -1,5 +1,7 @@
+import { memo, type KeyboardEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { UnitTaskIcon, CompositeTaskIcon } from "@/components/ui/Icons";
 import type { UnitTask, CompositeTask, UnitTaskStatus, CompositeTaskStatus } from "@/api/types";
 import { cn } from "@/lib/utils";
 
@@ -52,18 +54,30 @@ function formatStatus(status: UnitTaskStatus | CompositeTaskStatus): string {
   }
 }
 
-export function TaskCard({ task, onClick }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({ task, onClick }: TaskCardProps) {
   const title = task.title || task.prompt.slice(0, 50) + (task.prompt.length > 50 ? "..." : "");
   const isUnit = isUnitTask(task);
   const status = task.status;
+  const taskType = isUnit ? "Unit task" : "Composite task";
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick?.();
+    }
+  };
 
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-shadow hover:shadow-md",
+        "cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2",
         onClick && "hover:border-[hsl(var(--primary))]"
       )}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`${taskType}: ${title}. Status: ${formatStatus(status)}`}
     >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
@@ -79,40 +93,13 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
         <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
           <span className="flex items-center gap-1">
             {isUnit ? (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-              </svg>
+              <UnitTaskIcon size={12} />
             ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect width="7" height="7" x="3" y="3" rx="1" />
-                <rect width="7" height="7" x="14" y="3" rx="1" />
-                <rect width="7" height="7" x="14" y="14" rx="1" />
-                <rect width="7" height="7" x="3" y="14" rx="1" />
-              </svg>
+              <CompositeTaskIcon size={12} />
             )}
             {isUnit ? "Unit" : "Composite"}
           </span>
-          <span>•</span>
+          <span aria-hidden="true">•</span>
           <span>
             {new Date(task.createdAt).toLocaleDateString()}
           </span>
@@ -123,4 +110,4 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       </CardContent>
     </Card>
   );
-}
+});

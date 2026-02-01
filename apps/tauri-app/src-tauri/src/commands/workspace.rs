@@ -21,30 +21,68 @@ const MAX_WORKSPACE_NAME_LENGTH: usize = 255;
 /// Maximum length for workspace description.
 const MAX_WORKSPACE_DESCRIPTION_LENGTH: usize = 10000;
 
-/// Validates workspace name.
-fn validate_workspace_name(name: &str) -> Result<(), AppError> {
-    if name.is_empty() {
+/// Sanitizes a string by removing control characters and normalizing
+/// whitespace. This prevents potential XSS attacks and ensures clean data
+/// storage.
+fn sanitize_string(input: &str) -> String {
+    input
+        .chars()
+        // Remove control characters except newlines and tabs
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect::<String>()
+        // Normalize multiple spaces to single space
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
+
+/// Validates and sanitizes workspace name.
+fn validate_and_sanitize_name(name: &str) -> Result<String, AppError> {
+    let sanitized = sanitize_string(name);
+    if sanitized.is_empty() {
         return Err(AppError::InvalidRequest(
             "Workspace name cannot be empty".to_string(),
         ));
     }
-    if name.len() > MAX_WORKSPACE_NAME_LENGTH {
+    if sanitized.len() > MAX_WORKSPACE_NAME_LENGTH {
         return Err(AppError::InvalidRequest(format!(
             "Workspace name exceeds maximum length of {} characters",
             MAX_WORKSPACE_NAME_LENGTH
         )));
     }
-    Ok(())
+    Ok(sanitized)
 }
 
-/// Validates workspace description.
-fn validate_workspace_description(description: &str) -> Result<(), AppError> {
-    if description.len() > MAX_WORKSPACE_DESCRIPTION_LENGTH {
+/// Validates and sanitizes workspace description.
+fn validate_and_sanitize_description(description: &str) -> Result<String, AppError> {
+    // For descriptions, preserve newlines but remove other control characters
+    let sanitized: String = description
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect();
+    let sanitized = sanitized.trim().to_string();
+
+    if sanitized.len() > MAX_WORKSPACE_DESCRIPTION_LENGTH {
         return Err(AppError::InvalidRequest(format!(
             "Workspace description exceeds maximum length of {} characters",
             MAX_WORKSPACE_DESCRIPTION_LENGTH
         )));
     }
+    Ok(sanitized)
+}
+
+/// Validates workspace name (legacy function for backward compatibility).
+fn validate_workspace_name(name: &str) -> Result<(), AppError> {
+    validate_and_sanitize_name(name)?;
+    Ok(())
+}
+
+/// Validates workspace description (legacy function for backward
+/// compatibility).
+fn validate_workspace_description(description: &str) -> Result<(), AppError> {
+    validate_and_sanitize_description(description)?;
     Ok(())
 }
 
@@ -94,11 +132,12 @@ pub async fn create_workspace(
         ));
     }
 
-    // Validate input
-    validate_workspace_name(&params.name)?;
-    if let Some(ref description) = params.description {
-        validate_workspace_description(description)?;
-    }
+    // Validate and sanitize input
+    let sanitized_name = validate_and_sanitize_name(&params.name)?;
+    let sanitized_description = match params.description {
+        Some(ref desc) => Some(validate_and_sanitize_description(desc)?),
+        None => None,
+    };
 
     let runtime = state
         .local_runtime
@@ -108,8 +147,8 @@ pub async fn create_workspace(
     let workspace = Workspace {
         id: Uuid::new_v4(),
         user_id: None,
-        name: params.name.clone(),
-        description: params.description,
+        name: sanitized_name,
+        description: sanitized_description,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -213,12 +252,10 @@ pub async fn update_workspace(
         .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
 
     if let Some(ref name) = params.name {
-        validate_workspace_name(name)?;
-        workspace.name = name.clone();
+        workspace.name = validate_and_sanitize_name(name)?;
     }
     if let Some(ref description) = params.description {
-        validate_workspace_description(description)?;
-        workspace.description = Some(description.clone());
+        workspace.description = Some(validate_and_sanitize_description(description)?);
     }
     workspace.updated_at = chrono::Utc::now();
 
