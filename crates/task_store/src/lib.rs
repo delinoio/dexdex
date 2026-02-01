@@ -6,8 +6,10 @@
 
 mod error;
 mod memory;
+mod sqlite;
 mod traits;
 
 pub use error::*;
 pub use memory::*;
+pub use sqlite::*;
 pub use traits::*;

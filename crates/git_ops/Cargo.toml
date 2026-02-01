@@ -1,13 +1,15 @@
 [package]
 name = "git_ops"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 publish = false
 description = "Git operations for DeliDev"
 
 [dependencies]
 entities = { path = "../entities" }
-git2 = "0.20"
+# Using git2 without https/ssh features to avoid OpenSSL dependency for iOS cross-compilation.
+# Git operations over HTTPS/SSH will use system git command instead of libgit2.
+git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tracing = "0.1"

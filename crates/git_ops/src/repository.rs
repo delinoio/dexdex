@@ -213,11 +213,12 @@ impl GitRepository {
     /// Returns the default branch name (usually main or master).
     pub fn default_branch(&self) -> GitResult<String> {
         // Try to get from origin/HEAD
-        if let Ok(reference) = self.repo.find_reference("refs/remotes/origin/HEAD")
-            && let Ok(resolved) = reference.resolve()
-            && let Some(name) = resolved.shorthand()
-        {
-            return Ok(name.trim_start_matches("origin/").to_string());
+        if let Ok(reference) = self.repo.find_reference("refs/remotes/origin/HEAD") {
+            if let Ok(resolved) = reference.resolve() {
+                if let Some(name) = resolved.shorthand() {
+                    return Ok(name.trim_start_matches("origin/").to_string());
+                }
+            }
         }
 
         // Fallback: try main, then master
@@ -265,10 +266,10 @@ fn create_callbacks(credentials: GitCredentials) -> RemoteCallbacks<'static> {
             }
             GitCredentials::Default => {
                 // Try SSH agent first
-                if allowed_types.contains(git2::CredentialType::SSH_KEY)
-                    && let Some(username) = username_from_url
-                {
-                    return Cred::ssh_key_from_agent(username);
+                if allowed_types.contains(git2::CredentialType::SSH_KEY) {
+                    if let Some(username) = username_from_url {
+                        return Cred::ssh_key_from_agent(username);
+                    }
                 }
 
                 // Try default credentials
