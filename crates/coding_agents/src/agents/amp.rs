@@ -292,7 +292,34 @@ impl Agent for AmpAgent {
             }
         });
 
-        let status = child.wait().await?;
+        // Wait for process with optional timeout
+        let timeout_secs = config.timeout_secs;
+        let wait_result = if let Some(secs) = timeout_secs {
+            let timeout_duration = std::time::Duration::from_secs(secs);
+            match tokio::time::timeout(timeout_duration, child.wait()).await {
+                Ok(result) => result,
+                Err(_) => {
+                    warn!("Agent timed out after {} seconds, killing process", secs);
+                    if let Err(e) = child.kill().await {
+                        error!("Failed to kill timed out process: {}", e);
+                    }
+                    let _ = child.wait().await;
+                    stdout_handle.abort();
+                    stderr_handle.abort();
+                    let _ = event_tx
+                        .send(NormalizedEvent::session_end(
+                            false,
+                            Some(format!("Agent timed out after {} seconds", secs)),
+                        ))
+                        .await;
+                    return Err(AgentError::Timeout(secs));
+                }
+            }
+        } else {
+            child.wait().await
+        };
+
+        let status = wait_result?;
 
         let _ = stdout_handle.await;
         let _ = stderr_handle.await;

@@ -12,13 +12,18 @@ use bollard::{
 };
 use futures::StreamExt;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 use crate::{
     config::WorkerConfig,
     error::{WorkerError, WorkerResult},
 };
 
+/// Path inside the container where secrets are mounted.
+pub const SECRETS_MOUNT_PATH: &str = "/run/secrets";
+
 /// Docker manager for container lifecycle management.
+#[derive(Clone)]
 pub struct DockerManager {
     client: Docker,
     config: WorkerConfig,
@@ -134,42 +139,105 @@ impl DockerManager {
         Ok(archive)
     }
 
+    /// Creates a temporary directory with secrets written as files.
+    ///
+    /// Secrets are written to individual files for secure mounting into
+    /// containers. This avoids exposing secrets through environment
+    /// variables.
+    ///
+    /// Returns the path to the secrets directory.
+    pub async fn create_secrets_dir(
+        &self,
+        secrets: &HashMap<String, String>,
+    ) -> WorkerResult<std::path::PathBuf> {
+        let secrets_dir = std::path::PathBuf::from(&self.config.workdir)
+            .join(format!(".secrets-{}", Uuid::new_v4()));
+
+        tokio::fs::create_dir_all(&secrets_dir).await?;
+
+        // Write each secret to a separate file
+        for (key, value) in secrets {
+            let secret_path = secrets_dir.join(key);
+            tokio::fs::write(&secret_path, value).await?;
+            // Set restrictive permissions (owner read only)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o400);
+                tokio::fs::set_permissions(&secret_path, perms).await?;
+            }
+        }
+
+        debug!(
+            "Created secrets directory at {:?} with {} secrets",
+            secrets_dir,
+            secrets.len()
+        );
+        Ok(secrets_dir)
+    }
+
+    /// Removes a secrets directory and all its contents.
+    pub async fn cleanup_secrets_dir(&self, secrets_dir: &std::path::Path) -> WorkerResult<()> {
+        if secrets_dir.exists() {
+            tokio::fs::remove_dir_all(secrets_dir).await?;
+            debug!("Cleaned up secrets directory at {:?}", secrets_dir);
+        }
+        Ok(())
+    }
+
     /// Creates and starts a container for agent execution.
+    ///
+    /// Secrets are mounted from files in a dedicated directory rather than
+    /// passed as environment variables to prevent leakage through process
+    /// listing.
     pub async fn create_container(
         &self,
         image: &str,
         container_name: &str,
         worktree_path: &str,
         repo_name: &str,
-        env_vars: HashMap<String, String>,
+        secrets_dir: Option<&std::path::Path>,
     ) -> WorkerResult<String> {
         info!(
             "Creating container {} with image {} for {}",
             container_name, image, repo_name
         );
 
-        // Build environment variables
-        let mut env: Vec<String> = vec![
+        // Build environment variables (non-sensitive only)
+        let env: Vec<String> = vec![
             "HOME=/workspace".to_string(),
             "TERM=xterm-256color".to_string(),
+            // Tell applications where to find secrets
+            format!("SECRETS_DIR={}", SECRETS_MOUNT_PATH),
         ];
-
-        for (key, value) in env_vars {
-            env.push(format!("{}={}", key, value));
-        }
 
         // Build mounts
         let workspace_mount = format!("{}:/workspace/{}", worktree_path, repo_name);
-        let binds = vec![workspace_mount];
+        let mut binds = vec![workspace_mount];
+
+        // Mount secrets directory as read-only if provided
+        if let Some(secrets_path) = secrets_dir {
+            let secrets_mount = format!(
+                "{}:{}:ro",
+                secrets_path.to_string_lossy(),
+                SECRETS_MOUNT_PATH
+            );
+            binds.push(secrets_mount);
+        }
 
         // Parse memory limit
         let memory = self.parse_memory_limit(&self.config.container_memory_limit);
 
-        // Build host config
+        // Parse CPU limit (in CPUs, e.g., "0.5" or "2") into nano_cpus for Docker
+        let nano_cpus = self.parse_cpu_limit(&self.config.container_cpu_limit);
+
+        // Build host config - use bridge network instead of host for isolation
         let host_config = bollard::models::HostConfig {
             binds: Some(binds),
-            network_mode: Some("host".to_string()),
+            // Use default bridge network for container isolation instead of host mode
+            network_mode: None,
             memory,
+            nano_cpus,
             ..Default::default()
         };
 
@@ -183,6 +251,12 @@ impl DockerManager {
             attach_stdout: Some(true),
             attach_stderr: Some(true),
             open_stdin: Some(true),
+            // Ensure the container stays alive regardless of the image's default command
+            cmd: Some(vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "tail -f /dev/null".into(),
+            ]),
             ..Default::default()
         };
 
@@ -204,6 +278,35 @@ impl DockerManager {
         info!("Started container: {}", container_id);
 
         Ok(container_id)
+    }
+
+    /// Parses a CPU limit string (e.g., "0.5", "2") to nano_cpus.
+    fn parse_cpu_limit(&self, limit: &str) -> Option<i64> {
+        let limit = limit.trim();
+        if limit.is_empty() {
+            return None;
+        }
+
+        match limit.parse::<f64>() {
+            Ok(cpus) if cpus > 0.0 => {
+                // Docker expects CPU quota as nano_cpus (1 CPU = 1e9)
+                Some((cpus * 1_000_000_000.0) as i64)
+            }
+            Ok(_) => {
+                warn!(
+                    "Configured container_cpu_limit must be positive, got {}",
+                    limit
+                );
+                None
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to parse container_cpu_limit '{}': {}. Ignoring CPU limit.",
+                    limit, e
+                );
+                None
+            }
+        }
     }
 
     /// Stops and removes a container.

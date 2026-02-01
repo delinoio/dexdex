@@ -324,16 +324,24 @@ impl Agent for ClaudeCodeAgent {
                                         error!("Failed to flush stdin: {}", e);
                                     }
                                     // Send user response event
-                                    let _ = event_tx_clone
+                                    if let Err(e) = event_tx_clone
                                         .send(NormalizedEvent::user_response(&response))
-                                        .await;
+                                        .await
+                                    {
+                                        warn!("Failed to send user response event: {}", e);
+                                    }
                                 }
                                 Err(e) => {
                                     warn!("TTY handler failed: {}", e);
                                 }
                             }
+                        } else if let NormalizedEvent::AskUserQuestion { .. } = event {
+                            // No TTY handler but agent requested input - log warning
+                            warn!("Agent requested TTY input but no handler is configured");
                         }
-                        let _ = event_tx_clone.send(event).await;
+                        if let Err(e) = event_tx_clone.send(event).await {
+                            warn!("Failed to send event: {}", e);
+                        }
                     }
                 }
             }
@@ -344,14 +352,46 @@ impl Agent for ClaudeCodeAgent {
         let stderr_handle = tokio::spawn(async move {
             let mut reader = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                if !line.trim().is_empty() {
-                    let _ = event_tx_stderr.send(NormalizedEvent::error(&line)).await;
+                if !line.trim().is_empty()
+                    && let Err(e) = event_tx_stderr.send(NormalizedEvent::error(&line)).await
+                {
+                    warn!("Failed to send stderr event: {}", e);
                 }
             }
         });
 
-        // Wait for process to complete
-        let status = child.wait().await?;
+        // Wait for process with optional timeout
+        let timeout_secs = config.timeout_secs;
+        let wait_result = if let Some(secs) = timeout_secs {
+            let timeout_duration = std::time::Duration::from_secs(secs);
+            match tokio::time::timeout(timeout_duration, child.wait()).await {
+                Ok(result) => result,
+                Err(_) => {
+                    // Timeout occurred - kill the process
+                    warn!("Agent timed out after {} seconds, killing process", secs);
+                    if let Err(e) = child.kill().await {
+                        error!("Failed to kill timed out process: {}", e);
+                    }
+                    // Wait for cleanup
+                    let _ = child.wait().await;
+                    // Abort the output handlers
+                    stdout_handle.abort();
+                    stderr_handle.abort();
+                    // Send timeout event
+                    let _ = event_tx
+                        .send(NormalizedEvent::session_end(
+                            false,
+                            Some(format!("Agent timed out after {} seconds", secs)),
+                        ))
+                        .await;
+                    return Err(AgentError::Timeout(secs));
+                }
+            }
+        } else {
+            child.wait().await
+        };
+
+        let status = wait_result?;
 
         // Wait for output processing to complete
         let _ = stdout_handle.await;

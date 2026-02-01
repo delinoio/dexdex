@@ -60,6 +60,10 @@ pub enum WorkerError {
     /// Task was cancelled.
     #[error("Task was cancelled")]
     Cancelled,
+
+    /// Validation error (security-related input validation).
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
 impl IntoResponse for WorkerError {
@@ -69,6 +73,7 @@ impl IntoResponse for WorkerError {
             WorkerError::Busy => StatusCode::SERVICE_UNAVAILABLE,
             WorkerError::Cancelled => StatusCode::CONFLICT,
             WorkerError::Config(_) => StatusCode::BAD_REQUEST,
+            WorkerError::Validation(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 

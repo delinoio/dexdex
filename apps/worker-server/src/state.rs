@@ -155,6 +155,24 @@ impl AppState {
             false
         }
     }
+
+    /// Clears all pending TTY response channels.
+    ///
+    /// This should be called when a task ends to prevent memory leaks
+    /// from orphaned channels that will never receive responses.
+    pub async fn clear_tty_responses(&self) {
+        let mut responses = self.tty_responses.lock().await;
+        let count = responses.len();
+        responses.clear();
+        if count > 0 {
+            tracing::debug!("Cleared {} pending TTY response channels", count);
+        }
+    }
+
+    /// Gets the count of pending TTY response channels.
+    pub async fn pending_tty_response_count(&self) -> usize {
+        self.tty_responses.lock().await.len()
+    }
 }
 
 #[cfg(test)]
