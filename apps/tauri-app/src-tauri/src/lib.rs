@@ -132,6 +132,13 @@ pub fn run() {
             commands::repository::add_repository,
             commands::repository::list_repositories,
             commands::repository::remove_repository,
+            // Workspace commands
+            commands::workspace::create_workspace,
+            commands::workspace::list_workspaces,
+            commands::workspace::get_workspace,
+            commands::workspace::update_workspace,
+            commands::workspace::delete_workspace,
+            commands::workspace::get_default_workspace_id,
             // Settings commands
             commands::settings::get_global_settings,
             commands::settings::update_global_settings,
