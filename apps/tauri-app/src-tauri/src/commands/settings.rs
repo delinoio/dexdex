@@ -5,10 +5,14 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::{
-    config::{save_config, settings_to_config, GlobalSettings, RepositorySettings},
-    error::AppResult,
+    config::{
+        load_repository_settings, save_config, save_repository_settings, settings_to_config,
+        GlobalSettings, RepositorySettings,
+    },
+    error::{AppError, AppResult},
     state::AppState,
 };
 
@@ -49,50 +53,74 @@ pub async fn update_global_settings(
 
 /// Gets repository-specific settings.
 ///
-/// # Note
-///
-/// Repository-specific settings are not yet persisted. This function currently
-/// returns default settings. Future versions will load settings from
-/// `.delidev/config.toml` within each repository directory.
-///
-/// See: https://github.com/delinoio/delidev/issues/52 for implementation tracking.
+/// Loads settings from `.delidev/config.toml` within the repository directory.
 #[tauri::command]
 pub async fn get_repository_settings(
-    _state: State<'_, Arc<RwLock<AppState>>>,
-    _repo_id: String,
+    state: State<'_, Arc<RwLock<AppState>>>,
+    repo_id: String,
 ) -> AppResult<RepositorySettings> {
-    // Note: Repository-specific settings are not yet implemented.
-    // This returns defaults until repository config loading is added.
-    // Tracked in: https://github.com/delinoio/delidev/issues/52
-    tracing::debug!(
-        "Repository settings requested for {}; returning defaults (not yet implemented)",
-        _repo_id
-    );
-    Ok(RepositorySettings::default())
+    let state = state.read().await;
+
+    // Parse the repo_id as UUID
+    let repo_uuid = Uuid::parse_str(&repo_id)
+        .map_err(|_| AppError::InvalidRequest(format!("Invalid repository ID: {}", repo_id)))?;
+
+    // Get the repository from the task store to find its path
+    let task_store = state.task_store()?;
+    let repo = task_store
+        .get_repository(repo_uuid)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+
+    // Load repository settings from the repo path
+    // The remote_url is used to find the local clone path
+    // For now, we try to find a local directory that matches
+    // TODO: Store local_path in repository entity or use git_ops to locate
+    let repo_path = std::path::Path::new(&repo.remote_url);
+    if repo_path.exists() {
+        load_repository_settings(repo_path)
+    } else {
+        // If we can't find the local path, return defaults
+        tracing::debug!(
+            "Repository local path not found for {}, returning default settings",
+            repo_id
+        );
+        Ok(RepositorySettings::default())
+    }
 }
 
 /// Updates repository-specific settings.
 ///
-/// # Note
-///
-/// Repository-specific settings are not yet persisted. This function currently
-/// returns an error indicating the feature is not yet implemented. Future
-/// versions will save to `.delidev/config.toml` within each repository
-/// directory.
-///
-/// See: https://github.com/delinoio/delidev/issues/52 for implementation tracking.
+/// Saves settings to `.delidev/config.toml` within the repository directory.
 #[tauri::command]
 pub async fn update_repository_settings(
-    _state: State<'_, Arc<RwLock<AppState>>>,
+    state: State<'_, Arc<RwLock<AppState>>>,
     repo_id: String,
-    _settings: RepositorySettings,
+    settings: RepositorySettings,
 ) -> AppResult<RepositorySettings> {
-    // Repository-specific settings are not yet implemented.
-    // Return an explicit error to avoid silent failures.
-    // Tracked in: https://github.com/delinoio/delidev/issues/52
-    Err(crate::error::AppError::InvalidRequest(format!(
-        "Repository-specific settings for '{}' are not yet implemented. \
-         See https://github.com/delinoio/delidev/issues/52",
-        repo_id
-    )))
+    let state = state.read().await;
+
+    // Parse the repo_id as UUID
+    let repo_uuid = Uuid::parse_str(&repo_id)
+        .map_err(|_| AppError::InvalidRequest(format!("Invalid repository ID: {}", repo_id)))?;
+
+    // Get the repository from the task store to find its path
+    let task_store = state.task_store()?;
+    let repo = task_store
+        .get_repository(repo_uuid)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+
+    // Save repository settings to the repo path
+    let repo_path = std::path::Path::new(&repo.remote_url);
+    if repo_path.exists() {
+        save_repository_settings(repo_path, &settings)?;
+        info!("Updated repository settings for {}", repo_id);
+        Ok(settings)
+    } else {
+        Err(AppError::InvalidRequest(format!(
+            "Repository local path not found for '{}'. Cannot save settings.",
+            repo_id
+        )))
+    }
 }

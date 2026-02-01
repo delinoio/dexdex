@@ -720,6 +720,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "entities",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "toml 0.8.2",
+ "tracing",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5328,6 +5341,7 @@ dependencies = [
  "anyhow",
  "auth",
  "chrono",
+ "config",
  "dirs 5.0.1",
  "entities",
  "git_ops",
