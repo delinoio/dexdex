@@ -50,11 +50,9 @@ pub async fn update_global_settings(
 
 /// Gets repository-specific settings.
 ///
-/// Loads settings from `.delidev/config.toml` within the repository directory.
-///
-/// Note: This currently returns default settings as the repository local path
-/// is not stored. In the future, this could be enhanced to discover the local
-/// clone path through other means (e.g., git remote matching).
+/// Returns default repository settings. Repository-specific settings are
+/// loaded directly from `.delidev/config.toml` within each repository when
+/// performing operations on that repository.
 #[tauri::command]
 pub async fn get_repository_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -74,9 +72,10 @@ pub async fn get_repository_settings(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Return default settings since we don't have a local path stored
+    // Return default settings - actual repository settings are loaded
+    // from the repository's .delidev/config.toml when performing operations
     tracing::debug!(
-        "Repository local path not available for {}, returning default settings",
+        "Returning default repository settings for {}",
         repo_id
     );
     Ok(RepositorySettings::default())
@@ -84,11 +83,9 @@ pub async fn get_repository_settings(
 
 /// Updates repository-specific settings.
 ///
-/// Saves settings to `.delidev/config.toml` within the repository directory.
-///
-/// Note: This currently returns an error as the repository local path is not
-/// stored. In the future, this could be enhanced to discover the local clone
-/// path through other means (e.g., git remote matching).
+/// Repository settings should be edited directly in the repository's
+/// `.delidev/config.toml` file. This command validates the repository exists
+/// but returns an error since the app does not manage repository settings.
 #[tauri::command]
 pub async fn update_repository_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -109,10 +106,10 @@ pub async fn update_repository_settings(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Cannot save settings without a local path
+    // Repository settings are managed directly in each repository's .delidev/config.toml file
     Err(AppError::InvalidRequest(format!(
-        "Cannot save repository settings for '{}': local path not available. \
-         Repository settings must be edited directly in the repository's .delidev/config.toml file.",
+        "Cannot save repository settings for '{}': \
+         repository settings must be edited directly in the repository's .delidev/config.toml file.",
         repo_id
     )))
 }
