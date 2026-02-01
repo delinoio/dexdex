@@ -6,7 +6,7 @@ use secrets::{Keychain, NativeKeychain};
 use task_store::TaskStore;
 
 use crate::{
-    config::{AppMode, GlobalSettings, config_to_settings, load_config},
+    config::{config_to_settings, load_config, AppMode, GlobalSettings},
     error::{AppError, AppResult},
     single_process::SingleProcessRuntime,
 };
@@ -65,11 +65,7 @@ impl AppState {
     }
 
     /// Sets the application mode.
-    pub async fn set_mode(
-        &mut self,
-        mode: AppMode,
-        server_url: Option<String>,
-    ) -> AppResult<()> {
+    pub async fn set_mode(&mut self, mode: AppMode, server_url: Option<String>) -> AppResult<()> {
         self.mode = mode;
         self.remote_server_url = server_url.clone();
 

@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use entities::{Repository, VcsProviderType};
 use serde::{Deserialize, Serialize};
-use tauri::State;
 use task_store::{RepositoryFilter, TaskStore};
+use tauri::State;
 use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
@@ -52,13 +52,18 @@ pub async fn add_repository(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest("Remote mode not yet implemented".to_string()));
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
     }
 
-    let runtime = state.local_runtime.as_ref()
+    let runtime = state
+        .local_runtime
+        .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let workspace_id = params.workspace_id
+    let workspace_id = params
+        .workspace_id
         .as_ref()
         .map(|s| Uuid::parse_str(s))
         .transpose()
@@ -70,15 +75,18 @@ pub async fn add_repository(
         extract_repo_name(&params.remote_url).unwrap_or_else(|| "Unknown".to_string())
     });
 
-    let vcs_provider = Repository::detect_provider(&params.remote_url)
-        .unwrap_or(VcsProviderType::Github);
+    let vcs_provider =
+        Repository::detect_provider(&params.remote_url).unwrap_or(VcsProviderType::Github);
 
     let mut repository = Repository::new(workspace_id, &name, &params.remote_url, vcs_provider);
     if let Some(branch) = params.default_branch {
         repository = repository.with_default_branch(branch);
     }
 
-    let created = runtime.task_store_arc().create_repository(repository).await?;
+    let created = runtime
+        .task_store_arc()
+        .create_repository(repository)
+        .await?;
     info!("Added repository: {} ({})", created.name, created.id);
     Ok(created)
 }
@@ -92,14 +100,19 @@ pub async fn list_repositories(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest("Remote mode not yet implemented".to_string()));
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
     }
 
-    let runtime = state.local_runtime.as_ref()
+    let runtime = state
+        .local_runtime
+        .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
     let filter = RepositoryFilter {
-        workspace_id: params.workspace_id
+        workspace_id: params
+            .workspace_id
             .as_ref()
             .and_then(|s| Uuid::parse_str(s).ok()),
         limit: params.limit.map(|l| l as u32),
@@ -123,13 +136,17 @@ pub async fn remove_repository(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest("Remote mode not yet implemented".to_string()));
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
     }
 
     let id = Uuid::parse_str(&repository_id)
         .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
 
-    let runtime = state.local_runtime.as_ref()
+    let runtime = state
+        .local_runtime
+        .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
     runtime.task_store_arc().delete_repository(id).await?;

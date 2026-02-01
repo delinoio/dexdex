@@ -10,7 +10,7 @@ use entities::{
     AgentSession, AgentTask, CompositeTask, CompositeTaskNode, Repository, RepositoryGroup,
     TodoItem, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace,
 };
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use tracing::info;
 use uuid::Uuid;
 
@@ -187,12 +187,12 @@ impl SqliteTaskStore {
 
     /// Helper to parse Vec<Uuid> from JSON string.
     fn parse_uuid_vec(s: &str) -> TaskStoreResult<Vec<Uuid>> {
-        serde_json::from_str(s).map_err(|e| TaskStoreError::Serialization(e))
+        serde_json::from_str(s).map_err(TaskStoreError::Serialization)
     }
 
     /// Helper to serialize Vec<Uuid> to JSON string.
     fn serialize_uuid_vec(v: &[Uuid]) -> TaskStoreResult<String> {
-        serde_json::to_string(v).map_err(|e| TaskStoreError::Serialization(e))
+        serde_json::to_string(v).map_err(TaskStoreError::Serialization)
     }
 }
 
@@ -274,15 +274,14 @@ impl TaskStore for SqliteTaskStore {
     }
 
     async fn update_user(&self, user: User) -> TaskStoreResult<User> {
-        let result = sqlx::query(
-            "UPDATE users SET email = ?, name = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(&user.email)
-        .bind(&user.name)
-        .bind(user.updated_at.to_rfc3339())
-        .bind(user.id.to_string())
-        .execute(&self.pool)
-        .await?;
+        let result =
+            sqlx::query("UPDATE users SET email = ?, name = ?, updated_at = ? WHERE id = ?")
+                .bind(&user.email)
+                .bind(&user.name)
+                .bind(user.updated_at.to_rfc3339())
+                .bind(user.id.to_string())
+                .execute(&self.pool)
+                .await?;
 
         if result.rows_affected() == 0 {
             return Err(TaskStoreError::not_found("User", user.id.to_string()));
@@ -308,7 +307,8 @@ impl TaskStore for SqliteTaskStore {
 
     async fn create_workspace(&self, workspace: Workspace) -> TaskStoreResult<Workspace> {
         sqlx::query(
-            "INSERT INTO workspaces (id, name, description, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workspaces (id, name, description, user_id, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(workspace.id.to_string())
         .bind(&workspace.name)
@@ -420,7 +420,8 @@ impl TaskStore for SqliteTaskStore {
 
     async fn update_workspace(&self, workspace: Workspace) -> TaskStoreResult<Workspace> {
         let result = sqlx::query(
-            "UPDATE workspaces SET name = ?, description = ?, user_id = ?, updated_at = ? WHERE id = ?",
+            "UPDATE workspaces SET name = ?, description = ?, user_id = ?, updated_at = ? WHERE \
+             id = ?",
         )
         .bind(&workspace.name)
         .bind(&workspace.description)
@@ -431,7 +432,10 @@ impl TaskStore for SqliteTaskStore {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("Workspace", workspace.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "Workspace",
+                workspace.id.to_string(),
+            ));
         }
         Ok(workspace)
     }
@@ -454,7 +458,9 @@ impl TaskStore for SqliteTaskStore {
 
     async fn create_repository(&self, repository: Repository) -> TaskStoreResult<Repository> {
         sqlx::query(
-            "INSERT INTO repositories (id, workspace_id, name, remote_url, default_branch, vcs_type, vcs_provider_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO repositories (id, workspace_id, name, remote_url, default_branch, \
+             vcs_type, vcs_provider_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \
+             ?)",
         )
         .bind(repository.id.to_string())
         .bind(repository.workspace_id.to_string())
@@ -581,7 +587,8 @@ impl TaskStore for SqliteTaskStore {
 
     async fn update_repository(&self, repository: Repository) -> TaskStoreResult<Repository> {
         let result = sqlx::query(
-            "UPDATE repositories SET workspace_id = ?, name = ?, remote_url = ?, default_branch = ?, vcs_type = ?, vcs_provider_type = ?, updated_at = ? WHERE id = ?",
+            "UPDATE repositories SET workspace_id = ?, name = ?, remote_url = ?, default_branch = \
+             ?, vcs_type = ?, vcs_provider_type = ?, updated_at = ? WHERE id = ?",
         )
         .bind(repository.workspace_id.to_string())
         .bind(&repository.name)
@@ -595,7 +602,10 @@ impl TaskStore for SqliteTaskStore {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("Repository", repository.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "Repository",
+                repository.id.to_string(),
+            ));
         }
         Ok(repository)
     }
@@ -622,7 +632,8 @@ impl TaskStore for SqliteTaskStore {
     ) -> TaskStoreResult<RepositoryGroup> {
         let repo_ids_json = Self::serialize_uuid_vec(&group.repository_ids)?;
         sqlx::query(
-            "INSERT INTO repository_groups (id, workspace_id, name, repository_ids, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO repository_groups (id, workspace_id, name, repository_ids, created_at, \
+             updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(group.id.to_string())
         .bind(group.workspace_id.to_string())
@@ -710,7 +721,8 @@ impl TaskStore for SqliteTaskStore {
     ) -> TaskStoreResult<RepositoryGroup> {
         let repo_ids_json = Self::serialize_uuid_vec(&group.repository_ids)?;
         let result = sqlx::query(
-            "UPDATE repository_groups SET workspace_id = ?, name = ?, repository_ids = ?, updated_at = ? WHERE id = ?",
+            "UPDATE repository_groups SET workspace_id = ?, name = ?, repository_ids = ?, \
+             updated_at = ? WHERE id = ?",
         )
         .bind(group.workspace_id.to_string())
         .bind(&group.name)
@@ -721,7 +733,10 @@ impl TaskStore for SqliteTaskStore {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("RepositoryGroup", group.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "RepositoryGroup",
+                group.id.to_string(),
+            ));
         }
         Ok(group)
     }
@@ -746,12 +761,16 @@ impl TaskStore for SqliteTaskStore {
         let base_remotes_json = serde_json::to_string(&task.base_remotes)?;
         let sessions_json = serde_json::to_string(&task.agent_sessions)?;
         sqlx::query(
-            "INSERT INTO agent_tasks (id, base_remotes, agent_sessions, ai_agent_type, ai_agent_model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO agent_tasks (id, base_remotes, agent_sessions, ai_agent_type, \
+             ai_agent_model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(task.id.to_string())
         .bind(&base_remotes_json)
         .bind(&sessions_json)
-        .bind(task.ai_agent_type.map(|t| serde_json::to_string(&t).unwrap()))
+        .bind(
+            task.ai_agent_type
+                .map(|t| serde_json::to_string(&t).unwrap()),
+        )
         .bind(&task.ai_agent_model)
         .bind(task.created_at.to_rfc3339())
         .execute(&self.pool)
@@ -799,11 +818,15 @@ impl TaskStore for SqliteTaskStore {
         let base_remotes_json = serde_json::to_string(&task.base_remotes)?;
         let sessions_json = serde_json::to_string(&task.agent_sessions)?;
         let result = sqlx::query(
-            "UPDATE agent_tasks SET base_remotes = ?, agent_sessions = ?, ai_agent_type = ?, ai_agent_model = ? WHERE id = ?",
+            "UPDATE agent_tasks SET base_remotes = ?, agent_sessions = ?, ai_agent_type = ?, \
+             ai_agent_model = ? WHERE id = ?",
         )
         .bind(&base_remotes_json)
         .bind(&sessions_json)
-        .bind(task.ai_agent_type.map(|t| serde_json::to_string(&t).unwrap()))
+        .bind(
+            task.ai_agent_type
+                .map(|t| serde_json::to_string(&t).unwrap()),
+        )
         .bind(&task.ai_agent_model)
         .bind(task.id.to_string())
         .execute(&self.pool)
@@ -833,7 +856,8 @@ impl TaskStore for SqliteTaskStore {
 
     async fn create_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
         sqlx::query(
-            "INSERT INTO agent_sessions (id, agent_task_id, ai_agent_type, ai_agent_model, started_at, completed_at, output_log, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO agent_sessions (id, agent_task_id, ai_agent_type, ai_agent_model, \
+             started_at, completed_at, output_log, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(session.id.to_string())
         .bind(session.agent_task_id.to_string())
@@ -938,7 +962,8 @@ impl TaskStore for SqliteTaskStore {
 
     async fn update_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
         let result = sqlx::query(
-            "UPDATE agent_sessions SET agent_task_id = ?, ai_agent_type = ?, ai_agent_model = ?, started_at = ?, completed_at = ?, output_log = ? WHERE id = ?",
+            "UPDATE agent_sessions SET agent_task_id = ?, ai_agent_type = ?, ai_agent_model = ?, \
+             started_at = ?, completed_at = ?, output_log = ? WHERE id = ?",
         )
         .bind(session.agent_task_id.to_string())
         .bind(serde_json::to_string(&session.ai_agent_type).unwrap())
@@ -951,7 +976,10 @@ impl TaskStore for SqliteTaskStore {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("AgentSession", session.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "AgentSession",
+                session.id.to_string(),
+            ));
         }
         Ok(session)
     }
@@ -975,7 +1003,9 @@ impl TaskStore for SqliteTaskStore {
     async fn create_unit_task(&self, task: UnitTask) -> TaskStoreResult<UnitTask> {
         let auto_fix_ids_json = Self::serialize_uuid_vec(&task.auto_fix_task_ids)?;
         sqlx::query(
-            "INSERT INTO unit_tasks (id, repository_group_id, agent_task_id, prompt, title, branch_name, linked_pr_url, base_commit, end_commit, auto_fix_task_ids, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO unit_tasks (id, repository_group_id, agent_task_id, prompt, title, \
+             branch_name, linked_pr_url, base_commit, end_commit, auto_fix_task_ids, status, \
+             created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(task.id.to_string())
         .bind(task.repository_group_id.to_string())
@@ -1110,7 +1140,9 @@ impl TaskStore for SqliteTaskStore {
     async fn update_unit_task(&self, task: UnitTask) -> TaskStoreResult<UnitTask> {
         let auto_fix_ids_json = Self::serialize_uuid_vec(&task.auto_fix_task_ids)?;
         let result = sqlx::query(
-            "UPDATE unit_tasks SET repository_group_id = ?, agent_task_id = ?, prompt = ?, title = ?, branch_name = ?, linked_pr_url = ?, base_commit = ?, end_commit = ?, auto_fix_task_ids = ?, status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE unit_tasks SET repository_group_id = ?, agent_task_id = ?, prompt = ?, title \
+             = ?, branch_name = ?, linked_pr_url = ?, base_commit = ?, end_commit = ?, \
+             auto_fix_task_ids = ?, status = ?, updated_at = ? WHERE id = ?",
         )
         .bind(task.repository_group_id.to_string())
         .bind(task.agent_task_id.to_string())
@@ -1152,7 +1184,9 @@ impl TaskStore for SqliteTaskStore {
     async fn create_composite_task(&self, task: CompositeTask) -> TaskStoreResult<CompositeTask> {
         let node_ids_json = Self::serialize_uuid_vec(&task.node_ids)?;
         sqlx::query(
-            "INSERT INTO composite_tasks (id, repository_group_id, planning_task_id, prompt, title, node_ids, status, execution_agent_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO composite_tasks (id, repository_group_id, planning_task_id, prompt, \
+             title, node_ids, status, execution_agent_type, created_at, updated_at) VALUES (?, ?, \
+             ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(task.id.to_string())
         .bind(task.repository_group_id.to_string())
@@ -1161,7 +1195,10 @@ impl TaskStore for SqliteTaskStore {
         .bind(&task.title)
         .bind(&node_ids_json)
         .bind(serde_json::to_string(&task.status).unwrap())
-        .bind(task.execution_agent_type.map(|t| serde_json::to_string(&t).unwrap()))
+        .bind(
+            task.execution_agent_type
+                .map(|t| serde_json::to_string(&t).unwrap()),
+        )
         .bind(task.created_at.to_rfc3339())
         .bind(task.updated_at.to_rfc3339())
         .execute(&self.pool)
@@ -1287,7 +1324,9 @@ impl TaskStore for SqliteTaskStore {
     async fn update_composite_task(&self, task: CompositeTask) -> TaskStoreResult<CompositeTask> {
         let node_ids_json = Self::serialize_uuid_vec(&task.node_ids)?;
         let result = sqlx::query(
-            "UPDATE composite_tasks SET repository_group_id = ?, planning_task_id = ?, prompt = ?, title = ?, node_ids = ?, status = ?, execution_agent_type = ?, updated_at = ? WHERE id = ?",
+            "UPDATE composite_tasks SET repository_group_id = ?, planning_task_id = ?, prompt = \
+             ?, title = ?, node_ids = ?, status = ?, execution_agent_type = ?, updated_at = ? \
+             WHERE id = ?",
         )
         .bind(task.repository_group_id.to_string())
         .bind(task.planning_task_id.to_string())
@@ -1295,14 +1334,20 @@ impl TaskStore for SqliteTaskStore {
         .bind(&task.title)
         .bind(&node_ids_json)
         .bind(serde_json::to_string(&task.status).unwrap())
-        .bind(task.execution_agent_type.map(|t| serde_json::to_string(&t).unwrap()))
+        .bind(
+            task.execution_agent_type
+                .map(|t| serde_json::to_string(&t).unwrap()),
+        )
         .bind(task.updated_at.to_rfc3339())
         .bind(task.id.to_string())
         .execute(&self.pool)
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("CompositeTask", task.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "CompositeTask",
+                task.id.to_string(),
+            ));
         }
         Ok(task)
     }
@@ -1329,7 +1374,8 @@ impl TaskStore for SqliteTaskStore {
     ) -> TaskStoreResult<CompositeTaskNode> {
         let depends_on_json = Self::serialize_uuid_vec(&node.depends_on_ids)?;
         sqlx::query(
-            "INSERT INTO composite_task_nodes (id, composite_task_id, unit_task_id, depends_on_ids, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO composite_task_nodes (id, composite_task_id, unit_task_id, \
+             depends_on_ids, created_at) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(node.id.to_string())
         .bind(node.composite_task_id.to_string())
@@ -1407,7 +1453,8 @@ impl TaskStore for SqliteTaskStore {
     ) -> TaskStoreResult<CompositeTaskNode> {
         let depends_on_json = Self::serialize_uuid_vec(&node.depends_on_ids)?;
         let result = sqlx::query(
-            "UPDATE composite_task_nodes SET composite_task_id = ?, unit_task_id = ?, depends_on_ids = ? WHERE id = ?",
+            "UPDATE composite_task_nodes SET composite_task_id = ?, unit_task_id = ?, \
+             depends_on_ids = ? WHERE id = ?",
         )
         .bind(node.composite_task_id.to_string())
         .bind(node.unit_task_id.to_string())
@@ -1417,7 +1464,10 @@ impl TaskStore for SqliteTaskStore {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("CompositeTaskNode", node.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "CompositeTaskNode",
+                node.id.to_string(),
+            ));
         }
         Ok(node)
     }
@@ -1429,7 +1479,10 @@ impl TaskStore for SqliteTaskStore {
             .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("CompositeTaskNode", id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "CompositeTaskNode",
+                id.to_string(),
+            ));
         }
         Ok(())
     }
@@ -1441,7 +1494,8 @@ impl TaskStore for SqliteTaskStore {
     async fn create_todo_item(&self, item: TodoItem) -> TaskStoreResult<TodoItem> {
         let data_json = serde_json::to_string(&item.data)?;
         sqlx::query(
-            "INSERT INTO todo_items (id, item_type, source, status, repository_id, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO todo_items (id, item_type, source, status, repository_id, data, \
+             created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(item.id.to_string())
         .bind(serde_json::to_string(&item.item_type).unwrap())
@@ -1565,7 +1619,8 @@ impl TaskStore for SqliteTaskStore {
     async fn update_todo_item(&self, item: TodoItem) -> TaskStoreResult<TodoItem> {
         let data_json = serde_json::to_string(&item.data)?;
         let result = sqlx::query(
-            "UPDATE todo_items SET item_type = ?, source = ?, status = ?, repository_id = ?, data = ?, updated_at = ? WHERE id = ?",
+            "UPDATE todo_items SET item_type = ?, source = ?, status = ?, repository_id = ?, data \
+             = ?, updated_at = ? WHERE id = ?",
         )
         .bind(serde_json::to_string(&item.item_type).unwrap())
         .bind(serde_json::to_string(&item.source).unwrap())
@@ -1603,9 +1658,14 @@ impl TaskStore for SqliteTaskStore {
         &self,
         request: TtyInputRequest,
     ) -> TaskStoreResult<TtyInputRequest> {
-        let options_json = request.options.as_ref().map(|o| serde_json::to_string(o).unwrap());
+        let options_json = request
+            .options
+            .as_ref()
+            .map(|o| serde_json::to_string(o).unwrap());
         sqlx::query(
-            "INSERT INTO tty_input_requests (id, task_id, session_id, prompt, input_type, options, status, response, created_at, responded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tty_input_requests (id, task_id, session_id, prompt, input_type, \
+             options, status, response, created_at, responded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \
+             ?, ?)",
         )
         .bind(request.id.to_string())
         .bind(request.task_id.to_string())
@@ -1742,9 +1802,13 @@ impl TaskStore for SqliteTaskStore {
         &self,
         request: TtyInputRequest,
     ) -> TaskStoreResult<TtyInputRequest> {
-        let options_json = request.options.as_ref().map(|o| serde_json::to_string(o).unwrap());
+        let options_json = request
+            .options
+            .as_ref()
+            .map(|o| serde_json::to_string(o).unwrap());
         let result = sqlx::query(
-            "UPDATE tty_input_requests SET task_id = ?, session_id = ?, prompt = ?, input_type = ?, options = ?, status = ?, response = ?, responded_at = ? WHERE id = ?",
+            "UPDATE tty_input_requests SET task_id = ?, session_id = ?, prompt = ?, input_type = \
+             ?, options = ?, status = ?, response = ?, responded_at = ? WHERE id = ?",
         )
         .bind(request.task_id.to_string())
         .bind(request.session_id.to_string())
@@ -1759,7 +1823,10 @@ impl TaskStore for SqliteTaskStore {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(TaskStoreError::not_found("TtyInputRequest", request.id.to_string()));
+            return Err(TaskStoreError::not_found(
+                "TtyInputRequest",
+                request.id.to_string(),
+            ));
         }
         Ok(request)
     }
@@ -1779,8 +1846,9 @@ impl TaskStore for SqliteTaskStore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     struct TestStore {
         store: SqliteTaskStore,

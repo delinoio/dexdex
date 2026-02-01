@@ -103,7 +103,8 @@ pub struct AgentConfig {
 
 /// Gets the DeliDev configuration directory.
 pub fn config_dir() -> AppResult<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))?;
     Ok(home.join(".delidev"))
 }
 
@@ -124,7 +125,8 @@ pub fn load_config() -> AppResult<ConfigFile> {
     let path = config_file_path()?;
     if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|e| AppError::Config(format!("Failed to parse config: {}", e)))
+        toml::from_str(&content)
+            .map_err(|e| AppError::Config(format!("Failed to parse config: {}", e)))
     } else {
         Ok(ConfigFile::default())
     }
@@ -172,7 +174,9 @@ pub fn config_to_settings(config: &ConfigFile) -> GlobalSettings {
         if let Some(agent_type) = &agent_config.default_type {
             settings.default_agent_type = agent_type.clone();
         }
-        settings.default_agent_model.clone_from(&agent_config.default_model);
+        settings
+            .default_agent_model
+            .clone_from(&agent_config.default_model);
     }
 
     settings
@@ -272,7 +276,9 @@ mod tests {
     #[test]
     fn test_config_to_settings_with_notifications() {
         let config = ConfigFile {
-            notifications: Some(NotificationsConfig { enabled: Some(false) }),
+            notifications: Some(NotificationsConfig {
+                enabled: Some(false),
+            }),
             ..Default::default()
         };
         let settings = config_to_settings(&config);
@@ -325,7 +331,9 @@ mod tests {
             hotkey: Some(HotkeyConfig {
                 open_chat: Some("Alt+Z".to_string()),
             }),
-            notifications: Some(NotificationsConfig { enabled: Some(true) }),
+            notifications: Some(NotificationsConfig {
+                enabled: Some(true),
+            }),
             agent: Some(AgentConfig {
                 default_type: Some("claude_code".to_string()),
                 default_model: None,
@@ -336,9 +344,6 @@ mod tests {
         let parsed: ConfigFile = toml::from_str(&toml_str).unwrap();
 
         assert_eq!(parsed.mode.unwrap().mode, Some(AppMode::Local));
-        assert_eq!(
-            parsed.hotkey.unwrap().open_chat,
-            Some("Alt+Z".to_string())
-        );
+        assert_eq!(parsed.hotkey.unwrap().open_chat, Some("Alt+Z".to_string()));
     }
 }

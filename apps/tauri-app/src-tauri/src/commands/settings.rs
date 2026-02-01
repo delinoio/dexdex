@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::{
-    config::{GlobalSettings, RepositorySettings, save_config, settings_to_config},
+    config::{save_config, settings_to_config, GlobalSettings, RepositorySettings},
     error::AppResult,
     state::AppState,
 };
@@ -31,7 +31,9 @@ pub async fn update_global_settings(
 
     // Update mode if changed
     if settings.mode != state.settings.mode || settings.server_url != state.settings.server_url {
-        state.set_mode(settings.mode, settings.server_url.clone()).await?;
+        state
+            .set_mode(settings.mode, settings.server_url.clone())
+            .await?;
     }
 
     // Update settings

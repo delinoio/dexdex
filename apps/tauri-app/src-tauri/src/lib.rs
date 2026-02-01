@@ -1,7 +1,7 @@
 //! DeliDev Tauri App - Desktop and Mobile Application
 //!
-//! This crate provides the Tauri backend for the DeliDev desktop and mobile applications.
-//! It supports both local (single-process) and remote modes.
+//! This crate provides the Tauri backend for the DeliDev desktop and mobile
+//! applications. It supports both local (single-process) and remote modes.
 
 pub mod commands;
 pub mod config;
@@ -72,30 +72,34 @@ pub fn run() {
                     "Alt+Z"
                 };
 
-                if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
-                    info!("Global hotkey pressed");
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }) {
+                if let Err(e) =
+                    app.global_shortcut()
+                        .on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                            info!("Global hotkey pressed");
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        })
+                {
                     tracing::warn!("Failed to register global hotkey: {}", e);
 
                     // Notify user about the hotkey registration failure
                     let error_msg = format!(
-                        "Failed to register global hotkey ({}). You can still use the app, but the {} shortcut won't work. Error: {}",
-                        shortcut,
-                        shortcut,
-                        e
+                        "Failed to register global hotkey ({}). You can still use the app, but \
+                         the {} shortcut won't work. Error: {}",
+                        shortcut, shortcut, e
                     );
                     tracing::error!("{}", error_msg);
 
                     // Show a notification to the user
-                    if let Err(notif_err) = app.notification()
+                    if let Err(notif_err) = app
+                        .notification()
                         .builder()
                         .title("DeliDev Hotkey Error")
-                        .body(&format!(
-                            "Could not register {} hotkey. The app will still work, but the global shortcut is unavailable.",
+                        .body(format!(
+                            "Could not register {} hotkey. The app will still work, but the \
+                             global shortcut is unavailable.",
                             shortcut
                         ))
                         .show()

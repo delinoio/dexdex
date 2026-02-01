@@ -7,16 +7,14 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::{
-    config::{AppMode, save_config, settings_to_config},
+    config::{save_config, settings_to_config, AppMode},
     error::AppResult,
     state::AppState,
 };
 
 /// Gets the current application mode.
 #[tauri::command]
-pub async fn get_mode(
-    state: State<'_, Arc<RwLock<AppState>>>,
-) -> AppResult<String> {
+pub async fn get_mode(state: State<'_, Arc<RwLock<AppState>>>) -> AppResult<String> {
     let state = state.read().await;
     let mode = match state.mode {
         AppMode::Local => "local",

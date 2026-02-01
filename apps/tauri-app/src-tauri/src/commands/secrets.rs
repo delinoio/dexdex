@@ -38,10 +38,7 @@ pub async fn set_secret(
 
 /// Deletes a secret from the keychain.
 #[tauri::command]
-pub async fn delete_secret(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    key: String,
-) -> AppResult<()> {
+pub async fn delete_secret(state: State<'_, Arc<RwLock<AppState>>>, key: String) -> AppResult<()> {
     let state = state.read().await;
     state.keychain.delete_by_name(&key).await?;
     info!("Deleted secret: {}", key);
@@ -50,9 +47,7 @@ pub async fn delete_secret(
 
 /// Lists all known secret keys that have values.
 #[tauri::command]
-pub async fn list_secrets(
-    state: State<'_, Arc<RwLock<AppState>>>,
-) -> AppResult<Vec<String>> {
+pub async fn list_secrets(state: State<'_, Arc<RwLock<AppState>>>) -> AppResult<Vec<String>> {
     let state = state.read().await;
     let keys = state.keychain.list().await?;
     Ok(keys.into_iter().map(|k| k.key_name().to_string()).collect())

@@ -1,7 +1,8 @@
 //! Single-process runtime implementation.
 //!
-//! This module provides an embedded server and worker that run in the same process
-//! as the Tauri app, using direct function calls instead of network communication.
+//! This module provides an embedded server and worker that run in the same
+//! process as the Tauri app, using direct function calls instead of network
+//! communication.
 //!
 //! # Data Persistence
 //!

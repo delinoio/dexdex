@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
-use crate::events::{NotificationShownEvent, TaskType, event_names};
+use crate::events::{event_names, NotificationShownEvent, TaskType};
 
 /// Notification trigger types.
 #[derive(Debug, Clone, Copy)]
@@ -124,11 +124,7 @@ pub fn send_task_review_notification(
 ///
 /// This function is part of the public notification API and will be called
 /// when a composite task plan is ready for user approval.
-pub fn send_plan_approval_notification(
-    app: &AppHandle,
-    task_id: &str,
-    task_title: Option<&str>,
-) {
+pub fn send_plan_approval_notification(app: &AppHandle, task_id: &str, task_title: Option<&str>) {
     let message = task_title
         .map(|t| format!("Plan for \"{}\" is ready for approval", t))
         .unwrap_or_else(|| "A plan is ready for approval".to_string());
