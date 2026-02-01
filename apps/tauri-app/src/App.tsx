@@ -1,50 +1,57 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MainLayout } from "@/components/layout/MainLayout";
+import {
+  CompositeTaskDetail,
+  Dashboard,
+  ModeSelection,
+  Onboarding,
+  Repositories,
+  Settings,
+  TaskCreation,
+  UnitTaskDetail,
+} from "@/pages";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60, // 1 minute
+      retry: 1,
+    },
+  },
+});
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+function AppRoutes() {
+  // Initialize keyboard shortcuts
+  useKeyboardShortcuts();
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <Routes>
+      {/* Standalone pages (no sidebar) */}
+      <Route path="/mode-select" element={<ModeSelection />} />
+      <Route path="/onboarding" element={<Onboarding />} />
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      {/* Main app with sidebar */}
+      <Route element={<MainLayout />}>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/tasks/new" element={<TaskCreation />} />
+        <Route path="/unit-tasks/:id" element={<UnitTaskDetail />} />
+        <Route path="/composite-tasks/:id" element={<CompositeTaskDetail />} />
+        <Route path="/repositories" element={<Repositories />} />
+        <Route path="/settings" element={<Settings />} />
+      </Route>
+    </Routes>
+  );
+}
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
 
