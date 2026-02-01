@@ -108,6 +108,8 @@ function DialogContent({
       >
         {children}
         <button
+          type="button"
+          aria-label="Close"
           className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-[hsl(var(--background))] transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:pointer-events-none"
           onClick={() => setOpen(false)}
         >
@@ -122,6 +124,7 @@ function DialogContent({
             strokeLinecap="round"
             strokeLinejoin="round"
             className="h-4 w-4"
+            aria-hidden="true"
           >
             <path d="M18 6 6 18" />
             <path d="m6 6 12 12" />

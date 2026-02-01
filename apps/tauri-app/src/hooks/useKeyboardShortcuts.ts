@@ -1,17 +1,19 @@
 // Keyboard shortcuts hook
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUiStore } from "@/stores/uiStore";
 
 interface ShortcutHandler {
   key: string;
-  ctrl?: boolean;
-  meta?: boolean;
+  mod?: boolean; // Cmd on Mac, Ctrl on Windows/Linux
   alt?: boolean;
   shift?: boolean;
   handler: () => void;
   description: string;
 }
+
+// Detect platform once at module level
+const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0;
 
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
@@ -26,122 +28,125 @@ export function useKeyboardShortcuts() {
     setActiveTab,
   } = useUiStore();
 
+  // Memoize shortcuts array to prevent recreation on every render
+  const shortcuts = useMemo<ShortcutHandler[]>(() => [
+    // Navigation shortcuts
+    {
+      key: "n",
+      mod: true,
+      handler: () => {
+        setTaskCreationOpen(true);
+        navigate("/tasks/new");
+      },
+      description: "New Task",
+    },
+    {
+      key: ",",
+      mod: true,
+      handler: () => {
+        setSettingsOpen(true);
+        navigate("/settings");
+      },
+      description: "Settings",
+    },
+    {
+      key: "k",
+      mod: true,
+      handler: () => {
+        toggleCommandPalette();
+      },
+      description: "Command Palette",
+    },
+    {
+      key: "1",
+      mod: true,
+      handler: () => {
+        navigate("/");
+      },
+      description: "Dashboard",
+    },
+
+    // Tab navigation
+    {
+      key: "t",
+      mod: true,
+      handler: () => {
+        const tabId = addTab({
+          title: "New Tab",
+          path: "/",
+          closable: true,
+        });
+        setActiveTab(tabId);
+      },
+      description: "New Tab",
+    },
+    {
+      key: "w",
+      mod: true,
+      handler: () => {
+        if (activeTabId) {
+          removeTab(activeTabId);
+        }
+      },
+      description: "Close Tab",
+    },
+    {
+      key: "Tab",
+      mod: true,
+      handler: () => {
+        const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
+        const nextIndex = (currentIndex + 1) % tabs.length;
+        if (tabs[nextIndex]) {
+          setActiveTab(tabs[nextIndex].id);
+        }
+      },
+      description: "Next Tab",
+    },
+
+    // Quick tab switching (Cmd/Ctrl + 1-9)
+    ...Array.from({ length: 9 }, (_, i) => ({
+      key: String(i + 1),
+      mod: true,
+      handler: () => {
+        const tab = tabs[i];
+        if (tab) {
+          setActiveTab(tab.id);
+        }
+      },
+      description: `Switch to Tab ${i + 1}`,
+    })),
+
+    // Dialog close
+    {
+      key: "Escape",
+      handler: () => {
+        setTaskCreationOpen(false);
+        setSettingsOpen(false);
+      },
+      description: "Close Dialog",
+    },
+  ], [
+    navigate,
+    setTaskCreationOpen,
+    setSettingsOpen,
+    toggleCommandPalette,
+    tabs,
+    activeTabId,
+    addTab,
+    removeTab,
+    setActiveTab,
+  ]);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
       const modKey = isMac ? event.metaKey : event.ctrlKey;
-
-      // Define shortcuts
-      const shortcuts: ShortcutHandler[] = [
-        // Navigation shortcuts
-        {
-          key: "n",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            setTaskCreationOpen(true);
-            navigate("/tasks/new");
-          },
-          description: "New Task",
-        },
-        {
-          key: ",",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            setSettingsOpen(true);
-            navigate("/settings");
-          },
-          description: "Settings",
-        },
-        {
-          key: "k",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            toggleCommandPalette();
-          },
-          description: "Command Palette",
-        },
-        {
-          key: "1",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            navigate("/");
-          },
-          description: "Dashboard",
-        },
-
-        // Tab navigation
-        {
-          key: "t",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            const tabId = addTab({
-              title: "New Tab",
-              path: "/",
-              closable: true,
-            });
-            setActiveTab(tabId);
-          },
-          description: "New Tab",
-        },
-        {
-          key: "w",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            if (activeTabId) {
-              removeTab(activeTabId);
-            }
-          },
-          description: "Close Tab",
-        },
-        {
-          key: "Tab",
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
-            const nextIndex = (currentIndex + 1) % tabs.length;
-            setActiveTab(tabs[nextIndex].id);
-          },
-          description: "Next Tab",
-        },
-
-        // Quick tab switching (Cmd/Ctrl + 1-9)
-        ...Array.from({ length: 9 }, (_, i) => ({
-          key: String(i + 1),
-          ctrl: true,
-          meta: true,
-          handler: () => {
-            const tab = tabs[i];
-            if (tab) {
-              setActiveTab(tab.id);
-            }
-          },
-          description: `Switch to Tab ${i + 1}`,
-        })),
-
-        // Dialog close
-        {
-          key: "Escape",
-          handler: () => {
-            setTaskCreationOpen(false);
-            setSettingsOpen(false);
-          },
-          description: "Close Dialog",
-        },
-      ];
 
       // Check if any shortcut matches
       for (const shortcut of shortcuts) {
         const keyMatches =
           event.key.toLowerCase() === shortcut.key.toLowerCase();
-        const modMatches =
-          shortcut.ctrl || shortcut.meta ? modKey : !modKey;
+        // mod: true means Cmd on Mac, Ctrl on Windows/Linux
+        const modMatches = shortcut.mod ? modKey : !modKey;
         const altMatches = shortcut.alt ? event.altKey : !event.altKey;
         const shiftMatches = shortcut.shift ? event.shiftKey : !event.shiftKey;
 
@@ -165,17 +170,7 @@ export function useKeyboardShortcuts() {
         }
       }
     },
-    [
-      navigate,
-      setTaskCreationOpen,
-      setSettingsOpen,
-      toggleCommandPalette,
-      tabs,
-      activeTabId,
-      addTab,
-      removeTab,
-      setActiveTab,
-    ]
+    [shortcuts]
   );
 
   useEffect(() => {

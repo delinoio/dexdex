@@ -7,15 +7,20 @@ import { Select } from "@/components/ui/Select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { useMode, useSetMode } from "@/hooks/useMode";
 import { AiAgentType } from "@/api/types";
+import { notify } from "@/stores/notificationStore";
 
 export function Settings() {
   const navigate = useNavigate();
   const { data: currentMode } = useMode();
   const setModeMutation = useSetMode();
 
-  const [mode, setMode] = useState<"local" | "remote">(
-    (currentMode as "local" | "remote") ?? "local"
-  );
+  const [mode, setMode] = useState<"local" | "remote">(() => {
+    // Validate that currentMode is a valid mode value
+    if (currentMode === "local" || currentMode === "remote") {
+      return currentMode;
+    }
+    return "local";
+  });
   const [serverUrl, setServerUrl] = useState("");
   const [hotkey, setHotkey] = useState("Option+Z");
   const [planningAgent, setPlanningAgent] = useState(AiAgentType.ClaudeCode);
@@ -28,8 +33,9 @@ export function Settings() {
         mode,
         serverUrl: mode === "remote" ? serverUrl : undefined,
       });
-    } catch (error) {
-      console.error("Failed to save settings:", error);
+      notify.success("Settings saved", "Your settings have been saved successfully.");
+    } catch {
+      notify.error("Failed to save settings", "Please try again.");
     }
   };
 
