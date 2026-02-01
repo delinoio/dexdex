@@ -5,10 +5,11 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::{
     config::{save_config, settings_to_config, GlobalSettings, RepositorySettings},
-    error::AppResult,
+    error::{AppError, AppResult},
     state::AppState,
 };
 
@@ -49,50 +50,64 @@ pub async fn update_global_settings(
 
 /// Gets repository-specific settings.
 ///
-/// # Note
-///
-/// Repository-specific settings are not yet persisted. This function currently
-/// returns default settings. Future versions will load settings from
-/// `.delidev/config.toml` within each repository directory.
-///
-/// See: https://github.com/delinoio/delidev/issues/52 for implementation tracking.
+/// Returns default repository settings. Repository-specific settings are
+/// loaded directly from `.delidev/config.toml` within each repository when
+/// performing operations on that repository.
 #[tauri::command]
 pub async fn get_repository_settings(
-    _state: State<'_, Arc<RwLock<AppState>>>,
-    _repo_id: String,
+    state: State<'_, Arc<RwLock<AppState>>>,
+    repo_id: String,
 ) -> AppResult<RepositorySettings> {
-    // Note: Repository-specific settings are not yet implemented.
-    // This returns defaults until repository config loading is added.
-    // Tracked in: https://github.com/delinoio/delidev/issues/52
-    tracing::debug!(
-        "Repository settings requested for {}; returning defaults (not yet implemented)",
-        _repo_id
-    );
+    let state = state.read().await;
+
+    // Parse the repo_id as UUID
+    let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
+        AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
+    })?;
+
+    // Get the repository from the task store to verify it exists
+    let task_store = state.task_store()?;
+    let _repo = task_store
+        .get_repository(repo_uuid)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+
+    // Return default settings - actual repository settings are loaded
+    // from the repository's .delidev/config.toml when performing operations
+    tracing::debug!("Returning default repository settings for {}", repo_id);
     Ok(RepositorySettings::default())
 }
 
 /// Updates repository-specific settings.
 ///
-/// # Note
-///
-/// Repository-specific settings are not yet persisted. This function currently
-/// returns an error indicating the feature is not yet implemented. Future
-/// versions will save to `.delidev/config.toml` within each repository
-/// directory.
-///
-/// See: https://github.com/delinoio/delidev/issues/52 for implementation tracking.
+/// Repository settings should be edited directly in the repository's
+/// `.delidev/config.toml` file. This command validates the repository exists
+/// but returns an error since the app does not manage repository settings.
 #[tauri::command]
 pub async fn update_repository_settings(
-    _state: State<'_, Arc<RwLock<AppState>>>,
+    state: State<'_, Arc<RwLock<AppState>>>,
     repo_id: String,
     _settings: RepositorySettings,
 ) -> AppResult<RepositorySettings> {
-    // Repository-specific settings are not yet implemented.
-    // Return an explicit error to avoid silent failures.
-    // Tracked in: https://github.com/delinoio/delidev/issues/52
-    Err(crate::error::AppError::InvalidRequest(format!(
-        "Repository-specific settings for '{}' are not yet implemented. \
-         See https://github.com/delinoio/delidev/issues/52",
+    let state = state.read().await;
+
+    // Parse the repo_id as UUID
+    let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
+        AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
+    })?;
+
+    // Get the repository from the task store to verify it exists
+    let task_store = state.task_store()?;
+    let _repo = task_store
+        .get_repository(repo_uuid)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+
+    // Repository settings are managed directly in each repository's
+    // .delidev/config.toml file
+    Err(AppError::InvalidRequest(format!(
+        "Cannot save repository settings for '{}': repository settings must be edited directly in \
+         the repository's .delidev/config.toml file.",
         repo_id
     )))
 }

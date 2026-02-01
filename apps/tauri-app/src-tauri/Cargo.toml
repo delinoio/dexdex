@@ -30,6 +30,7 @@ task_store = { path = "../../../crates/task_store" }
 auth = { path = "../../../crates/auth" }
 secrets = { path = "../../../crates/secrets" }
 git_ops = { path = "../../../crates/git_ops" }
+config = { path = "../../../crates/config" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

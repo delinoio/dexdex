@@ -56,6 +56,18 @@ impl AiAgentType {
             Self::Amp => "amp",
         }
     }
+
+    /// Returns the agent type as a string (snake_case format).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude_code",
+            Self::OpenCode => "open_code",
+            Self::GeminiCli => "gemini_cli",
+            Self::CodexCli => "codex_cli",
+            Self::Aider => "aider",
+            Self::Amp => "amp",
+        }
+    }
 }
 
 /// A single AI coding agent session.

@@ -1,7 +1,17 @@
 //! Configuration management for the Tauri app.
+//!
+//! This module provides application-level configuration handling that
+//! integrates with the shared `config` crate for TOML file parsing.
 
 use std::path::PathBuf;
 
+// Re-export types from the config crate for convenience
+pub use config::{
+    AgentConfig as SharedAgentConfig, AutomationSettings, BranchSettings, CompositeTaskSettings,
+    ConcurrencySettings, ConfigError, ConfigLoader, ContainerRuntime, ContainerSettings,
+    GlobalConfig, HotkeySettings, LearningSettings, MergedConfig, NotificationSettings,
+    RepositoryConfig, ReviewCommentFilter, VcsCredentials,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
@@ -18,6 +28,10 @@ pub enum AppMode {
 }
 
 /// Global application settings.
+///
+/// This struct represents the application settings exposed to the frontend.
+/// It combines settings from the shared config crate with app-specific
+/// settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalSettings {
@@ -52,7 +66,33 @@ impl Default for GlobalSettings {
     }
 }
 
+impl GlobalSettings {
+    /// Creates GlobalSettings from a GlobalConfig (shared config crate).
+    pub fn from_global_config(config: &GlobalConfig) -> Self {
+        let mut settings = Self::default();
+
+        if let Some(hotkey) = &config.hotkey {
+            settings.hotkey = hotkey.open_chat.clone();
+        }
+
+        if let Some(notification) = &config.notification {
+            settings.notifications_enabled = notification.enabled;
+        }
+
+        if let Some(agent) = &config.agent {
+            if let Some(execution) = &agent.execution {
+                settings.default_agent_type = execution.agent_type.as_str().to_string();
+                settings.default_agent_model = Some(execution.model.clone());
+            }
+        }
+
+        settings
+    }
+}
+
 /// Repository-specific settings.
+///
+/// These settings are loaded from `.delidev/config.toml` in the repository.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositorySettings {
@@ -60,13 +100,74 @@ pub struct RepositorySettings {
     pub branch_template: Option<String>,
     /// Whether auto-fix for review comments is enabled.
     pub auto_fix_review_comments: bool,
+    /// Filter for which review comments should trigger auto-fix.
+    pub auto_fix_review_comments_filter: ReviewCommentFilterSetting,
     /// Whether auto-fix for CI failures is enabled.
     pub auto_fix_ci_failures: bool,
     /// Maximum retry attempts for auto-fix.
     pub max_auto_fix_retries: u32,
 }
 
+/// Review comment filter setting (frontend-friendly version).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewCommentFilterSetting {
+    /// Only auto-fix comments from users with write access.
+    #[default]
+    WriteAccessOnly,
+    /// Auto-fix comments from any user.
+    All,
+    /// Only auto-fix comments from repository maintainers.
+    MaintainersOnly,
+}
+
+impl RepositorySettings {
+    /// Creates RepositorySettings from a RepositoryConfig (shared config
+    /// crate).
+    pub fn from_repo_config(config: &RepositoryConfig) -> Self {
+        let mut settings = Self::default();
+
+        if let Some(branch) = &config.branch {
+            settings.branch_template = Some(branch.template.clone());
+        }
+
+        if let Some(automation) = &config.automation {
+            settings.auto_fix_review_comments = automation.auto_fix_review_comments;
+            settings.auto_fix_review_comments_filter =
+                ReviewCommentFilterSetting::from(automation.auto_fix_review_comments_filter);
+            settings.auto_fix_ci_failures = automation.auto_fix_ci_failures;
+            settings.max_auto_fix_retries = automation.max_auto_fix_attempts;
+        }
+
+        settings
+    }
+}
+
+impl From<ReviewCommentFilter> for ReviewCommentFilterSetting {
+    fn from(filter: ReviewCommentFilter) -> Self {
+        match filter {
+            ReviewCommentFilter::WriteAccessOnly => Self::WriteAccessOnly,
+            ReviewCommentFilter::All => Self::All,
+            ReviewCommentFilter::MaintainersOnly => Self::MaintainersOnly,
+        }
+    }
+}
+
+impl From<ReviewCommentFilterSetting> for ReviewCommentFilter {
+    fn from(filter: ReviewCommentFilterSetting) -> Self {
+        match filter {
+            ReviewCommentFilterSetting::WriteAccessOnly => Self::WriteAccessOnly,
+            ReviewCommentFilterSetting::All => Self::All,
+            ReviewCommentFilterSetting::MaintainersOnly => Self::MaintainersOnly,
+        }
+    }
+}
+
 /// Configuration file structure for ~/.delidev/config.toml
+///
+/// This is a simplified version for the Tauri app that includes mode
+/// configuration. For the full configuration, use `GlobalConfig` from the
+/// config crate.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigFile {
     /// Mode configuration.
@@ -103,14 +204,19 @@ pub struct AgentConfig {
 
 /// Gets the DeliDev configuration directory.
 pub fn config_dir() -> AppResult<PathBuf> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))?;
-    Ok(home.join(".delidev"))
+    config::config_dir().ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))
 }
 
 /// Gets the path to the global configuration file.
 pub fn config_file_path() -> AppResult<PathBuf> {
-    Ok(config_dir()?.join("config.toml"))
+    config::global_config_path()
+        .ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))
+}
+
+/// Gets the path to the credentials file.
+pub fn credentials_file_path() -> AppResult<PathBuf> {
+    config::credentials_path()
+        .ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))
 }
 
 /// Gets the path to the data directory (for SQLite database, etc.).
@@ -200,6 +306,68 @@ pub fn settings_to_config(settings: &GlobalSettings) -> ConfigFile {
             default_model: settings.default_agent_model.clone(),
         }),
     }
+}
+
+/// Loads repository settings from a repository path.
+pub fn load_repository_settings(repo_path: &std::path::Path) -> AppResult<RepositorySettings> {
+    let config_path = config::repository_config_path(repo_path);
+    if config_path.exists() {
+        let repo_config = RepositoryConfig::load(&config_path)
+            .map_err(|e| AppError::Config(format!("Failed to load repository config: {}", e)))?;
+        Ok(RepositorySettings::from_repo_config(&repo_config))
+    } else {
+        Ok(RepositorySettings::default())
+    }
+}
+
+/// Saves repository settings to a repository path.
+pub fn save_repository_settings(
+    repo_path: &std::path::Path,
+    settings: &RepositorySettings,
+) -> AppResult<()> {
+    let config_path = config::repository_config_path(repo_path);
+
+    // Build the repository config
+    let mut repo_config = RepositoryConfig::default();
+
+    if let Some(template) = &settings.branch_template {
+        repo_config.branch = Some(BranchSettings {
+            template: template.clone(),
+        });
+    }
+
+    repo_config.automation = Some(AutomationSettings {
+        auto_fix_review_comments: settings.auto_fix_review_comments,
+        auto_fix_review_comments_filter: settings.auto_fix_review_comments_filter.into(),
+        auto_fix_ci_failures: settings.auto_fix_ci_failures,
+        max_auto_fix_attempts: settings.max_auto_fix_retries,
+    });
+
+    repo_config
+        .save(&config_path)
+        .map_err(|e| AppError::Config(format!("Failed to save repository config: {}", e)))?;
+
+    Ok(())
+}
+
+/// Loads VCS credentials.
+pub fn load_credentials() -> AppResult<VcsCredentials> {
+    let path = credentials_file_path()?;
+    if path.exists() {
+        VcsCredentials::load(&path)
+            .map_err(|e| AppError::Config(format!("Failed to load credentials: {}", e)))
+    } else {
+        Ok(VcsCredentials::default())
+    }
+}
+
+/// Saves VCS credentials.
+pub fn save_credentials(credentials: &VcsCredentials) -> AppResult<()> {
+    let path = credentials_file_path()?;
+    credentials
+        .save(&path)
+        .map_err(|e| AppError::Config(format!("Failed to save credentials: {}", e)))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -345,5 +513,31 @@ mod tests {
 
         assert_eq!(parsed.mode.unwrap().mode, Some(AppMode::Local));
         assert_eq!(parsed.hotkey.unwrap().open_chat, Some("Alt+Z".to_string()));
+    }
+
+    #[test]
+    fn test_repository_settings_from_repo_config() {
+        let repo_config = RepositoryConfig {
+            branch: Some(BranchSettings {
+                template: "feature/${taskId}".to_string(),
+            }),
+            automation: Some(AutomationSettings {
+                auto_fix_review_comments: true,
+                auto_fix_review_comments_filter: ReviewCommentFilter::All,
+                auto_fix_ci_failures: true,
+                max_auto_fix_attempts: 5,
+            }),
+            ..Default::default()
+        };
+
+        let settings = RepositorySettings::from_repo_config(&repo_config);
+
+        assert_eq!(
+            settings.branch_template,
+            Some("feature/${taskId}".to_string())
+        );
+        assert!(settings.auto_fix_review_comments);
+        assert!(settings.auto_fix_ci_failures);
+        assert_eq!(settings.max_auto_fix_retries, 5);
     }
 }
