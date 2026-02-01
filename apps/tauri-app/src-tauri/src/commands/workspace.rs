@@ -16,6 +16,38 @@ use crate::{
     state::AppState,
 };
 
+/// Maximum length for workspace name.
+const MAX_WORKSPACE_NAME_LENGTH: usize = 255;
+/// Maximum length for workspace description.
+const MAX_WORKSPACE_DESCRIPTION_LENGTH: usize = 10000;
+
+/// Validates workspace name.
+fn validate_workspace_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::InvalidRequest(
+            "Workspace name cannot be empty".to_string(),
+        ));
+    }
+    if name.len() > MAX_WORKSPACE_NAME_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Workspace name exceeds maximum length of {} characters",
+            MAX_WORKSPACE_NAME_LENGTH
+        )));
+    }
+    Ok(())
+}
+
+/// Validates workspace description.
+fn validate_workspace_description(description: &str) -> Result<(), AppError> {
+    if description.len() > MAX_WORKSPACE_DESCRIPTION_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Workspace description exceeds maximum length of {} characters",
+            MAX_WORKSPACE_DESCRIPTION_LENGTH
+        )));
+    }
+    Ok(())
+}
+
 /// Parameters for creating a workspace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +92,12 @@ pub async fn create_workspace(
         return Err(AppError::InvalidRequest(
             "Remote mode not yet implemented".to_string(),
         ));
+    }
+
+    // Validate input
+    validate_workspace_name(&params.name)?;
+    if let Some(ref description) = params.description {
+        validate_workspace_description(description)?;
     }
 
     let runtime = state
@@ -174,11 +212,13 @@ pub async fn update_workspace(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
 
-    if let Some(name) = params.name {
-        workspace.name = name;
+    if let Some(ref name) = params.name {
+        validate_workspace_name(name)?;
+        workspace.name = name.clone();
     }
-    if let Some(description) = params.description {
-        workspace.description = Some(description);
+    if let Some(ref description) = params.description {
+        validate_workspace_description(description)?;
+        workspace.description = Some(description.clone());
     }
     workspace.updated_at = chrono::Utc::now();
 

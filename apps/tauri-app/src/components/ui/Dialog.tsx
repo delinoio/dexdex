@@ -4,12 +4,16 @@ import {
   createContext,
   useContext,
   useState,
+  useRef,
+  useEffect,
+  useCallback,
 } from "react";
 import { cn } from "@/lib/utils";
 
 interface DialogContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  triggerRef: React.RefObject<HTMLElement | null>;
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -36,6 +40,7 @@ function Dialog({
   defaultOpen = false,
 }: DialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -49,7 +54,7 @@ function Dialog({
   };
 
   return (
-    <DialogContext.Provider value={{ open, setOpen }}>
+    <DialogContext.Provider value={{ open, setOpen, triggerRef }}>
       {children}
     </DialogContext.Provider>
   );
@@ -60,10 +65,18 @@ interface DialogTriggerProps extends HTMLAttributes<HTMLButtonElement> {
 }
 
 function DialogTrigger({ children, asChild, ...props }: DialogTriggerProps) {
-  const { setOpen } = useDialogContext();
+  const { setOpen, triggerRef } = useDialogContext();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Store reference to trigger element for focus restoration
+  useEffect(() => {
+    if (buttonRef.current) {
+      triggerRef.current = buttonRef.current;
+    }
+  }, [triggerRef]);
 
   return (
-    <button type="button" onClick={() => setOpen(true)} {...props}>
+    <button ref={buttonRef} type="button" onClick={() => setOpen(true)} {...props}>
       {children}
     </button>
   );
@@ -91,7 +104,75 @@ function DialogContent({
   children,
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
-  const { open, setOpen } = useDialogContext();
+  const { open, setOpen, triggerRef } = useDialogContext();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Get all focusable elements within the dialog
+  const getFocusableElements = useCallback(() => {
+    if (!contentRef.current) return [];
+    return Array.from(
+      contentRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => !el.hasAttribute("disabled"));
+  }, []);
+
+  // Focus the first focusable element when dialog opens
+  useEffect(() => {
+    if (open && contentRef.current) {
+      // Delay to ensure content is rendered
+      const timeoutId = setTimeout(() => {
+        const focusableElements = getFocusableElements();
+        if (focusableElements.length > 0) {
+          focusableElements[0].focus();
+        } else {
+          contentRef.current?.focus();
+        }
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [open, getFocusableElements]);
+
+  // Restore focus to trigger element when dialog closes
+  useEffect(() => {
+    if (!open && triggerRef.current) {
+      triggerRef.current.focus();
+    }
+  }, [open, triggerRef]);
+
+  // Handle focus trap with Tab key
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Tab") {
+        const focusableElements = getFocusableElements();
+        if (focusableElements.length === 0) return;
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          // Shift+Tab: if focus is on first element, move to last
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          // Tab: if focus is on last element, move to first
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+
+      // Close on Escape key
+      if (e.key === "Escape") {
+        setOpen(false);
+      }
+    },
+    [getFocusableElements, setOpen]
+  );
 
   if (!open) return null;
 
@@ -99,15 +180,21 @@ function DialogContent({
     <>
       <DialogOverlay />
       <div
+        ref={contentRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         className={cn(
           "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
           className
         )}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
         {...props}
       >
         {children}
         <button
+          ref={closeButtonRef}
           type="button"
           aria-label="Close"
           className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-[hsl(var(--background))] transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:pointer-events-none"

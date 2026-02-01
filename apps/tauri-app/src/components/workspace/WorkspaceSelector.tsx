@@ -6,6 +6,7 @@ import {
   useDefaultWorkspaceId,
   useCreateWorkspace,
 } from "@/hooks/useWorkspaces";
+import { notify } from "@/stores/notificationStore";
 import type { Workspace } from "@/api/types";
 
 interface WorkspaceSelectorProps {
@@ -55,8 +56,9 @@ export function WorkspaceSelector({ collapsed = false }: WorkspaceSelectorProps)
       setNewWorkspaceName("");
       setIsCreating(false);
       setIsOpen(false);
-    } catch {
-      // Error handling is done by react-query
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Please try again.";
+      notify.error("Failed to create workspace", message);
     }
   };
 
