@@ -1,11 +1,10 @@
 [package]
 name = "tauri-app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "DeliDev - AI Coding Agent Orchestrator"
+authors = ["DeliDev Team"]
+edition = "2024"
+publish = false
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -18,8 +17,44 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# Tauri
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+
+# Workspace crates
+entities = { path = "../../../crates/entities" }
+rpc_protocol = { path = "../../../crates/rpc_protocol" }
+task_store = { path = "../../../crates/task_store" }
+auth = { path = "../../../crates/auth" }
+secrets = { path = "../../../crates/secrets" }
+git_ops = { path = "../../../crates/git_ops" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Configuration
+dirs = "5"
+
+# HTTP client for remote mode
+reqwest = { version = "0.12", features = ["json"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
 
