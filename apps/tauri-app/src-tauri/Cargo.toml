@@ -3,7 +3,7 @@ name = "tauri-app"
 version = "0.1.0"
 description = "DeliDev - AI Coding Agent Orchestrator"
 authors = ["DeliDev Team"]
-edition = "2024"
+edition = "2021"
 publish = false
 
 [lib]
@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Tauri
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
@@ -57,4 +57,11 @@ reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[features]
+default = []
+# Enable devtools for debugging (should only be enabled in development).
+# For development: cargo build --features devtools
+# For production: cargo build --release
+devtools = ["tauri/devtools"]
 

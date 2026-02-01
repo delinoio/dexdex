@@ -197,3 +197,148 @@ pub fn settings_to_config(settings: &GlobalSettings) -> ConfigFile {
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_mode_default() {
+        let mode = AppMode::default();
+        assert_eq!(mode, AppMode::Local);
+    }
+
+    #[test]
+    fn test_app_mode_serialization() {
+        let mode = AppMode::Remote;
+        let json = serde_json::to_string(&mode).unwrap();
+        assert_eq!(json, "\"remote\"");
+
+        let mode = AppMode::Local;
+        let json = serde_json::to_string(&mode).unwrap();
+        assert_eq!(json, "\"local\"");
+    }
+
+    #[test]
+    fn test_app_mode_deserialization() {
+        let mode: AppMode = serde_json::from_str("\"local\"").unwrap();
+        assert_eq!(mode, AppMode::Local);
+
+        let mode: AppMode = serde_json::from_str("\"remote\"").unwrap();
+        assert_eq!(mode, AppMode::Remote);
+    }
+
+    #[test]
+    fn test_global_settings_default() {
+        let settings = GlobalSettings::default();
+        assert_eq!(settings.mode, AppMode::Local);
+        assert!(settings.server_url.is_none());
+        assert!(settings.notifications_enabled);
+        assert_eq!(settings.default_agent_type, "claude_code");
+        assert!(settings.default_agent_model.is_none());
+    }
+
+    #[test]
+    fn test_repository_settings_default() {
+        let settings = RepositorySettings::default();
+        assert!(settings.branch_template.is_none());
+        assert!(!settings.auto_fix_review_comments);
+        assert!(!settings.auto_fix_ci_failures);
+        assert_eq!(settings.max_auto_fix_retries, 0);
+    }
+
+    #[test]
+    fn test_config_to_settings_empty() {
+        let config = ConfigFile::default();
+        let settings = config_to_settings(&config);
+        assert_eq!(settings.mode, AppMode::Local);
+        assert!(settings.notifications_enabled);
+    }
+
+    #[test]
+    fn test_config_to_settings_with_mode() {
+        let config = ConfigFile {
+            mode: Some(ModeConfig {
+                mode: Some(AppMode::Remote),
+                server_url: Some("https://example.com".to_string()),
+            }),
+            ..Default::default()
+        };
+        let settings = config_to_settings(&config);
+        assert_eq!(settings.mode, AppMode::Remote);
+        assert_eq!(settings.server_url, Some("https://example.com".to_string()));
+    }
+
+    #[test]
+    fn test_config_to_settings_with_notifications() {
+        let config = ConfigFile {
+            notifications: Some(NotificationsConfig { enabled: Some(false) }),
+            ..Default::default()
+        };
+        let settings = config_to_settings(&config);
+        assert!(!settings.notifications_enabled);
+    }
+
+    #[test]
+    fn test_config_to_settings_with_agent() {
+        let config = ConfigFile {
+            agent: Some(AgentConfig {
+                default_type: Some("custom_agent".to_string()),
+                default_model: Some("gpt-4".to_string()),
+            }),
+            ..Default::default()
+        };
+        let settings = config_to_settings(&config);
+        assert_eq!(settings.default_agent_type, "custom_agent");
+        assert_eq!(settings.default_agent_model, Some("gpt-4".to_string()));
+    }
+
+    #[test]
+    fn test_settings_to_config_roundtrip() {
+        let original = GlobalSettings {
+            mode: AppMode::Remote,
+            server_url: Some("https://test.com".to_string()),
+            hotkey: "Ctrl+Space".to_string(),
+            notifications_enabled: false,
+            default_agent_type: "test_agent".to_string(),
+            default_agent_model: Some("test-model".to_string()),
+        };
+
+        let config = settings_to_config(&original);
+        let result = config_to_settings(&config);
+
+        assert_eq!(result.mode, original.mode);
+        assert_eq!(result.server_url, original.server_url);
+        assert_eq!(result.hotkey, original.hotkey);
+        assert_eq!(result.notifications_enabled, original.notifications_enabled);
+        assert_eq!(result.default_agent_type, original.default_agent_type);
+        assert_eq!(result.default_agent_model, original.default_agent_model);
+    }
+
+    #[test]
+    fn test_config_file_toml_serialization() {
+        let config = ConfigFile {
+            mode: Some(ModeConfig {
+                mode: Some(AppMode::Local),
+                server_url: None,
+            }),
+            hotkey: Some(HotkeyConfig {
+                open_chat: Some("Alt+Z".to_string()),
+            }),
+            notifications: Some(NotificationsConfig { enabled: Some(true) }),
+            agent: Some(AgentConfig {
+                default_type: Some("claude_code".to_string()),
+                default_model: None,
+            }),
+        };
+
+        let toml_str = toml::to_string(&config).unwrap();
+        let parsed: ConfigFile = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.mode.unwrap().mode, Some(AppMode::Local));
+        assert_eq!(
+            parsed.hotkey.unwrap().open_chat,
+            Some("Alt+Z".to_string())
+        );
+    }
+}

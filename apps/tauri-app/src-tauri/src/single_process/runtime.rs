@@ -2,6 +2,16 @@
 //!
 //! This module provides an embedded server and worker that run in the same process
 //! as the Tauri app, using direct function calls instead of network communication.
+//!
+//! # Data Persistence
+//!
+//! **Important:** The current implementation uses an in-memory task store, which means
+//! all task data is ephemeral and will be lost when the application is closed or restarted.
+//! This is suitable for development and testing purposes.
+//!
+//! For production use cases requiring data persistence across sessions, the task store
+//! implementation should be changed to use SQLite storage (via the `SqliteTaskStore`
+//! implementation in the `task_store` crate).
 
 use std::sync::Arc;
 
@@ -26,6 +36,8 @@ impl SingleProcessRuntime {
         info!("Initializing single-process runtime");
 
         // Create task store (using memory store for now, can be switched to SQLite)
+        // WARNING: Data is ephemeral - all tasks are lost on application restart.
+        // TODO: Implement SQLite persistence for production use.
         let task_store = Arc::new(MemoryTaskStore::new());
 
         // Create default workspace for single-user mode

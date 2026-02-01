@@ -72,7 +72,9 @@ pub fn send_notification(
 }
 
 /// Sends a TTY input request notification.
-#[allow(dead_code)]
+///
+/// This function is part of the public notification API and will be called
+/// by task handlers when a TTY input is requested from the user.
 pub fn send_tty_input_notification(
     app: &AppHandle,
     task_type: TaskType,
@@ -95,7 +97,9 @@ pub fn send_tty_input_notification(
 }
 
 /// Sends a task review ready notification.
-#[allow(dead_code)]
+///
+/// This function is part of the public notification API and will be called
+/// when a task transitions to a reviewable state.
 pub fn send_task_review_notification(
     app: &AppHandle,
     task_type: TaskType,
@@ -116,7 +120,9 @@ pub fn send_task_review_notification(
 }
 
 /// Sends a plan approval notification.
-#[allow(dead_code)]
+///
+/// This function is part of the public notification API and will be called
+/// when a composite task plan is ready for user approval.
 pub fn send_plan_approval_notification(
     app: &AppHandle,
     task_id: &str,
@@ -136,7 +142,9 @@ pub fn send_plan_approval_notification(
 }
 
 /// Sends a task failed notification.
-#[allow(dead_code)]
+///
+/// This function is part of the public notification API and will be called
+/// when a task fails during execution.
 pub fn send_task_failed_notification(
     app: &AppHandle,
     task_type: TaskType,
@@ -154,4 +162,33 @@ pub fn send_task_failed_notification(
         task_type,
         task_id,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_notification_type_tty_input_title() {
+        let notification_type = NotificationType::TtyInputRequest;
+        assert_eq!(notification_type.title(), "Agent Question");
+    }
+
+    #[test]
+    fn test_notification_type_task_review_title() {
+        let notification_type = NotificationType::TaskReviewReady;
+        assert_eq!(notification_type.title(), "Task Ready for Review");
+    }
+
+    #[test]
+    fn test_notification_type_plan_approval_title() {
+        let notification_type = NotificationType::PlanApproval;
+        assert_eq!(notification_type.title(), "Plan Ready for Approval");
+    }
+
+    #[test]
+    fn test_notification_type_task_failed_title() {
+        let notification_type = NotificationType::TaskFailed;
+        assert_eq!(notification_type.title(), "Task Failed");
+    }
 }
