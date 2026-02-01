@@ -443,3 +443,160 @@ fn parse_composite_status(s: &str) -> AppResult<CompositeTaskStatus> {
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // Agent Type Parsing Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_agent_type_claude_code() {
+        assert!(matches!(
+            parse_agent_type("claude_code"),
+            Ok(AiAgentType::ClaudeCode)
+        ));
+        assert!(matches!(
+            parse_agent_type("ClaudeCode"),
+            Ok(AiAgentType::ClaudeCode)
+        ));
+        assert!(matches!(
+            parse_agent_type("CLAUDECODE"),
+            Ok(AiAgentType::ClaudeCode)
+        ));
+    }
+
+    #[test]
+    fn test_parse_agent_type_other_agents() {
+        assert!(matches!(
+            parse_agent_type("open_code"),
+            Ok(AiAgentType::OpenCode)
+        ));
+        assert!(matches!(
+            parse_agent_type("gemini_cli"),
+            Ok(AiAgentType::GeminiCli)
+        ));
+        assert!(matches!(
+            parse_agent_type("codex_cli"),
+            Ok(AiAgentType::CodexCli)
+        ));
+        assert!(matches!(parse_agent_type("aider"), Ok(AiAgentType::Aider)));
+        assert!(matches!(parse_agent_type("amp"), Ok(AiAgentType::Amp)));
+    }
+
+    #[test]
+    fn test_parse_agent_type_invalid() {
+        let result = parse_agent_type("invalid_agent");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown agent type"));
+    }
+
+    // =========================================================================
+    // Unit Task Status Parsing Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_unit_status_all_variants() {
+        assert!(matches!(
+            parse_unit_status("in_progress"),
+            Ok(UnitTaskStatus::InProgress)
+        ));
+        assert!(matches!(
+            parse_unit_status("in_review"),
+            Ok(UnitTaskStatus::InReview)
+        ));
+        assert!(matches!(
+            parse_unit_status("approved"),
+            Ok(UnitTaskStatus::Approved)
+        ));
+        assert!(matches!(
+            parse_unit_status("pr_open"),
+            Ok(UnitTaskStatus::PrOpen)
+        ));
+        assert!(matches!(
+            parse_unit_status("done"),
+            Ok(UnitTaskStatus::Done)
+        ));
+        assert!(matches!(
+            parse_unit_status("rejected"),
+            Ok(UnitTaskStatus::Rejected)
+        ));
+    }
+
+    #[test]
+    fn test_parse_unit_status_case_insensitive() {
+        assert!(matches!(
+            parse_unit_status("IN_PROGRESS"),
+            Ok(UnitTaskStatus::InProgress)
+        ));
+        assert!(matches!(
+            parse_unit_status("In_Review"),
+            Ok(UnitTaskStatus::InReview)
+        ));
+    }
+
+    #[test]
+    fn test_parse_unit_status_invalid() {
+        let result = parse_unit_status("invalid_status");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown unit task status"));
+    }
+
+    // =========================================================================
+    // Composite Task Status Parsing Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_composite_status_all_variants() {
+        assert!(matches!(
+            parse_composite_status("planning"),
+            Ok(CompositeTaskStatus::Planning)
+        ));
+        assert!(matches!(
+            parse_composite_status("pending_approval"),
+            Ok(CompositeTaskStatus::PendingApproval)
+        ));
+        assert!(matches!(
+            parse_composite_status("in_progress"),
+            Ok(CompositeTaskStatus::InProgress)
+        ));
+        assert!(matches!(
+            parse_composite_status("done"),
+            Ok(CompositeTaskStatus::Done)
+        ));
+        assert!(matches!(
+            parse_composite_status("rejected"),
+            Ok(CompositeTaskStatus::Rejected)
+        ));
+    }
+
+    #[test]
+    fn test_parse_composite_status_case_insensitive() {
+        assert!(matches!(
+            parse_composite_status("PLANNING"),
+            Ok(CompositeTaskStatus::Planning)
+        ));
+        assert!(matches!(
+            parse_composite_status("Pending_Approval"),
+            Ok(CompositeTaskStatus::PendingApproval)
+        ));
+    }
+
+    #[test]
+    fn test_parse_composite_status_invalid() {
+        let result = parse_composite_status("invalid_status");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown composite task status"));
+    }
+}

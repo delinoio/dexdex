@@ -76,23 +76,23 @@ pub async fn get_repository_settings(
 /// # Note
 ///
 /// Repository-specific settings are not yet persisted. This function currently
-/// accepts settings but does not save them to disk. Future versions will save
-/// to `.delidev/config.toml` within each repository directory.
+/// returns an error indicating the feature is not yet implemented. Future
+/// versions will save to `.delidev/config.toml` within each repository
+/// directory.
 ///
 /// See: https://github.com/delinoio/delidev/issues/52 for implementation tracking.
 #[tauri::command]
 pub async fn update_repository_settings(
     _state: State<'_, Arc<RwLock<AppState>>>,
-    _repo_id: String,
-    settings: RepositorySettings,
+    repo_id: String,
+    _settings: RepositorySettings,
 ) -> AppResult<RepositorySettings> {
-    // Note: Repository-specific settings are not yet persisted.
-    // Settings are accepted but not saved until repository config is implemented.
+    // Repository-specific settings are not yet implemented.
+    // Return an explicit error to avoid silent failures.
     // Tracked in: https://github.com/delinoio/delidev/issues/52
-    tracing::warn!(
-        "Repository settings update for {} not persisted (not yet implemented)",
-        _repo_id
-    );
-    info!("Updated repository settings (in-memory only)");
-    Ok(settings)
+    Err(crate::error::AppError::InvalidRequest(format!(
+        "Repository-specific settings for '{}' are not yet implemented. \
+         See https://github.com/delinoio/delidev/issues/52",
+        repo_id
+    )))
 }

@@ -184,13 +184,18 @@ fn validate_repository_url(url: &str) -> AppResult<()> {
 
     if !is_valid {
         return Err(AppError::InvalidRequest(format!(
-            "Invalid repository URL format: '{}'. Expected formats: https://host/path, git@host:path, git://host/path, or ssh://host/path",
+            "Invalid repository URL format: '{}'. Expected formats: https://host/path, \
+             git@host:path, git://host/path, or ssh://host/path",
             url
         )));
     }
 
     // For URL-style addresses, do basic validation
-    if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("git://") || url.starts_with("ssh://") {
+    if url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with("git://")
+        || url.starts_with("ssh://")
+    {
         // Check for host and path components
         let without_scheme = url.split("://").nth(1).unwrap_or("");
         if !without_scheme.contains('/') {
@@ -209,8 +214,7 @@ fn validate_repository_url(url: &str) -> AppResult<()> {
     }
 
     // For git@host:path style
-    if url.starts_with("git@") {
-        let without_prefix = &url[4..]; // Remove "git@"
+    if let Some(without_prefix) = url.strip_prefix("git@") {
         let parts: Vec<&str> = without_prefix.splitn(2, ':').collect();
         if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
             return Err(AppError::InvalidRequest(format!(
@@ -279,7 +283,10 @@ mod tests {
     fn test_validate_repository_url_invalid_format() {
         let result = validate_repository_url("not-a-valid-url");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid repository URL format"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid repository URL format"));
     }
 
     #[test]

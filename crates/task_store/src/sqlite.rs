@@ -194,6 +194,31 @@ impl SqliteTaskStore {
     fn serialize_uuid_vec(v: &[Uuid]) -> TaskStoreResult<String> {
         serde_json::to_string(v).map_err(TaskStoreError::Serialization)
     }
+
+    /// Appends LIMIT and OFFSET clauses to a query string.
+    ///
+    /// # Safety
+    ///
+    /// This function uses format strings to append pagination values to SQL
+    /// queries. This is safe because:
+    /// 1. The values are typed as `u32`, which can only contain numeric digits
+    /// 2. Rust's Display trait for numeric types produces digit-only output
+    /// 3. There is no way for a u32 to contain SQL injection characters
+    ///
+    /// Additionally, this function enforces reasonable bounds (max 10,000 rows)
+    /// to prevent accidental resource exhaustion.
+    fn append_pagination(query: &mut String, limit: Option<u32>, offset: Option<u32>) {
+        const MAX_LIMIT: u32 = 10_000;
+
+        if let Some(limit) = limit {
+            // Cap limit to prevent accidental resource exhaustion
+            let safe_limit = limit.min(MAX_LIMIT);
+            query.push_str(&format!(" LIMIT {}", safe_limit));
+        }
+        if let Some(offset) = offset {
+            query.push_str(&format!(" OFFSET {}", offset));
+        }
+    }
 }
 
 #[async_trait]
@@ -382,13 +407,8 @@ impl TaskStore for SqliteTaskStore {
         };
         let total: i64 = count_row.get("count");
 
-        // Add pagination
-        if let Some(limit) = filter.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = filter.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
 
         let rows = if let Some(user_id) = filter.user_id {
             sqlx::query(&query)
@@ -543,13 +563,8 @@ impl TaskStore for SqliteTaskStore {
         };
         let total: i64 = count_row.get("count");
 
-        // Add pagination
-        if let Some(limit) = filter.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = filter.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
 
         let rows = if let Some(ws_id) = filter.workspace_id {
             sqlx::query(&query)
@@ -1097,13 +1112,8 @@ impl TaskStore for SqliteTaskStore {
         let count_row = count_q.fetch_one(&self.pool).await?;
         let total: i64 = count_row.get("count");
 
-        // Add pagination
-        if let Some(limit) = filter.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = filter.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
 
         let mut q = sqlx::query(&query);
         for bind in &binds {
@@ -1281,13 +1291,8 @@ impl TaskStore for SqliteTaskStore {
         let count_row = count_q.fetch_one(&self.pool).await?;
         let total: i64 = count_row.get("count");
 
-        // Add pagination
-        if let Some(limit) = filter.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = filter.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
 
         let mut q = sqlx::query(&query);
         for bind in &binds {
@@ -1579,13 +1584,8 @@ impl TaskStore for SqliteTaskStore {
         let count_row = count_q.fetch_one(&self.pool).await?;
         let total: i64 = count_row.get("count");
 
-        // Add pagination
-        if let Some(limit) = filter.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = filter.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
 
         let mut q = sqlx::query(&query);
         for bind in &binds {
@@ -1755,13 +1755,8 @@ impl TaskStore for SqliteTaskStore {
             query.push_str(&conditions.join(" AND "));
         }
 
-        // Add pagination
-        if let Some(limit) = filter.limit {
-            query.push_str(&format!(" LIMIT {}", limit));
-        }
-        if let Some(offset) = filter.offset {
-            query.push_str(&format!(" OFFSET {}", offset));
-        }
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
 
         let mut q = sqlx::query(&query);
         for bind in &binds {
@@ -1922,5 +1917,52 @@ mod tests {
         // Delete
         store.delete_unit_task(created.id).await.unwrap();
         assert!(store.get_unit_task(created.id).await.unwrap().is_none());
+    }
+
+    // =========================================================================
+    // Pagination Helper Tests
+    // =========================================================================
+
+    #[test]
+    fn test_append_pagination_with_limit() {
+        let mut query = String::from("SELECT * FROM tasks");
+        SqliteTaskStore::append_pagination(&mut query, Some(10), None);
+        assert_eq!(query, "SELECT * FROM tasks LIMIT 10");
+    }
+
+    #[test]
+    fn test_append_pagination_with_offset() {
+        let mut query = String::from("SELECT * FROM tasks");
+        SqliteTaskStore::append_pagination(&mut query, None, Some(20));
+        assert_eq!(query, "SELECT * FROM tasks OFFSET 20");
+    }
+
+    #[test]
+    fn test_append_pagination_with_both() {
+        let mut query = String::from("SELECT * FROM tasks");
+        SqliteTaskStore::append_pagination(&mut query, Some(10), Some(20));
+        assert_eq!(query, "SELECT * FROM tasks LIMIT 10 OFFSET 20");
+    }
+
+    #[test]
+    fn test_append_pagination_with_none() {
+        let mut query = String::from("SELECT * FROM tasks");
+        SqliteTaskStore::append_pagination(&mut query, None, None);
+        assert_eq!(query, "SELECT * FROM tasks");
+    }
+
+    #[test]
+    fn test_append_pagination_caps_limit() {
+        let mut query = String::from("SELECT * FROM tasks");
+        // Request limit higher than MAX_LIMIT (10,000)
+        SqliteTaskStore::append_pagination(&mut query, Some(20_000), None);
+        assert_eq!(query, "SELECT * FROM tasks LIMIT 10000");
+    }
+
+    #[test]
+    fn test_append_pagination_allows_reasonable_limit() {
+        let mut query = String::from("SELECT * FROM tasks");
+        SqliteTaskStore::append_pagination(&mut query, Some(100), None);
+        assert_eq!(query, "SELECT * FROM tasks LIMIT 100");
     }
 }
