@@ -56,7 +56,22 @@ impl GlobalConfig {
     }
 
     /// Saves global configuration to a file.
+    ///
+    /// The path must be within the DeliDev configuration directory (`~/.delidev`)
+    /// to prevent path traversal attacks.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        // Validate path is within the config directory
+        crate::validate_config_path(path)?;
+        self.save_unchecked(path)
+    }
+
+    /// Saves global configuration to a file without path validation.
+    ///
+    /// # Safety
+    /// This method bypasses path validation. Only use this in test code
+    /// or when you have already validated the path.
+    #[doc(hidden)]
+    pub fn save_unchecked(&self, path: &Path) -> Result<(), ConfigError> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| ConfigError::WriteFile {
@@ -371,7 +386,7 @@ openChat = "Meta+Z"
             open_chat: "Ctrl+K".to_string(),
         });
 
-        config.save(&path).unwrap();
+        config.save_unchecked(&path).unwrap();
 
         let loaded = GlobalConfig::load(&path).unwrap();
         assert_eq!(loaded.hotkey.unwrap().open_chat, "Ctrl+K");

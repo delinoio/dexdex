@@ -62,8 +62,9 @@ pub async fn get_repository_settings(
     let state = state.read().await;
 
     // Parse the repo_id as UUID
-    let repo_uuid = Uuid::parse_str(&repo_id)
-        .map_err(|_| AppError::InvalidRequest(format!("Invalid repository ID: {}", repo_id)))?;
+    let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
+        AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
+    })?;
 
     // Get the repository from the task store to find its path
     let task_store = state.task_store()?;
@@ -72,20 +73,28 @@ pub async fn get_repository_settings(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Load repository settings from the repo path
-    // The remote_url is used to find the local clone path
-    // For now, we try to find a local directory that matches
-    // TODO: Store local_path in repository entity or use git_ops to locate
-    let repo_path = std::path::Path::new(&repo.remote_url);
-    if repo_path.exists() {
-        load_repository_settings(repo_path)
-    } else {
-        // If we can't find the local path, return defaults
-        tracing::debug!(
-            "Repository local path not found for {}, returning default settings",
-            repo_id
-        );
-        Ok(RepositorySettings::default())
+    // Load repository settings from the local path
+    match &repo.local_path {
+        Some(local_path) => {
+            let repo_path = std::path::Path::new(local_path);
+            if repo_path.exists() {
+                load_repository_settings(repo_path)
+            } else {
+                tracing::debug!(
+                    "Repository local path '{}' does not exist for {}, returning default settings",
+                    local_path,
+                    repo_id
+                );
+                Ok(RepositorySettings::default())
+            }
+        }
+        None => {
+            tracing::debug!(
+                "Repository local path not configured for {}, returning default settings",
+                repo_id
+            );
+            Ok(RepositorySettings::default())
+        }
     }
 }
 
@@ -101,8 +110,9 @@ pub async fn update_repository_settings(
     let state = state.read().await;
 
     // Parse the repo_id as UUID
-    let repo_uuid = Uuid::parse_str(&repo_id)
-        .map_err(|_| AppError::InvalidRequest(format!("Invalid repository ID: {}", repo_id)))?;
+    let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
+        AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
+    })?;
 
     // Get the repository from the task store to find its path
     let task_store = state.task_store()?;
@@ -111,16 +121,24 @@ pub async fn update_repository_settings(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Save repository settings to the repo path
-    let repo_path = std::path::Path::new(&repo.remote_url);
-    if repo_path.exists() {
-        save_repository_settings(repo_path, &settings)?;
-        info!("Updated repository settings for {}", repo_id);
-        Ok(settings)
-    } else {
-        Err(AppError::InvalidRequest(format!(
-            "Repository local path not found for '{}'. Cannot save settings.",
+    // Save repository settings to the local path
+    match &repo.local_path {
+        Some(local_path) => {
+            let repo_path = std::path::Path::new(local_path);
+            if repo_path.exists() {
+                save_repository_settings(repo_path, &settings)?;
+                info!("Updated repository settings for {}", repo_id);
+                Ok(settings)
+            } else {
+                Err(AppError::InvalidRequest(format!(
+                    "Repository local path '{}' does not exist. Cannot save settings.",
+                    local_path
+                )))
+            }
+        }
+        None => Err(AppError::InvalidRequest(format!(
+            "Repository local path not configured for '{}'. Cannot save settings.",
             repo_id
-        )))
+        ))),
     }
 }

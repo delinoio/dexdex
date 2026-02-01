@@ -17,6 +17,57 @@ pub use repository::*;
 
 use std::path::{Path, PathBuf};
 
+/// Validates that a path is within the DeliDev configuration directory.
+///
+/// This prevents path traversal attacks where an attacker could manipulate
+/// a path to write files outside the expected directory.
+pub fn validate_config_path(path: &Path) -> Result<(), ConfigError> {
+    let config_dir = config_dir().ok_or(ConfigError::ConfigDirNotFound)?;
+
+    // Canonicalize the config directory
+    let canonical_config_dir = config_dir
+        .canonicalize()
+        .or_else(|_| {
+            // If config dir doesn't exist yet, use the path as-is
+            Ok::<PathBuf, std::io::Error>(config_dir.clone())
+        })
+        .map_err(|e| ConfigError::ReadFile {
+            path: config_dir.clone(),
+            source: e,
+        })?;
+
+    // Canonicalize the target path (or its parent if it doesn't exist yet)
+    let canonical_path = if path.exists() {
+        path.canonicalize().map_err(|e| ConfigError::ReadFile {
+            path: path.to_path_buf(),
+            source: e,
+        })?
+    } else if let Some(parent) = path.parent() {
+        if parent.exists() {
+            let canonical_parent = parent.canonicalize().map_err(|e| ConfigError::ReadFile {
+                path: parent.to_path_buf(),
+                source: e,
+            })?;
+            canonical_parent.join(path.file_name().unwrap_or_default())
+        } else {
+            // If parent doesn't exist, check the path components manually
+            path.to_path_buf()
+        }
+    } else {
+        path.to_path_buf()
+    };
+
+    // Check if the path starts with the config directory
+    if !canonical_path.starts_with(&canonical_config_dir) {
+        return Err(ConfigError::PathTraversal {
+            path: path.to_path_buf(),
+            allowed_dir: config_dir,
+        });
+    }
+
+    Ok(())
+}
+
 /// Returns the default DeliDev configuration directory path.
 ///
 /// On Unix-like systems: `~/.delidev`
@@ -87,13 +138,24 @@ impl MergedConfig {
         let repo = repo.unwrap_or(&default_repo);
 
         // Learning: repo takes precedence if set
+        let repo_auto_learn = repo
+            .learning
+            .as_ref()
+            .and_then(|l| l.auto_learn_from_reviews);
+        let global_auto_learn = global
+            .learning
+            .as_ref()
+            .and_then(|l| l.auto_learn_from_reviews);
+        let default_auto_learn = default_global
+            .learning
+            .as_ref()
+            .and_then(|l| l.auto_learn_from_reviews)
+            .unwrap_or(false);
+
         let learning = LearningSettings {
-            auto_learn_from_reviews: repo
-                .learning
-                .as_ref()
-                .and_then(|l| l.auto_learn_from_reviews)
-                .or(global.learning.as_ref().and_then(|l| l.auto_learn_from_reviews))
-                .unwrap_or(default_global.learning.as_ref().map(|l| l.auto_learn_from_reviews.unwrap_or(false)).unwrap_or(false)),
+            auto_learn_from_reviews: repo_auto_learn
+                .or(global_auto_learn)
+                .unwrap_or(default_auto_learn),
         };
 
         // Composite task: repo takes precedence if set

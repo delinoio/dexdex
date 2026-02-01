@@ -17,6 +17,11 @@ pub struct Repository {
     pub name: String,
     /// Remote URL.
     pub remote_url: String,
+    /// Local filesystem path to the repository clone.
+    ///
+    /// This is the path where the repository is cloned on the local machine.
+    /// If `None`, the repository has not been cloned yet.
+    pub local_path: Option<String>,
     /// Default branch name.
     pub default_branch: String,
     /// Version control system type.
@@ -43,6 +48,7 @@ impl Repository {
             workspace_id,
             name: name.into(),
             remote_url: remote_url.into(),
+            local_path: None,
             default_branch: "main".to_string(),
             vcs_type: VcsType::Git,
             vcs_provider_type,
@@ -54,6 +60,12 @@ impl Repository {
     /// Sets the default branch.
     pub fn with_default_branch(mut self, branch: impl Into<String>) -> Self {
         self.default_branch = branch.into();
+        self
+    }
+
+    /// Sets the local path.
+    pub fn with_local_path(mut self, path: impl Into<String>) -> Self {
+        self.local_path = Some(path.into());
         self
     }
 

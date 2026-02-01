@@ -65,7 +65,7 @@ impl RepositoryConfig {
 
 /// Branch naming configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct BranchSettings {
     /// Template for branch names.
     ///

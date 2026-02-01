@@ -49,4 +49,13 @@ pub enum ConfigError {
         /// Description of why the value is invalid.
         message: String,
     },
+
+    /// Path is outside the allowed directory.
+    #[error("path {path} is outside the allowed directory {allowed_dir}")]
+    PathTraversal {
+        /// The path that is outside the allowed directory.
+        path: PathBuf,
+        /// The allowed directory.
+        allowed_dir: PathBuf,
+    },
 }

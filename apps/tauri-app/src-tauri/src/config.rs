@@ -81,7 +81,7 @@ impl GlobalSettings {
 
         if let Some(agent) = &config.agent {
             if let Some(execution) = &agent.execution {
-                settings.default_agent_type = format!("{:?}", execution.agent_type).to_lowercase();
+                settings.default_agent_type = execution.agent_type.as_str().to_string();
                 settings.default_agent_model = Some(execution.model.clone());
             }
         }
@@ -100,10 +100,25 @@ pub struct RepositorySettings {
     pub branch_template: Option<String>,
     /// Whether auto-fix for review comments is enabled.
     pub auto_fix_review_comments: bool,
+    /// Filter for which review comments should trigger auto-fix.
+    pub auto_fix_review_comments_filter: ReviewCommentFilterSetting,
     /// Whether auto-fix for CI failures is enabled.
     pub auto_fix_ci_failures: bool,
     /// Maximum retry attempts for auto-fix.
     pub max_auto_fix_retries: u32,
+}
+
+/// Review comment filter setting (frontend-friendly version).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewCommentFilterSetting {
+    /// Only auto-fix comments from users with write access.
+    #[default]
+    WriteAccessOnly,
+    /// Auto-fix comments from any user.
+    All,
+    /// Only auto-fix comments from repository maintainers.
+    MaintainersOnly,
 }
 
 impl RepositorySettings {
@@ -117,11 +132,33 @@ impl RepositorySettings {
 
         if let Some(automation) = &config.automation {
             settings.auto_fix_review_comments = automation.auto_fix_review_comments;
+            settings.auto_fix_review_comments_filter =
+                ReviewCommentFilterSetting::from(automation.auto_fix_review_comments_filter);
             settings.auto_fix_ci_failures = automation.auto_fix_ci_failures;
             settings.max_auto_fix_retries = automation.max_auto_fix_attempts;
         }
 
         settings
+    }
+}
+
+impl From<ReviewCommentFilter> for ReviewCommentFilterSetting {
+    fn from(filter: ReviewCommentFilter) -> Self {
+        match filter {
+            ReviewCommentFilter::WriteAccessOnly => Self::WriteAccessOnly,
+            ReviewCommentFilter::All => Self::All,
+            ReviewCommentFilter::MaintainersOnly => Self::MaintainersOnly,
+        }
+    }
+}
+
+impl From<ReviewCommentFilterSetting> for ReviewCommentFilter {
+    fn from(filter: ReviewCommentFilterSetting) -> Self {
+        match filter {
+            ReviewCommentFilterSetting::WriteAccessOnly => Self::WriteAccessOnly,
+            ReviewCommentFilterSetting::All => Self::All,
+            ReviewCommentFilterSetting::MaintainersOnly => Self::MaintainersOnly,
+        }
     }
 }
 
@@ -300,7 +337,7 @@ pub fn save_repository_settings(
 
     repo_config.automation = Some(AutomationSettings {
         auto_fix_review_comments: settings.auto_fix_review_comments,
-        auto_fix_review_comments_filter: ReviewCommentFilter::WriteAccessOnly,
+        auto_fix_review_comments_filter: settings.auto_fix_review_comments_filter.into(),
         auto_fix_ci_failures: settings.auto_fix_ci_failures,
         max_auto_fix_attempts: settings.max_auto_fix_retries,
     });
