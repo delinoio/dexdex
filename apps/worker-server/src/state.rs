@@ -1,12 +1,11 @@
 //! Worker server application state.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use std::{collections::HashMap, sync::Arc};
+
+use tokio::sync::{Mutex, RwLock, mpsc};
 use uuid::Uuid;
 
-use crate::config::WorkerConfig;
-use crate::docker::DockerManager;
+use crate::{config::WorkerConfig, docker::DockerManager};
 
 /// Worker status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,7 +1,6 @@
 //! DeliDev Worker Server entry point.
 
 use tracing_subscriber::EnvFilter;
-
 use worker_server::config::WorkerConfig;
 
 #[tokio::main]

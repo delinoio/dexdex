@@ -2,16 +2,21 @@
 //!
 //! Gemini CLI is Google's open-source AI agent that outputs text format.
 
+use std::process::Stdio;
+
 use async_trait::async_trait;
 use entities::AiAgentType;
 use regex::Regex;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+    sync::mpsc,
+};
 use tracing::{debug, error, warn};
 
-use crate::{Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler};
+use crate::{
+    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler,
+};
 
 /// Gemini CLI agent.
 #[derive(Debug)]
@@ -34,9 +39,16 @@ impl GeminiCliAgent {
     /// Creates a new Gemini CLI agent.
     pub fn new() -> Self {
         Self {
-            file_regex: Regex::new(r"(?:Writing|Creating|Modifying|Editing)\s+(?:file\s+)?[`']?([^`'\s]+)[`']?").unwrap(),
-            command_regex: Regex::new(r"(?:Running|Executing|>\s*)\s*[`']?([^`'\n]+)[`']?").unwrap(),
-            question_regex: Regex::new(r"(?:\?\s*$|(?:Do you want|Would you like|Should I|Continue\?|Proceed\?))").unwrap(),
+            file_regex: Regex::new(
+                r"(?:Writing|Creating|Modifying|Editing)\s+(?:file\s+)?[`']?([^`'\s]+)[`']?",
+            )
+            .unwrap(),
+            command_regex: Regex::new(r"(?:Running|Executing|>\s*)\s*[`']?([^`'\n]+)[`']?")
+                .unwrap(),
+            question_regex: Regex::new(
+                r"(?:\?\s*$|(?:Do you want|Would you like|Should I|Continue\?|Proceed\?))",
+            )
+            .unwrap(),
         }
     }
 
@@ -50,22 +62,26 @@ impl GeminiCliAgent {
         }
 
         // Check for file operations
-        if let Some(caps) = self.file_regex.captures(trimmed) {
-            if let Some(path) = caps.get(1) {
-                let change_type = if trimmed.contains("Creating") || trimmed.contains("Writing") {
-                    FileChangeType::Create
-                } else {
-                    FileChangeType::Modify
-                };
-                events.push(NormalizedEvent::file_change(path.as_str(), change_type, None));
-            }
+        if let Some(caps) = self.file_regex.captures(trimmed)
+            && let Some(path) = caps.get(1)
+        {
+            let change_type = if trimmed.contains("Creating") || trimmed.contains("Writing") {
+                FileChangeType::Create
+            } else {
+                FileChangeType::Modify
+            };
+            events.push(NormalizedEvent::file_change(
+                path.as_str(),
+                change_type,
+                None,
+            ));
         }
 
         // Check for command execution
-        if let Some(caps) = self.command_regex.captures(trimmed) {
-            if let Some(cmd) = caps.get(1) {
-                events.push(NormalizedEvent::command(cmd.as_str(), None, None));
-            }
+        if let Some(caps) = self.command_regex.captures(trimmed)
+            && let Some(cmd) = caps.get(1)
+        {
+            events.push(NormalizedEvent::command(cmd.as_str(), None, None));
         }
 
         // Check for questions (TTY input)
@@ -142,7 +158,10 @@ impl Agent for GeminiCliAgent {
             .ok_or_else(|| AgentError::Config("Failed to capture stdin".into()))?;
 
         let _ = event_tx
-            .send(NormalizedEvent::session_start("gemini_cli", config.model.clone()))
+            .send(NormalizedEvent::session_start(
+                "gemini_cli",
+                config.model.clone(),
+            ))
             .await;
 
         let event_tx_clone = event_tx.clone();
@@ -162,27 +181,27 @@ impl Agent for GeminiCliAgent {
                             ref question,
                             ref options,
                         } = event
+                            && let Some(ref handler) = tty_handler
                         {
-                            if let Some(ref handler) = tty_handler {
-                                match handler.handle_input(question, options.as_deref()).await {
-                                    Ok(response) => {
-                                        let mut stdin_guard = stdin.lock().await;
-                                        if let Err(e) = stdin_guard.write_all(response.as_bytes()).await {
-                                            error!("Failed to write to stdin: {}", e);
-                                        }
-                                        if let Err(e) = stdin_guard.write_all(b"\n").await {
-                                            error!("Failed to write newline: {}", e);
-                                        }
-                                        if let Err(e) = stdin_guard.flush().await {
-                                            error!("Failed to flush stdin: {}", e);
-                                        }
-                                        let _ = event_tx_clone
-                                            .send(NormalizedEvent::user_response(&response))
-                                            .await;
+                            match handler.handle_input(question, options.as_deref()).await {
+                                Ok(response) => {
+                                    let mut stdin_guard = stdin.lock().await;
+                                    if let Err(e) = stdin_guard.write_all(response.as_bytes()).await
+                                    {
+                                        error!("Failed to write to stdin: {}", e);
                                     }
-                                    Err(e) => {
-                                        warn!("TTY handler failed: {}", e);
+                                    if let Err(e) = stdin_guard.write_all(b"\n").await {
+                                        error!("Failed to write newline: {}", e);
                                     }
+                                    if let Err(e) = stdin_guard.flush().await {
+                                        error!("Failed to flush stdin: {}", e);
+                                    }
+                                    let _ = event_tx_clone
+                                        .send(NormalizedEvent::user_response(&response))
+                                        .await;
+                                }
+                                Err(e) => {
+                                    warn!("TTY handler failed: {}", e);
                                 }
                             }
                         }
@@ -213,7 +232,9 @@ impl Agent for GeminiCliAgent {
         } else {
             Some(format!("Process exited with code {:?}", status.code()))
         };
-        let _ = event_tx.send(NormalizedEvent::session_end(success, error.clone())).await;
+        let _ = event_tx
+            .send(NormalizedEvent::session_end(success, error.clone()))
+            .await;
 
         if success {
             Ok(())

@@ -14,16 +14,14 @@ pub mod state;
 use std::sync::Arc;
 
 use axum::Router;
-use tokio::sync::mpsc;
-use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
-use tracing::{error, info, warn};
-
 use client::MainServerClient;
 use config::WorkerConfig;
 use error::WorkerResult;
 use executor::TaskExecutor;
 use state::{AppState, WorkerStatus};
+use tokio::sync::mpsc;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tracing::{error, info, warn};
 
 /// Runs the heartbeat loop.
 async fn run_heartbeat_loop(client: Arc<MainServerClient>, interval_secs: u64) {

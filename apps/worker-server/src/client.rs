@@ -1,14 +1,15 @@
 //! Main server client for worker communication.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::error::{WorkerError, WorkerResult};
-use crate::state::AppState;
+use crate::{
+    error::{WorkerError, WorkerResult},
+    state::AppState,
+};
 
 /// Task assignment from main server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,13 +144,7 @@ impl MainServerClient {
             "current_task_id": current_task_id,
         });
 
-        let response = self
-            .state
-            .http_client
-            .post(&url)
-            .json(&body)
-            .send()
-            .await?;
+        let response = self.state.http_client.post(&url).json(&body).send().await?;
 
         if !response.status().is_success() {
             warn!(

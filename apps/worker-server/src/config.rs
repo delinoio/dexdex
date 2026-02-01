@@ -42,8 +42,7 @@ impl Default for WorkerConfig {
             log_level: "info".to_string(),
             heartbeat_interval_secs: 30,
             default_docker_image: "node:20-slim".to_string(),
-            workdir: std::env::var("HOME")
-                .unwrap_or_else(|_| "/tmp".to_string())
+            workdir: std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
                 + "/.delidev/worktrees",
         }
     }
@@ -62,8 +61,7 @@ impl WorkerConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(default.worker_port),
-            docker_socket: std::env::var("DELIDEV_DOCKER_SOCKET")
-                .unwrap_or(default.docker_socket),
+            docker_socket: std::env::var("DELIDEV_DOCKER_SOCKET").unwrap_or(default.docker_socket),
             container_memory_limit: std::env::var("DELIDEV_CONTAINER_MEMORY_LIMIT")
                 .unwrap_or(default.container_memory_limit),
             container_cpu_limit: std::env::var("DELIDEV_CONTAINER_CPU_LIMIT")

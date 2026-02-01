@@ -20,11 +20,8 @@ pub trait TtyInputHandler: Send + Sync {
     ///
     /// # Returns
     /// The user's response as a string.
-    async fn handle_input(
-        &self,
-        question: &str,
-        options: Option<&[String]>,
-    ) -> AgentResult<String>;
+    async fn handle_input(&self, question: &str, options: Option<&[String]>)
+    -> AgentResult<String>;
 }
 
 /// Configuration for running an AI coding agent.

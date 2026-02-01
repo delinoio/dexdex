@@ -268,11 +268,8 @@ mod tests {
 
     #[test]
     fn test_file_change_types() {
-        let create = NormalizedEvent::file_change(
-            "test.rs",
-            FileChangeType::Create,
-            Some("content".into()),
-        );
+        let create =
+            NormalizedEvent::file_change("test.rs", FileChangeType::Create, Some("content".into()));
         assert!(matches!(
             create,
             NormalizedEvent::FileChange {

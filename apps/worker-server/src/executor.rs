@@ -1,19 +1,19 @@
 //! Task execution pipeline.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc};
 
 use async_trait::async_trait;
 use coding_agents::{AgentConfig, AgentResult, NormalizedEvent, TtyInputHandler};
 use entities::AiAgentType;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::client::{MainServerClient, TaskAssignment, TaskStatusUpdate, TtyInputRequest};
-use crate::error::{WorkerError, WorkerResult};
-use crate::state::{AppState, RunningTask, WorkerStatus};
+use crate::{
+    client::{MainServerClient, TaskAssignment, TaskStatusUpdate, TtyInputRequest},
+    error::{WorkerError, WorkerResult},
+    state::{AppState, RunningTask, WorkerStatus},
+};
 
 /// TTY input handler that forwards requests to the main server.
 pub struct RemoteTtyHandler {
@@ -71,10 +71,7 @@ impl TtyInputHandler for RemoteTtyHandler {
             ));
         }
 
-        info!(
-            "Waiting for TTY input response for request {}",
-            request_id
-        );
+        info!("Waiting for TTY input response for request {}", request_id);
 
         // Wait for response
         match rx.recv().await {
@@ -225,12 +222,7 @@ impl TaskExecutor {
 
         // 5. Execute agent in container
         let agent_result = self
-            .execute_agent_in_container(
-                &container_id,
-                task,
-                secrets,
-                output.clone(),
-            )
+            .execute_agent_in_container(&container_id, task, secrets, output.clone())
             .await;
 
         // 6. Get end commit (if successful)
@@ -283,12 +275,15 @@ impl TaskExecutor {
     }
 
     /// Gets or builds the Docker image for the task.
-    async fn get_or_build_image(&self, worktree_path: &PathBuf) -> WorkerResult<String> {
+    async fn get_or_build_image(&self, worktree_path: &Path) -> WorkerResult<String> {
         use crate::docker::DockerManager;
 
         if DockerManager::has_custom_dockerfile(worktree_path) {
             let tag = format!("delidev-custom:{}", Uuid::new_v4());
-            self.state.docker.build_custom_image(worktree_path, &tag).await?;
+            self.state
+                .docker
+                .build_custom_image(worktree_path, &tag)
+                .await?;
             Ok(tag)
         } else {
             Ok(self.state.config.default_docker_image.clone())
@@ -308,7 +303,11 @@ impl TaskExecutor {
 
         // Build agent command
         let agent = coding_agents::create_agent(agent_type);
-        let config = AgentConfig::new(agent_type, format!("/workspace/{}", repo_name), &task.prompt);
+        let config = AgentConfig::new(
+            agent_type,
+            format!("/workspace/{}", repo_name),
+            &task.prompt,
+        );
 
         let args = agent.args(&config);
         let mut cmd = vec![agent.command()];
@@ -354,10 +353,14 @@ impl TaskExecutor {
                 // This would be handled by the TTY handler if we were streaming
                 debug!("Options: {:?}", options);
             }
-            NormalizedEvent::FileChange { path, change_type, .. } => {
+            NormalizedEvent::FileChange {
+                path, change_type, ..
+            } => {
                 debug!("File changed: {} ({:?})", path, change_type);
             }
-            NormalizedEvent::CommandExecution { command, exit_code, .. } => {
+            NormalizedEvent::CommandExecution {
+                command, exit_code, ..
+            } => {
                 debug!("Command executed: {} (exit: {:?})", command, exit_code);
             }
             NormalizedEvent::ErrorOutput { content } => {
@@ -427,13 +430,7 @@ mod tests {
             extract_repo_name("https://github.com/user/repo.git"),
             "repo"
         );
-        assert_eq!(
-            extract_repo_name("git@github.com:user/repo.git"),
-            "repo"
-        );
-        assert_eq!(
-            extract_repo_name("https://github.com/user/repo"),
-            "repo"
-        );
+        assert_eq!(extract_repo_name("git@github.com:user/repo.git"), "repo");
+        assert_eq!(extract_repo_name("https://github.com/user/repo"), "repo");
     }
 }

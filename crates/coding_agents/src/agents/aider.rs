@@ -2,16 +2,21 @@
 //!
 //! Aider is an open-source CLI for multi-file changes that outputs text format.
 
+use std::process::Stdio;
+
 use async_trait::async_trait;
 use entities::AiAgentType;
 use regex::Regex;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+    sync::mpsc,
+};
 use tracing::{debug, error, warn};
 
-use crate::{Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler};
+use crate::{
+    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler,
+};
 
 /// Aider agent.
 #[derive(Debug)]
@@ -34,9 +39,15 @@ impl AiderAgent {
     /// Creates a new Aider agent.
     pub fn new() -> Self {
         Self {
-            file_regex: Regex::new(r"(?:Wrote|Applied\s+\w+\s+to|Modified|Edited|Created)\s+[`']?([^`'\s]+)[`']?").unwrap(),
+            file_regex: Regex::new(
+                r"(?:Wrote|Applied\s+\w+\s+to|Modified|Edited|Created)\s+[`']?([^`'\s]+)[`']?",
+            )
+            .unwrap(),
             git_regex: Regex::new(r"(?:Commit|commit)\s+([a-f0-9]{7,40})").unwrap(),
-            question_regex: Regex::new(r"(?:\?\s*$|(?:Do you want|Would you like|Should I|Continue\?|y/n|Y/n))").unwrap(),
+            question_regex: Regex::new(
+                r"(?:\?\s*$|(?:Do you want|Would you like|Should I|Continue\?|y/n|Y/n))",
+            )
+            .unwrap(),
         }
     }
 
@@ -50,20 +61,28 @@ impl AiderAgent {
         }
 
         // Check for file operations
-        if let Some(caps) = self.file_regex.captures(trimmed) {
-            if let Some(path) = caps.get(1) {
-                let change_type = if trimmed.contains("Created") {
-                    FileChangeType::Create
-                } else {
-                    FileChangeType::Modify
-                };
-                events.push(NormalizedEvent::file_change(path.as_str(), change_type, None));
-            }
+        if let Some(caps) = self.file_regex.captures(trimmed)
+            && let Some(path) = caps.get(1)
+        {
+            let change_type = if trimmed.contains("Created") {
+                FileChangeType::Create
+            } else {
+                FileChangeType::Modify
+            };
+            events.push(NormalizedEvent::file_change(
+                path.as_str(),
+                change_type,
+                None,
+            ));
         }
 
         // Check for git operations (Aider auto-commits)
         if self.git_regex.is_match(trimmed) {
-            events.push(NormalizedEvent::command(format!("git commit: {}", trimmed), None, None));
+            events.push(NormalizedEvent::command(
+                format!("git commit: {}", trimmed),
+                None,
+                None,
+            ));
         }
 
         // Check for questions (TTY input)
@@ -143,7 +162,10 @@ impl Agent for AiderAgent {
             .ok_or_else(|| AgentError::Config("Failed to capture stdin".into()))?;
 
         let _ = event_tx
-            .send(NormalizedEvent::session_start("aider", config.model.clone()))
+            .send(NormalizedEvent::session_start(
+                "aider",
+                config.model.clone(),
+            ))
             .await;
 
         let event_tx_clone = event_tx.clone();
@@ -163,27 +185,27 @@ impl Agent for AiderAgent {
                             ref question,
                             ref options,
                         } = event
+                            && let Some(ref handler) = tty_handler
                         {
-                            if let Some(ref handler) = tty_handler {
-                                match handler.handle_input(question, options.as_deref()).await {
-                                    Ok(response) => {
-                                        let mut stdin_guard = stdin.lock().await;
-                                        if let Err(e) = stdin_guard.write_all(response.as_bytes()).await {
-                                            error!("Failed to write to stdin: {}", e);
-                                        }
-                                        if let Err(e) = stdin_guard.write_all(b"\n").await {
-                                            error!("Failed to write newline: {}", e);
-                                        }
-                                        if let Err(e) = stdin_guard.flush().await {
-                                            error!("Failed to flush stdin: {}", e);
-                                        }
-                                        let _ = event_tx_clone
-                                            .send(NormalizedEvent::user_response(&response))
-                                            .await;
+                            match handler.handle_input(question, options.as_deref()).await {
+                                Ok(response) => {
+                                    let mut stdin_guard = stdin.lock().await;
+                                    if let Err(e) = stdin_guard.write_all(response.as_bytes()).await
+                                    {
+                                        error!("Failed to write to stdin: {}", e);
                                     }
-                                    Err(e) => {
-                                        warn!("TTY handler failed: {}", e);
+                                    if let Err(e) = stdin_guard.write_all(b"\n").await {
+                                        error!("Failed to write newline: {}", e);
                                     }
+                                    if let Err(e) = stdin_guard.flush().await {
+                                        error!("Failed to flush stdin: {}", e);
+                                    }
+                                    let _ = event_tx_clone
+                                        .send(NormalizedEvent::user_response(&response))
+                                        .await;
+                                }
+                                Err(e) => {
+                                    warn!("TTY handler failed: {}", e);
                                 }
                             }
                         }
@@ -214,7 +236,9 @@ impl Agent for AiderAgent {
         } else {
             Some(format!("Process exited with code {:?}", status.code()))
         };
-        let _ = event_tx.send(NormalizedEvent::session_end(success, error.clone())).await;
+        let _ = event_tx
+            .send(NormalizedEvent::session_end(success, error.clone()))
+            .await;
 
         if success {
             Ok(())
@@ -256,8 +280,8 @@ mod tests {
     #[test]
     fn test_args_generation() {
         let agent = AiderAgent::new();
-        let config = AgentConfig::new(AiAgentType::Aider, "/workspace", "Fix the bug")
-            .with_model("gpt-4");
+        let config =
+            AgentConfig::new(AiAgentType::Aider, "/workspace", "Fix the bug").with_model("gpt-4");
 
         let args = agent.args(&config);
 

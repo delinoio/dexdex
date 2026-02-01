@@ -5,14 +5,18 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{
+    Json, Router,
+    extract::State,
+    routing::{get, post},
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::{WorkerError, WorkerResult};
-use crate::state::AppState;
+use crate::{
+    error::{WorkerError, WorkerResult},
+    state::AppState,
+};
 
 /// Health check response.
 #[derive(Debug, Serialize)]

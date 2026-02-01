@@ -1,7 +1,9 @@
 //! Worker server error types.
 
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use thiserror::Error;
 
 /// Errors that can occur in the worker server.

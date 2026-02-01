@@ -2,15 +2,20 @@
 //!
 //! OpenCode is an open-source Claude Code alternative that outputs JSON format.
 
+use std::process::Stdio;
+
 use async_trait::async_trait;
 use entities::AiAgentType;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+    sync::mpsc,
+};
 use tracing::{debug, error, warn};
 
-use crate::{Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler};
+use crate::{
+    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler,
+};
 
 /// OpenCode agent.
 #[derive(Debug, Default)]
@@ -45,7 +50,11 @@ impl OpenCodeAgent {
                         .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
-                    let input = value.get("arguments").or(value.get("input")).cloned().unwrap_or(serde_json::Value::Null);
+                    let input = value
+                        .get("arguments")
+                        .or(value.get("input"))
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
                     events.push(NormalizedEvent::tool_use(name, input.clone()));
                     self.handle_tool_use(name, &input, &mut events);
                 }
@@ -54,8 +63,14 @@ impl OpenCodeAgent {
                         .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
-                    let output = value.get("output").cloned().unwrap_or(serde_json::Value::Null);
-                    let is_error = value.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let output = value
+                        .get("output")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let is_error = value
+                        .get("is_error")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     events.push(NormalizedEvent::tool_result(name, output, is_error));
                 }
                 "error" => {
@@ -65,14 +80,11 @@ impl OpenCodeAgent {
                 }
                 "question" | "ask" => {
                     if let Some(question) = value.get("question").and_then(|v| v.as_str()) {
-                        let options = value
-                            .get("options")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(String::from))
-                                    .collect()
-                            });
+                        let options = value.get("options").and_then(|v| v.as_array()).map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        });
                         events.push(NormalizedEvent::ask_user(question, options));
                     }
                 }
@@ -82,8 +94,14 @@ impl OpenCodeAgent {
                     }
                 }
                 "done" | "complete" => {
-                    let success = value.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
-                    let error = value.get("error").and_then(|v| v.as_str()).map(String::from);
+                    let success = value
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let error = value
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                     events.push(NormalizedEvent::session_end(success, error));
                 }
                 _ => {
@@ -108,7 +126,10 @@ impl OpenCodeAgent {
         match tool_name {
             "write_file" | "edit_file" => {
                 if let Some(path) = input.get("path").and_then(|v| v.as_str()) {
-                    let content = input.get("content").and_then(|v| v.as_str()).map(String::from);
+                    let content = input
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                     let change_type = if tool_name == "write_file" {
                         FileChangeType::Create
                     } else {
@@ -124,14 +145,11 @@ impl OpenCodeAgent {
             }
             "ask_user" => {
                 if let Some(question) = input.get("question").and_then(|v| v.as_str()) {
-                    let options = input
-                        .get("options")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| v.as_str().map(String::from))
-                                .collect()
-                        });
+                    let options = input.get("options").and_then(|v| v.as_array()).map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    });
                     events.push(NormalizedEvent::ask_user(question, options));
                 }
             }
@@ -202,7 +220,10 @@ impl Agent for OpenCodeAgent {
             .ok_or_else(|| AgentError::Config("Failed to capture stdin".into()))?;
 
         let _ = event_tx
-            .send(NormalizedEvent::session_start("open_code", config.model.clone()))
+            .send(NormalizedEvent::session_start(
+                "open_code",
+                config.model.clone(),
+            ))
             .await;
 
         let event_tx_clone = event_tx.clone();
@@ -221,27 +242,27 @@ impl Agent for OpenCodeAgent {
                             ref question,
                             ref options,
                         } = event
+                            && let Some(ref handler) = tty_handler
                         {
-                            if let Some(ref handler) = tty_handler {
-                                match handler.handle_input(question, options.as_deref()).await {
-                                    Ok(response) => {
-                                        let mut stdin_guard = stdin.lock().await;
-                                        if let Err(e) = stdin_guard.write_all(response.as_bytes()).await {
-                                            error!("Failed to write to stdin: {}", e);
-                                        }
-                                        if let Err(e) = stdin_guard.write_all(b"\n").await {
-                                            error!("Failed to write newline to stdin: {}", e);
-                                        }
-                                        if let Err(e) = stdin_guard.flush().await {
-                                            error!("Failed to flush stdin: {}", e);
-                                        }
-                                        let _ = event_tx_clone
-                                            .send(NormalizedEvent::user_response(&response))
-                                            .await;
+                            match handler.handle_input(question, options.as_deref()).await {
+                                Ok(response) => {
+                                    let mut stdin_guard = stdin.lock().await;
+                                    if let Err(e) = stdin_guard.write_all(response.as_bytes()).await
+                                    {
+                                        error!("Failed to write to stdin: {}", e);
                                     }
-                                    Err(e) => {
-                                        warn!("TTY handler failed: {}", e);
+                                    if let Err(e) = stdin_guard.write_all(b"\n").await {
+                                        error!("Failed to write newline to stdin: {}", e);
                                     }
+                                    if let Err(e) = stdin_guard.flush().await {
+                                        error!("Failed to flush stdin: {}", e);
+                                    }
+                                    let _ = event_tx_clone
+                                        .send(NormalizedEvent::user_response(&response))
+                                        .await;
+                                }
+                                Err(e) => {
+                                    warn!("TTY handler failed: {}", e);
                                 }
                             }
                         }
@@ -272,7 +293,9 @@ impl Agent for OpenCodeAgent {
         } else {
             Some(format!("Process exited with code {:?}", status.code()))
         };
-        let _ = event_tx.send(NormalizedEvent::session_end(success, error.clone())).await;
+        let _ = event_tx
+            .send(NormalizedEvent::session_end(success, error.clone()))
+            .await;
 
         if success {
             Ok(())

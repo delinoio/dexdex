@@ -1,19 +1,22 @@
 //! Docker container management for AI agent execution.
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
-use bollard::container::{
-    Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
-    StopContainerOptions,
+use bollard::{
+    Docker,
+    container::{
+        Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
+        StopContainerOptions,
+    },
+    image::BuildImageOptions,
 };
-use bollard::image::BuildImageOptions;
-use bollard::Docker;
 use futures::StreamExt;
 use tracing::{debug, error, info, warn};
 
-use crate::config::WorkerConfig;
-use crate::error::{WorkerError, WorkerResult};
+use crate::{
+    config::WorkerConfig,
+    error::{WorkerError, WorkerResult},
+};
 
 /// Docker manager for container lifecycle management.
 pub struct DockerManager {
@@ -52,11 +55,7 @@ impl DockerManager {
     }
 
     /// Builds a Docker image from the repository's custom Dockerfile.
-    pub async fn build_custom_image(
-        &self,
-        repo_path: &Path,
-        tag: &str,
-    ) -> WorkerResult<String> {
+    pub async fn build_custom_image(&self, repo_path: &Path, tag: &str) -> WorkerResult<String> {
         let dockerfile_path = repo_path.join(".delidev/setup/Dockerfile");
         if !dockerfile_path.exists() {
             return Err(WorkerError::Config(format!(
@@ -88,10 +87,12 @@ impl DockerManager {
                     }
                     if let Some(error) = output.error {
                         error!("Build error: {}", error);
-                        return Err(WorkerError::Docker(bollard::errors::Error::DockerResponseServerError {
-                            status_code: 500,
-                            message: error,
-                        }));
+                        return Err(WorkerError::Docker(
+                            bollard::errors::Error::DockerResponseServerError {
+                                status_code: 500,
+                                message: error,
+                            },
+                        ));
                     }
                 }
                 Err(e) => {
@@ -241,9 +242,8 @@ impl DockerManager {
     ) -> WorkerResult<String> {
         use bollard::exec::{CreateExecOptions, StartExecResults};
 
-        let env_refs: Option<Vec<&str>> = env
-            .as_ref()
-            .map(|v| v.iter().map(|s| s.as_str()).collect());
+        let env_refs: Option<Vec<&str>> =
+            env.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
 
         let options = CreateExecOptions {
             cmd: Some(cmd.clone()),
@@ -283,10 +283,7 @@ impl DockerManager {
     /// Checks if a container is running.
     pub async fn is_container_running(&self, container_id: &str) -> bool {
         match self.client.inspect_container(container_id, None).await {
-            Ok(info) => info
-                .state
-                .and_then(|s| s.running)
-                .unwrap_or(false),
+            Ok(info) => info.state.and_then(|s| s.running).unwrap_or(false),
             Err(_) => false,
         }
     }
@@ -328,10 +325,7 @@ mod tests {
             manager.parse_memory_limit("8g"),
             Some(8 * 1024 * 1024 * 1024)
         );
-        assert_eq!(
-            manager.parse_memory_limit("512m"),
-            Some(512 * 1024 * 1024)
-        );
+        assert_eq!(manager.parse_memory_limit("512m"), Some(512 * 1024 * 1024));
         assert_eq!(manager.parse_memory_limit("1024k"), Some(1024 * 1024));
         assert_eq!(manager.parse_memory_limit(""), None);
     }
