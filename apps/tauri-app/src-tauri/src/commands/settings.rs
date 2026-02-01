@@ -8,10 +8,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    config::{
-        load_repository_settings, save_config, save_repository_settings, settings_to_config,
-        GlobalSettings, RepositorySettings,
-    },
+    config::{save_config, settings_to_config, GlobalSettings, RepositorySettings},
     error::{AppError, AppResult},
     state::AppState,
 };
@@ -54,6 +51,10 @@ pub async fn update_global_settings(
 /// Gets repository-specific settings.
 ///
 /// Loads settings from `.delidev/config.toml` within the repository directory.
+///
+/// Note: This currently returns default settings as the repository local path
+/// is not stored. In the future, this could be enhanced to discover the local
+/// clone path through other means (e.g., git remote matching).
 #[tauri::command]
 pub async fn get_repository_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -66,46 +67,33 @@ pub async fn get_repository_settings(
         AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
     })?;
 
-    // Get the repository from the task store to find its path
+    // Get the repository from the task store to verify it exists
     let task_store = state.task_store()?;
-    let repo = task_store
+    let _repo = task_store
         .get_repository(repo_uuid)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Load repository settings from the local path
-    match &repo.local_path {
-        Some(local_path) => {
-            let repo_path = std::path::Path::new(local_path);
-            if repo_path.exists() {
-                load_repository_settings(repo_path)
-            } else {
-                tracing::debug!(
-                    "Repository local path '{}' does not exist for {}, returning default settings",
-                    local_path,
-                    repo_id
-                );
-                Ok(RepositorySettings::default())
-            }
-        }
-        None => {
-            tracing::debug!(
-                "Repository local path not configured for {}, returning default settings",
-                repo_id
-            );
-            Ok(RepositorySettings::default())
-        }
-    }
+    // Return default settings since we don't have a local path stored
+    tracing::debug!(
+        "Repository local path not available for {}, returning default settings",
+        repo_id
+    );
+    Ok(RepositorySettings::default())
 }
 
 /// Updates repository-specific settings.
 ///
 /// Saves settings to `.delidev/config.toml` within the repository directory.
+///
+/// Note: This currently returns an error as the repository local path is not
+/// stored. In the future, this could be enhanced to discover the local clone
+/// path through other means (e.g., git remote matching).
 #[tauri::command]
 pub async fn update_repository_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
     repo_id: String,
-    settings: RepositorySettings,
+    _settings: RepositorySettings,
 ) -> AppResult<RepositorySettings> {
     let state = state.read().await;
 
@@ -114,31 +102,17 @@ pub async fn update_repository_settings(
         AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
     })?;
 
-    // Get the repository from the task store to find its path
+    // Get the repository from the task store to verify it exists
     let task_store = state.task_store()?;
-    let repo = task_store
+    let _repo = task_store
         .get_repository(repo_uuid)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Save repository settings to the local path
-    match &repo.local_path {
-        Some(local_path) => {
-            let repo_path = std::path::Path::new(local_path);
-            if repo_path.exists() {
-                save_repository_settings(repo_path, &settings)?;
-                info!("Updated repository settings for {}", repo_id);
-                Ok(settings)
-            } else {
-                Err(AppError::InvalidRequest(format!(
-                    "Repository local path '{}' does not exist. Cannot save settings.",
-                    local_path
-                )))
-            }
-        }
-        None => Err(AppError::InvalidRequest(format!(
-            "Repository local path not configured for '{}'. Cannot save settings.",
-            repo_id
-        ))),
-    }
+    // Cannot save settings without a local path
+    Err(AppError::InvalidRequest(format!(
+        "Cannot save repository settings for '{}': local path not available. \
+         Repository settings must be edited directly in the repository's .delidev/config.toml file.",
+        repo_id
+    )))
 }

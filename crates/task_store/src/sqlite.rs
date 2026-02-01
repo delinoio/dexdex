@@ -68,7 +68,6 @@ impl SqliteTaskStore {
                 workspace_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 remote_url TEXT NOT NULL,
-                local_path TEXT,
                 default_branch TEXT NOT NULL,
                 vcs_type TEXT NOT NULL,
                 vcs_provider_type TEXT NOT NULL,
@@ -479,15 +478,14 @@ impl TaskStore for SqliteTaskStore {
 
     async fn create_repository(&self, repository: Repository) -> TaskStoreResult<Repository> {
         sqlx::query(
-            "INSERT INTO repositories (id, workspace_id, name, remote_url, local_path, \
-             default_branch, vcs_type, vcs_provider_type, created_at, updated_at) VALUES (?, ?, \
-             ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO repositories (id, workspace_id, name, remote_url, default_branch, \
+             vcs_type, vcs_provider_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \
+             ?)",
         )
         .bind(repository.id.to_string())
         .bind(repository.workspace_id.to_string())
         .bind(&repository.name)
         .bind(&repository.remote_url)
-        .bind(&repository.local_path)
         .bind(&repository.default_branch)
         .bind(serde_json::to_string(&repository.vcs_type).unwrap())
         .bind(serde_json::to_string(&repository.vcs_provider_type).unwrap())
@@ -515,13 +513,11 @@ impl TaskStore for SqliteTaskStore {
             Some(row) => {
                 let vcs_type_str: String = row.get("vcs_type");
                 let vcs_provider_str: String = row.get("vcs_provider_type");
-                let local_path: Option<String> = row.try_get("local_path").ok();
                 let repository = Repository {
                     id: Self::parse_uuid(row.get("id"))?,
                     workspace_id: Self::parse_uuid(row.get("workspace_id"))?,
                     name: row.get("name"),
                     remote_url: row.get("remote_url"),
-                    local_path,
                     default_branch: row.get("default_branch"),
                     vcs_type: serde_json::from_str(&vcs_type_str).unwrap_or(VcsType::Git),
                     vcs_provider_type: serde_json::from_str(&vcs_provider_str)
@@ -583,13 +579,11 @@ impl TaskStore for SqliteTaskStore {
         for row in rows {
             let vcs_type_str: String = row.get("vcs_type");
             let vcs_provider_str: String = row.get("vcs_provider_type");
-            let local_path: Option<String> = row.try_get("local_path").ok();
             repositories.push(Repository {
                 id: Self::parse_uuid(row.get("id"))?,
                 workspace_id: Self::parse_uuid(row.get("workspace_id"))?,
                 name: row.get("name"),
                 remote_url: row.get("remote_url"),
-                local_path,
                 default_branch: row.get("default_branch"),
                 vcs_type: serde_json::from_str(&vcs_type_str).unwrap_or(VcsType::Git),
                 vcs_provider_type: serde_json::from_str(&vcs_provider_str)
@@ -608,13 +602,12 @@ impl TaskStore for SqliteTaskStore {
 
     async fn update_repository(&self, repository: Repository) -> TaskStoreResult<Repository> {
         let result = sqlx::query(
-            "UPDATE repositories SET workspace_id = ?, name = ?, remote_url = ?, local_path = ?, \
-             default_branch = ?, vcs_type = ?, vcs_provider_type = ?, updated_at = ? WHERE id = ?",
+            "UPDATE repositories SET workspace_id = ?, name = ?, remote_url = ?, default_branch = \
+             ?, vcs_type = ?, vcs_provider_type = ?, updated_at = ? WHERE id = ?",
         )
         .bind(repository.workspace_id.to_string())
         .bind(&repository.name)
         .bind(&repository.remote_url)
-        .bind(&repository.local_path)
         .bind(&repository.default_branch)
         .bind(serde_json::to_string(&repository.vcs_type).unwrap())
         .bind(serde_json::to_string(&repository.vcs_provider_type).unwrap())
