@@ -5,15 +5,20 @@ import type {
   CompositeTask,
   CreateCompositeTaskParams,
   CreateUnitTaskParams,
+  CreateWorkspaceParams,
   GlobalSettings,
   ListRepositoriesParams,
   ListRepositoriesResult,
   ListTasksParams,
   ListTasksResult,
+  ListWorkspacesParams,
+  ListWorkspacesResult,
   Repository,
   RepositorySettings,
   TaskResponse,
   UnitTask,
+  UpdateWorkspaceParams,
+  Workspace,
 } from "./types";
 
 // Mode commands
@@ -135,4 +140,37 @@ export async function listSecrets(): Promise<string[]> {
 
 export async function sendSecrets(secrets: Record<string, string>): Promise<void> {
   return invoke<void>("send_secrets", { secrets });
+}
+
+// Workspace commands
+
+export async function createWorkspace(
+  params: CreateWorkspaceParams
+): Promise<Workspace> {
+  return invoke<Workspace>("create_workspace", { params });
+}
+
+export async function listWorkspaces(
+  params: ListWorkspacesParams = {}
+): Promise<ListWorkspacesResult> {
+  return invoke<ListWorkspacesResult>("list_workspaces", { params });
+}
+
+export async function getWorkspace(workspaceId: string): Promise<Workspace> {
+  return invoke<Workspace>("get_workspace", { workspaceId });
+}
+
+export async function updateWorkspace(
+  workspaceId: string,
+  params: UpdateWorkspaceParams
+): Promise<Workspace> {
+  return invoke<Workspace>("update_workspace", { workspaceId, params });
+}
+
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  return invoke<void>("delete_workspace", { workspaceId });
+}
+
+export async function getDefaultWorkspaceId(): Promise<string> {
+  return invoke<string>("get_default_workspace_id");
 }

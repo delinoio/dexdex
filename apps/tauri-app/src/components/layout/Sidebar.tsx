@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/uiStore";
+import { WorkspaceSelector } from "@/components/workspace";
 
 const navItems = [
   {
@@ -105,6 +106,8 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
+
+      <WorkspaceSelector collapsed={sidebarCollapsed} />
 
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => (

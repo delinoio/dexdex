@@ -1,5 +1,6 @@
 // UI state management with Zustand
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface Tab {
   id: string;
@@ -13,6 +14,10 @@ interface UiState {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebar: () => void;
+
+  // Current workspace
+  currentWorkspaceId: string | null;
+  setCurrentWorkspaceId: (id: string | null) => void;
 
   // Tab management
   tabs: Tab[];
@@ -42,15 +47,21 @@ interface UiState {
 
 let tabIdCounter = 0;
 
-export const useUiStore = create<UiState>((set, get) => ({
-  // Sidebar
-  sidebarCollapsed: false,
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-  toggleSidebar: () =>
-    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+export const useUiStore = create<UiState>()(
+  persist(
+    (set, get) => ({
+      // Sidebar
+      sidebarCollapsed: false,
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      toggleSidebar: () =>
+        set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
-  // Tabs
-  tabs: [
+      // Current workspace
+      currentWorkspaceId: null,
+      setCurrentWorkspaceId: (id) => set({ currentWorkspaceId: id }),
+
+      // Tabs
+      tabs: [
     {
       id: "dashboard",
       title: "Dashboard",
@@ -103,7 +114,16 @@ export const useUiStore = create<UiState>((set, get) => ({
   isSettingsOpen: false,
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
 
-  // Panel selection
-  selectedPanel: "dashboard",
-  setSelectedPanel: (panel) => set({ selectedPanel: panel }),
-}));
+      // Panel selection
+      selectedPanel: "dashboard",
+      setSelectedPanel: (panel) => set({ selectedPanel: panel }),
+    }),
+    {
+      name: "delidev-ui-store",
+      partialize: (state) => ({
+        sidebarCollapsed: state.sidebarCollapsed,
+        currentWorkspaceId: state.currentWorkspaceId,
+      }),
+    }
+  )
+);

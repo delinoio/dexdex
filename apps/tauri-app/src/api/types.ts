@@ -312,3 +312,23 @@ export interface ListRepositoriesResult {
   repositories: Repository[];
   totalCount: number;
 }
+
+export interface CreateWorkspaceParams {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateWorkspaceParams {
+  name?: string;
+  description?: string;
+}
+
+export interface ListWorkspacesParams {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListWorkspacesResult {
+  workspaces: Workspace[];
+  totalCount: number;
+}

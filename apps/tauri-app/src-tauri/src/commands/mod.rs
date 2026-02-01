@@ -8,3 +8,4 @@ pub mod repository;
 pub mod secrets;
 pub mod settings;
 pub mod task;
+pub mod workspace;
