@@ -274,11 +274,15 @@ pub async fn approve_task(
 }
 
 /// Rejects a task.
+///
+/// Note: The `reason` parameter is accepted for API completeness but is not
+/// currently persisted. This will be implemented when the entity schema
+/// supports rejection reasons.
 #[tauri::command]
 pub async fn reject_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     task_id: String,
-    reason: Option<String>,
+    _reason: Option<String>,
 ) -> AppResult<()> {
     let state = state.read().await;
 
@@ -297,7 +301,7 @@ pub async fn reject_task(
         task.status = UnitTaskStatus::Rejected;
         task.updated_at = chrono::Utc::now();
         runtime.task_store_arc().update_unit_task(task).await?;
-        info!("Rejected unit task: {} (reason: {:?})", id, reason);
+        info!("Rejected unit task: {}", id);
         return Ok(());
     }
 
@@ -306,7 +310,7 @@ pub async fn reject_task(
         task.status = CompositeTaskStatus::Rejected;
         task.updated_at = chrono::Utc::now();
         runtime.task_store_arc().update_composite_task(task).await?;
-        info!("Rejected composite task: {} (reason: {:?})", id, reason);
+        info!("Rejected composite task: {}", id);
         return Ok(());
     }
 

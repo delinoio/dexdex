@@ -34,10 +34,17 @@ pub struct TtyInputRequestEvent {
     pub options: Option<Vec<String>>,
 }
 
-/// Event emitted when a notification is clicked.
+/// Event emitted when a notification is shown.
+///
+/// This event is emitted when a desktop notification is displayed.
+/// The frontend can use this to track which notifications were shown
+/// and navigate accordingly when the user clicks the notification.
+///
+/// Note: Actual click handling requires platform-specific implementation.
+/// This event indicates the notification was shown, not that it was clicked.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NotificationClickedEvent {
+pub struct NotificationShownEvent {
     pub task_type: TaskType,
     pub task_id: String,
 }
@@ -46,7 +53,7 @@ pub struct NotificationClickedEvent {
 pub mod event_names {
     pub const TASK_STATUS_CHANGED: &str = "task-status-changed";
     pub const TTY_INPUT_REQUEST: &str = "tty-input-request";
-    pub const NOTIFICATION_CLICKED: &str = "notification-clicked";
+    pub const NOTIFICATION_SHOWN: &str = "notification-shown";
 }
 
 #[cfg(test)]
@@ -120,8 +127,8 @@ mod tests {
     }
 
     #[test]
-    fn test_notification_clicked_event_serialization() {
-        let event = NotificationClickedEvent {
+    fn test_notification_shown_event_serialization() {
+        let event = NotificationShownEvent {
             task_type: TaskType::CompositeTask,
             task_id: "task-456".to_string(),
         };
@@ -135,6 +142,6 @@ mod tests {
     fn test_event_names_constants() {
         assert_eq!(event_names::TASK_STATUS_CHANGED, "task-status-changed");
         assert_eq!(event_names::TTY_INPUT_REQUEST, "tty-input-request");
-        assert_eq!(event_names::NOTIFICATION_CLICKED, "notification-clicked");
+        assert_eq!(event_names::NOTIFICATION_SHOWN, "notification-shown");
     }
 }

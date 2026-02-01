@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
-use crate::events::{NotificationClickedEvent, TaskType, event_names};
+use crate::events::{NotificationShownEvent, TaskType, event_names};
 
 /// Notification trigger types.
 #[derive(Debug, Clone, Copy)]
@@ -58,16 +58,17 @@ pub fn send_notification(
         return;
     }
 
-    // Emit notification clicked event
-    // Note: Actual click handling requires platform-specific implementation
-    // For now, we emit the event that the frontend can use for navigation
-    let event = NotificationClickedEvent {
+    // Emit notification shown event
+    // Note: Actual click handling requires platform-specific implementation.
+    // This event indicates the notification was shown, allowing the frontend
+    // to track which notifications are active for potential navigation.
+    let event = NotificationShownEvent {
         task_type,
         task_id: task_id.to_string(),
     };
 
-    if let Err(e) = app.emit(event_names::NOTIFICATION_CLICKED, event) {
-        warn!("Failed to emit notification clicked event: {}", e);
+    if let Err(e) = app.emit(event_names::NOTIFICATION_SHOWN, event) {
+        warn!("Failed to emit notification shown event: {}", e);
     }
 }
 
