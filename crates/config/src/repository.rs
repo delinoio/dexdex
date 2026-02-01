@@ -2,9 +2,11 @@
 //!
 //! Location: `.delidev/config.toml` (committed to git)
 
-use crate::{CompositeTaskSettingsOptional, ConfigError, LearningSettingsOptional};
-use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{CompositeTaskSettingsOptional, ConfigError, LearningSettingsOptional};
 
 /// Repository-specific configuration.
 ///
@@ -179,9 +181,11 @@ pub enum ReviewCommentFilter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn test_default_repository_config() {
@@ -211,10 +215,7 @@ auto_approve = true
 
         let config: RepositoryConfig = toml::from_str(toml_content).unwrap();
 
-        assert_eq!(
-            config.branch.unwrap().template,
-            "feature/${taskId}-${slug}"
-        );
+        assert_eq!(config.branch.unwrap().template, "feature/${taskId}-${slug}");
 
         let automation = config.automation.unwrap();
         assert!(automation.auto_fix_review_comments);
@@ -262,10 +263,12 @@ autoFixCiFailures = true
         let file = NamedTempFile::new().unwrap();
         let path = file.path().to_path_buf();
 
-        let mut config = RepositoryConfig::default();
-        config.branch = Some(BranchSettings {
-            template: "custom/${taskId}".to_string(),
-        });
+        let config = RepositoryConfig {
+            branch: Some(BranchSettings {
+                template: "custom/${taskId}".to_string(),
+            }),
+            ..Default::default()
+        };
 
         config.save(&path).unwrap();
 

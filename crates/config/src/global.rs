@@ -2,10 +2,12 @@
 //!
 //! Location: `~/.delidev/config.toml`
 
-use crate::ConfigError;
+use std::path::Path;
+
 use entities::AiAgentType;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+
+use crate::ConfigError;
 
 /// Global configuration for DeliDev.
 ///
@@ -57,8 +59,8 @@ impl GlobalConfig {
 
     /// Saves global configuration to a file.
     ///
-    /// The path must be within the DeliDev configuration directory (`~/.delidev`)
-    /// to prevent path traversal attacks.
+    /// The path must be within the DeliDev configuration directory
+    /// (`~/.delidev`) to prevent path traversal attacks.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         // Validate path is within the config directory
         crate::validate_config_path(path)?;
@@ -260,7 +262,7 @@ pub struct CompositeTaskSettings {
 }
 
 /// Concurrency settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ConcurrencySettings {
     /// Maximum number of concurrent agent sessions.
@@ -268,19 +270,13 @@ pub struct ConcurrencySettings {
     pub max_concurrent_sessions: Option<u32>,
 }
 
-impl Default for ConcurrencySettings {
-    fn default() -> Self {
-        Self {
-            max_concurrent_sessions: None, // No limit by default
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn test_default_global_config() {
@@ -338,10 +334,7 @@ max_concurrent_sessions = 5
         assert!(!notification.review_ready);
 
         let agent = config.agent.unwrap();
-        assert_eq!(
-            agent.planning.unwrap().agent_type,
-            AiAgentType::ClaudeCode
-        );
+        assert_eq!(agent.planning.unwrap().agent_type, AiAgentType::ClaudeCode);
         assert_eq!(agent.execution.unwrap().agent_type, AiAgentType::OpenCode);
 
         assert!(config.composite_task.unwrap().auto_approve.unwrap());
@@ -381,10 +374,12 @@ openChat = "Meta+Z"
         let file = NamedTempFile::new().unwrap();
         let path = file.path().to_path_buf();
 
-        let mut config = GlobalConfig::default();
-        config.hotkey = Some(HotkeySettings {
-            open_chat: "Ctrl+K".to_string(),
-        });
+        let config = GlobalConfig {
+            hotkey: Some(HotkeySettings {
+                open_chat: "Ctrl+K".to_string(),
+            }),
+            ..Default::default()
+        };
 
         config.save_unchecked(&path).unwrap();
 

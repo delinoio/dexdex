@@ -74,10 +74,7 @@ pub async fn get_repository_settings(
 
     // Return default settings - actual repository settings are loaded
     // from the repository's .delidev/config.toml when performing operations
-    tracing::debug!(
-        "Returning default repository settings for {}",
-        repo_id
-    );
+    tracing::debug!("Returning default repository settings for {}", repo_id);
     Ok(RepositorySettings::default())
 }
 
@@ -106,10 +103,11 @@ pub async fn update_repository_settings(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Repository settings are managed directly in each repository's .delidev/config.toml file
+    // Repository settings are managed directly in each repository's
+    // .delidev/config.toml file
     Err(AppError::InvalidRequest(format!(
-        "Cannot save repository settings for '{}': \
-         repository settings must be edited directly in the repository's .delidev/config.toml file.",
+        "Cannot save repository settings for '{}': repository settings must be edited directly in \
+         the repository's .delidev/config.toml file.",
         repo_id
     )))
 }

@@ -10,12 +10,12 @@ mod error;
 mod global;
 mod repository;
 
+use std::path::{Path, PathBuf};
+
 pub use credentials::*;
 pub use error::*;
 pub use global::*;
 pub use repository::*;
-
-use std::path::{Path, PathBuf};
 
 /// Validates that a path is within the DeliDev configuration directory.
 ///
@@ -206,7 +206,8 @@ pub struct ConfigLoader {
 }
 
 impl ConfigLoader {
-    /// Creates a new configuration loader by loading global config and credentials.
+    /// Creates a new configuration loader by loading global config and
+    /// credentials.
     pub fn load() -> Result<Self, ConfigError> {
         let global = if let Some(path) = global_config_path() {
             if path.exists() {
@@ -228,12 +229,19 @@ impl ConfigLoader {
             VcsCredentials::default()
         };
 
-        Ok(Self { global, credentials })
+        Ok(Self {
+            global,
+            credentials,
+        })
     }
 
-    /// Creates a new configuration loader with the given global config and credentials.
+    /// Creates a new configuration loader with the given global config and
+    /// credentials.
     pub fn new(global: GlobalConfig, credentials: VcsCredentials) -> Self {
-        Self { global, credentials }
+        Self {
+            global,
+            credentials,
+        }
     }
 
     /// Returns the global configuration.
@@ -258,7 +266,8 @@ impl ConfigLoader {
         Ok(MergedConfig::merge(&self.global, repo_config.as_ref()))
     }
 
-    /// Returns a merged configuration using only global settings (no repository).
+    /// Returns a merged configuration using only global settings (no
+    /// repository).
     pub fn global_only(&self) -> MergedConfig {
         MergedConfig::merge(&self.global, None)
     }
@@ -266,9 +275,11 @@ impl ConfigLoader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_config_dir() {
@@ -295,7 +306,10 @@ mod tests {
     fn test_repository_config_path() {
         let repo_root = Path::new("/home/user/myrepo");
         let path = repository_config_path(repo_root);
-        assert_eq!(path, PathBuf::from("/home/user/myrepo/.delidev/config.toml"));
+        assert_eq!(
+            path,
+            PathBuf::from("/home/user/myrepo/.delidev/config.toml")
+        );
     }
 
     #[test]
@@ -311,10 +325,12 @@ mod tests {
     #[test]
     fn test_merged_config_repo_precedence() {
         let global = GlobalConfig::default();
-        let mut repo = RepositoryConfig::default();
-        repo.composite_task = Some(CompositeTaskSettingsOptional {
-            auto_approve: Some(true),
-        });
+        let repo = RepositoryConfig {
+            composite_task: Some(CompositeTaskSettingsOptional {
+                auto_approve: Some(true),
+            }),
+            ..Default::default()
+        };
 
         let merged = MergedConfig::merge(&global, Some(&repo));
 
@@ -356,10 +372,7 @@ token = "ghp_test123"
         let creds = VcsCredentials::load(&creds_path).unwrap();
         let loader = ConfigLoader::new(global, creds);
 
-        assert_eq!(
-            loader.global().hotkey.as_ref().unwrap().open_chat,
-            "Alt+X"
-        );
+        assert_eq!(loader.global().hotkey.as_ref().unwrap().open_chat, "Alt+X");
         assert_eq!(
             loader.credentials().github.as_ref().unwrap().token,
             "ghp_test123"

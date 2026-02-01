@@ -2,10 +2,12 @@
 //!
 //! Location: `~/.delidev/credentials.toml`
 
-use crate::{validate_config_path, ConfigError};
+use std::path::Path;
+
 use entities::VcsProviderType;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+
+use crate::{validate_config_path, ConfigError};
 
 /// VCS provider credentials.
 ///
@@ -42,8 +44,8 @@ impl VcsCredentials {
 
     /// Saves VCS credentials to a file.
     ///
-    /// The path must be within the DeliDev configuration directory (`~/.delidev`)
-    /// to prevent path traversal attacks.
+    /// The path must be within the DeliDev configuration directory
+    /// (`~/.delidev`) to prevent path traversal attacks.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         // Validate path is within the config directory
         validate_config_path(path)?;
@@ -89,17 +91,12 @@ impl VcsCredentials {
     /// Returns whether credentials are configured for a specific provider.
     pub fn has_credentials(&self, provider: VcsProviderType) -> bool {
         match provider {
-            VcsProviderType::Github => self
-                .github
+            VcsProviderType::Github => self.github.as_ref().is_some_and(|c| !c.token.is_empty()),
+            VcsProviderType::Gitlab => self.gitlab.as_ref().is_some_and(|c| !c.token.is_empty()),
+            VcsProviderType::Bitbucket => self
+                .bitbucket
                 .as_ref()
-                .is_some_and(|c| !c.token.is_empty()),
-            VcsProviderType::Gitlab => self
-                .gitlab
-                .as_ref()
-                .is_some_and(|c| !c.token.is_empty()),
-            VcsProviderType::Bitbucket => self.bitbucket.as_ref().is_some_and(|c| {
-                !c.username.is_empty() && !c.app_password.is_empty()
-            }),
+                .is_some_and(|c| !c.username.is_empty() && !c.app_password.is_empty()),
         }
     }
 }
@@ -111,7 +108,8 @@ pub struct GithubCredentials {
     ///
     /// Should have appropriate scopes for repository access.
     /// Classic PAT: `repo` scope
-    /// Fine-grained PAT: Repository access with Contents and Pull requests permissions
+    /// Fine-grained PAT: Repository access with Contents and Pull requests
+    /// permissions
     pub token: String,
 }
 
@@ -139,9 +137,11 @@ pub struct BitbucketCredentials {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn test_default_vcs_credentials() {
@@ -173,10 +173,7 @@ token = "glpat-xxxxxxxxxxxxxxxxxxxx"
 "#;
 
         let creds: VcsCredentials = toml::from_str(toml_content).unwrap();
-        assert_eq!(
-            creds.gitlab.unwrap().token,
-            "glpat-xxxxxxxxxxxxxxxxxxxx"
-        );
+        assert_eq!(creds.gitlab.unwrap().token, "glpat-xxxxxxxxxxxxxxxxxxxx");
     }
 
     #[test]
@@ -235,10 +232,12 @@ token = "ghp_test123"
         let file = NamedTempFile::new().unwrap();
         let path = file.path().to_path_buf();
 
-        let mut creds = VcsCredentials::default();
-        creds.github = Some(GithubCredentials {
-            token: "ghp_saved".to_string(),
-        });
+        let creds = VcsCredentials {
+            github: Some(GithubCredentials {
+                token: "ghp_saved".to_string(),
+            }),
+            ..Default::default()
+        };
 
         creds.save_unchecked(&path).unwrap();
 
@@ -248,30 +247,22 @@ token = "ghp_test123"
 
     #[test]
     fn test_get_token() {
-        let mut creds = VcsCredentials::default();
-        creds.github = Some(GithubCredentials {
-            token: "ghp_test".to_string(),
-        });
-        creds.gitlab = Some(GitlabCredentials {
-            token: "glpat_test".to_string(),
-        });
-        creds.bitbucket = Some(BitbucketCredentials {
-            username: "user".to_string(),
-            app_password: "pass".to_string(),
-        });
+        let creds = VcsCredentials {
+            github: Some(GithubCredentials {
+                token: "ghp_test".to_string(),
+            }),
+            gitlab: Some(GitlabCredentials {
+                token: "glpat_test".to_string(),
+            }),
+            bitbucket: Some(BitbucketCredentials {
+                username: "user".to_string(),
+                app_password: "pass".to_string(),
+            }),
+        };
 
-        assert_eq!(
-            creds.get_token(VcsProviderType::Github),
-            Some("ghp_test")
-        );
-        assert_eq!(
-            creds.get_token(VcsProviderType::Gitlab),
-            Some("glpat_test")
-        );
-        assert_eq!(
-            creds.get_token(VcsProviderType::Bitbucket),
-            Some("pass")
-        );
+        assert_eq!(creds.get_token(VcsProviderType::Github), Some("ghp_test"));
+        assert_eq!(creds.get_token(VcsProviderType::Gitlab), Some("glpat_test"));
+        assert_eq!(creds.get_token(VcsProviderType::Bitbucket), Some("pass"));
     }
 
     #[test]

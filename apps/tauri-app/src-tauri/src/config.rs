@@ -1,21 +1,20 @@
 //! Configuration management for the Tauri app.
 //!
-//! This module provides application-level configuration handling that integrates
-//! with the shared `config` crate for TOML file parsing.
+//! This module provides application-level configuration handling that
+//! integrates with the shared `config` crate for TOML file parsing.
 
 use std::path::PathBuf;
 
+// Re-export types from the config crate for convenience
+pub use config::{
+    AgentConfig as SharedAgentConfig, AutomationSettings, BranchSettings, CompositeTaskSettings,
+    ConcurrencySettings, ConfigError, ConfigLoader, ContainerRuntime, ContainerSettings,
+    GlobalConfig, HotkeySettings, LearningSettings, MergedConfig, NotificationSettings,
+    RepositoryConfig, ReviewCommentFilter, VcsCredentials,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-
-// Re-export types from the config crate for convenience
-pub use config::{
-    AgentConfig as SharedAgentConfig, AutomationSettings, BranchSettings,
-    CompositeTaskSettings, ConcurrencySettings, ConfigError, ConfigLoader, ContainerRuntime,
-    ContainerSettings, GlobalConfig, HotkeySettings, LearningSettings, MergedConfig,
-    NotificationSettings, RepositoryConfig, ReviewCommentFilter, VcsCredentials,
-};
 
 /// Application mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -31,7 +30,8 @@ pub enum AppMode {
 /// Global application settings.
 ///
 /// This struct represents the application settings exposed to the frontend.
-/// It combines settings from the shared config crate with app-specific settings.
+/// It combines settings from the shared config crate with app-specific
+/// settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalSettings {
@@ -122,7 +122,8 @@ pub enum ReviewCommentFilterSetting {
 }
 
 impl RepositorySettings {
-    /// Creates RepositorySettings from a RepositoryConfig (shared config crate).
+    /// Creates RepositorySettings from a RepositoryConfig (shared config
+    /// crate).
     pub fn from_repo_config(config: &RepositoryConfig) -> Self {
         let mut settings = Self::default();
 
@@ -164,8 +165,9 @@ impl From<ReviewCommentFilterSetting> for ReviewCommentFilter {
 
 /// Configuration file structure for ~/.delidev/config.toml
 ///
-/// This is a simplified version for the Tauri app that includes mode configuration.
-/// For the full configuration, use `GlobalConfig` from the config crate.
+/// This is a simplified version for the Tauri app that includes mode
+/// configuration. For the full configuration, use `GlobalConfig` from the
+/// config crate.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigFile {
     /// Mode configuration.
@@ -202,8 +204,7 @@ pub struct AgentConfig {
 
 /// Gets the DeliDev configuration directory.
 pub fn config_dir() -> AppResult<PathBuf> {
-    config::config_dir()
-        .ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))
+    config::config_dir().ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))
 }
 
 /// Gets the path to the global configuration file.
@@ -516,20 +517,25 @@ mod tests {
 
     #[test]
     fn test_repository_settings_from_repo_config() {
-        let mut repo_config = RepositoryConfig::default();
-        repo_config.branch = Some(BranchSettings {
-            template: "feature/${taskId}".to_string(),
-        });
-        repo_config.automation = Some(AutomationSettings {
-            auto_fix_review_comments: true,
-            auto_fix_review_comments_filter: ReviewCommentFilter::All,
-            auto_fix_ci_failures: true,
-            max_auto_fix_attempts: 5,
-        });
+        let repo_config = RepositoryConfig {
+            branch: Some(BranchSettings {
+                template: "feature/${taskId}".to_string(),
+            }),
+            automation: Some(AutomationSettings {
+                auto_fix_review_comments: true,
+                auto_fix_review_comments_filter: ReviewCommentFilter::All,
+                auto_fix_ci_failures: true,
+                max_auto_fix_attempts: 5,
+            }),
+            ..Default::default()
+        };
 
         let settings = RepositorySettings::from_repo_config(&repo_config);
 
-        assert_eq!(settings.branch_template, Some("feature/${taskId}".to_string()));
+        assert_eq!(
+            settings.branch_template,
+            Some("feature/${taskId}".to_string())
+        );
         assert!(settings.auto_fix_review_comments);
         assert!(settings.auto_fix_ci_failures);
         assert_eq!(settings.max_auto_fix_retries, 5);
