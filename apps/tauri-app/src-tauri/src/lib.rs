@@ -63,6 +63,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                use tauri_plugin_notification::NotificationExt;
 
                 let app_handle = app.handle().clone();
                 let shortcut = if cfg!(target_os = "macos") {
@@ -79,6 +80,28 @@ pub fn run() {
                     }
                 }) {
                     tracing::warn!("Failed to register global hotkey: {}", e);
+
+                    // Notify user about the hotkey registration failure
+                    let error_msg = format!(
+                        "Failed to register global hotkey ({}). You can still use the app, but the {} shortcut won't work. Error: {}",
+                        shortcut,
+                        shortcut,
+                        e
+                    );
+                    tracing::error!("{}", error_msg);
+
+                    // Show a notification to the user
+                    if let Err(notif_err) = app.notification()
+                        .builder()
+                        .title("DeliDev Hotkey Error")
+                        .body(&format!(
+                            "Could not register {} hotkey. The app will still work, but the global shortcut is unavailable.",
+                            shortcut
+                        ))
+                        .show()
+                    {
+                        tracing::warn!("Failed to show hotkey error notification: {}", notif_err);
+                    }
                 }
             }
 
