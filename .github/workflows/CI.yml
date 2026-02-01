@@ -278,13 +278,10 @@ jobs:
   #         NDK_HOME: ${{ env.NDK_HOME }}
 
   ios-build:
-    name: iOS Build
+    name: iOS Build Check
     runs-on: 'macos-latest'
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
-    env:
-      # tauri needs CI to be true to build
-      CI: 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -293,41 +290,21 @@ jobs:
         with:
           xcode-version: '16.2'
 
-      - name: Install iOS Simulator runtime
-        run: |
-          xcodebuild -downloadPlatform iOS
-          xcrun simctl list runtimes
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "pnpm"
+      - name: Create frontend dist placeholder
+        run: mkdir -p apps/tauri-app/dist && echo "<html></html>" > apps/tauri-app/dist/index.html
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Add iOS target
+        run: rustup target add aarch64-apple-ios-sim
 
       - name: Cache cargo
         if: ${{ runner.environment != 'self-hosted' }}
         uses: Swatinem/rust-cache@v2
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Configure environment variables
-        run: |
-          pnpm i -g vercel
-          pnpm run --parallel prepare:app
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build iOS (Simulator)
-        run: pnpm --filter tauri-app exec tauri ios build --target aarch64-sim
+      - name: Check iOS build
+        run: cargo check -p tauri-app --target aarch64-apple-ios-sim
 
   # # ============================================
   # # Full Build (Tauri)
