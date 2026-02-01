@@ -2,18 +2,16 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
-use rpc_protocol::{
-    requests::*,
-    responses::*,
-    WorkerStatus as RpcWorkerStatus, UnitTaskStatus,
-};
+use axum::{Json, extract::State};
+use rpc_protocol::{UnitTaskStatus, WorkerStatus as RpcWorkerStatus, requests::*, responses::*};
 use task_store::TaskStore;
 use uuid::Uuid;
 
-use crate::error::{ServerError, ServerResult};
-use crate::services::worker_registry::WorkerStatus;
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    services::worker_registry::WorkerStatus,
+    state::AppState,
+};
 
 /// Converts RPC WorkerStatus to registry WorkerStatus.
 fn to_registry_status(status: RpcWorkerStatus) -> WorkerStatus {
@@ -60,7 +58,11 @@ pub async fn heartbeat<S: TaskStore>(
         .and_then(|id| id.parse().ok());
 
     let mut registry = state.worker_registry.write().await;
-    let success = registry.heartbeat(worker_id, to_registry_status(request.status), current_task_id);
+    let success = registry.heartbeat(
+        worker_id,
+        to_registry_status(request.status),
+        current_task_id,
+    );
 
     if !success {
         return Err(ServerError::NotFound("Worker not found".to_string()));
@@ -139,7 +141,11 @@ pub async fn get_next_task<S: TaskStore>(
                     linked_pr_url: task.linked_pr_url.clone(),
                     base_commit: task.base_commit.clone(),
                     end_commit: task.end_commit.clone(),
-                    auto_fix_task_ids: task.auto_fix_task_ids.iter().map(|id| id.to_string()).collect(),
+                    auto_fix_task_ids: task
+                        .auto_fix_task_ids
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect(),
                     status: UnitTaskStatus::InProgress,
                     created_at: task.created_at,
                     updated_at: task.updated_at,
@@ -147,10 +153,14 @@ pub async fn get_next_task<S: TaskStore>(
 
                 let rpc_agent_task = agent_task.map(|at| rpc_protocol::AgentTask {
                     id: at.id.to_string(),
-                    base_remotes: at.base_remotes.iter().map(|br| rpc_protocol::BaseRemote {
-                        git_remote_dir_path: br.git_remote_dir_path.clone(),
-                        git_branch_name: br.git_branch_name.clone(),
-                    }).collect(),
+                    base_remotes: at
+                        .base_remotes
+                        .iter()
+                        .map(|br| rpc_protocol::BaseRemote {
+                            git_remote_dir_path: br.git_remote_dir_path.clone(),
+                            git_branch_name: br.git_branch_name.clone(),
+                        })
+                        .collect(),
                     agent_sessions: vec![],
                     ai_agent_type: at.ai_agent_type.map(|t| match t {
                         entities::AiAgentType::ClaudeCode => rpc_protocol::AiAgentType::ClaudeCode,

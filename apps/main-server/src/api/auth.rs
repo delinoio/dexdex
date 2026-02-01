@@ -3,18 +3,20 @@
 use std::sync::Arc;
 
 use axum::{
+    Extension, Json,
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect},
-    Extension, Json,
 };
 use rpc_protocol::{requests::*, responses::*};
 use serde::Deserialize;
 use task_store::TaskStore;
 
-use crate::error::{ServerError, ServerResult};
-use crate::middleware::AuthenticatedUser;
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    middleware::AuthenticatedUser,
+    state::AppState,
+};
 
 /// Query parameters for OIDC callback.
 #[derive(Debug, Deserialize)]
@@ -49,14 +51,16 @@ pub async fn get_login_url<S: TaskStore>(
     // Generate state parameter for CSRF protection
     let auth_state = uuid::Uuid::new_v4().to_string();
 
-    // TODO: Store state and code_verifier in database for validation during callback
+    // TODO: Store state and code_verifier in database for validation during
+    // callback
 
     // Build authorization URL
     let issuer_url = state.config.oidc_issuer_url.as_ref().unwrap();
     let client_id = state.config.oidc_client_id.as_ref().unwrap();
 
     let login_url = format!(
-        "{}/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20email%20profile&state={}&code_challenge={}&code_challenge_method=S256",
+        "{}/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20email%\
+         20profile&state={}&code_challenge={}&code_challenge_method=S256",
         issuer_url,
         urlencoding::encode(client_id),
         urlencoding::encode(&request.redirect_uri),
@@ -136,9 +140,7 @@ pub async fn get_current_user<S: TaskStore>(
         }));
     }
 
-    let user = user
-        .ok_or(ServerError::AuthenticationRequired)?
-        .0;
+    let user = user.ok_or(ServerError::AuthenticationRequired)?.0;
 
     // Get user from database
     let db_user = state

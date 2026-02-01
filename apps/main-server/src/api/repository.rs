@@ -2,14 +2,16 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use entities::{Repository, RepositoryGroup, VcsProviderType, VcsType};
 use rpc_protocol::{requests::*, responses::*};
 use task_store::{RepositoryFilter, TaskStore};
 use uuid::Uuid;
 
-use crate::error::{ServerError, ServerResult};
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    state::AppState,
+};
 
 /// Converts entity Repository to RPC Repository.
 fn entity_to_rpc_repository(repo: &Repository) -> rpc_protocol::Repository {
@@ -38,7 +40,11 @@ fn entity_to_rpc_repository_group(group: &RepositoryGroup) -> rpc_protocol::Repo
         id: group.id.to_string(),
         workspace_id: group.workspace_id.to_string(),
         name: group.name.clone(),
-        repository_ids: group.repository_ids.iter().map(|id| id.to_string()).collect(),
+        repository_ids: group
+            .repository_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect(),
         created_at: group.created_at,
         updated_at: group.updated_at,
     }
@@ -85,15 +91,12 @@ pub async fn add_repository<S: TaskStore>(
         .await?
         .ok_or_else(|| ServerError::NotFound("Workspace not found".to_string()))?;
 
-    let name = request.name.unwrap_or_else(|| extract_repo_name(&request.remote_url));
+    let name = request
+        .name
+        .unwrap_or_else(|| extract_repo_name(&request.remote_url));
     let provider = detect_provider(&request.remote_url);
 
-    let repo = Repository::new(
-        workspace_id,
-        name,
-        request.remote_url,
-        provider,
-    );
+    let repo = Repository::new(workspace_id, name, request.remote_url, provider);
 
     let repo = state.store.create_repository(repo).await?;
 

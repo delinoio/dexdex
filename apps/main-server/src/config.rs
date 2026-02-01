@@ -40,9 +40,8 @@ impl Config {
             env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite:~/.delidev/data.db?mode=rwc".to_string())
         } else {
-            env::var("DATABASE_URL").map_err(|_| {
-                anyhow::anyhow!("DATABASE_URL is required in multi-user mode")
-            })?
+            env::var("DATABASE_URL")
+                .map_err(|_| anyhow::anyhow!("DATABASE_URL is required in multi-user mode"))?
         };
 
         let jwt_secret = env::var("DELIDEV_JWT_SECRET").ok();

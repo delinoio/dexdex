@@ -2,23 +2,26 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
-use entities::{AgentTask, CompositeTask, UnitTask, UnitTaskStatus as EntityUnitTaskStatus, CompositeTaskStatus as EntityCompositeTaskStatus};
-use rpc_protocol::{
-    requests::*,
-    responses::*,
-    UnitTaskStatus, CompositeTaskStatus,
+use axum::{Json, extract::State};
+use entities::{
+    AgentTask, CompositeTask, CompositeTaskStatus as EntityCompositeTaskStatus, UnitTask,
+    UnitTaskStatus as EntityUnitTaskStatus,
 };
+use rpc_protocol::{CompositeTaskStatus, UnitTaskStatus, requests::*, responses::*};
 use task_store::{TaskFilter, TaskStore};
 use uuid::Uuid;
 
-use crate::error::{ServerError, ServerResult};
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    state::AppState,
+};
 
 /// Converts RPC UnitTaskStatus to entity UnitTaskStatus.
 fn to_entity_unit_status(status: UnitTaskStatus) -> EntityUnitTaskStatus {
     match status {
-        UnitTaskStatus::Unspecified | UnitTaskStatus::InProgress => EntityUnitTaskStatus::InProgress,
+        UnitTaskStatus::Unspecified | UnitTaskStatus::InProgress => {
+            EntityUnitTaskStatus::InProgress
+        }
         UnitTaskStatus::InReview => EntityUnitTaskStatus::InReview,
         UnitTaskStatus::Approved => EntityUnitTaskStatus::Approved,
         UnitTaskStatus::PrOpen => EntityUnitTaskStatus::PrOpen,
@@ -42,7 +45,9 @@ fn to_rpc_unit_status(status: EntityUnitTaskStatus) -> UnitTaskStatus {
 /// Converts RPC CompositeTaskStatus to entity CompositeTaskStatus.
 fn to_entity_composite_status(status: CompositeTaskStatus) -> EntityCompositeTaskStatus {
     match status {
-        CompositeTaskStatus::Unspecified | CompositeTaskStatus::Planning => EntityCompositeTaskStatus::Planning,
+        CompositeTaskStatus::Unspecified | CompositeTaskStatus::Planning => {
+            EntityCompositeTaskStatus::Planning
+        }
         CompositeTaskStatus::PendingApproval => EntityCompositeTaskStatus::PendingApproval,
         CompositeTaskStatus::InProgress => EntityCompositeTaskStatus::InProgress,
         CompositeTaskStatus::Done => EntityCompositeTaskStatus::Done,
@@ -73,7 +78,11 @@ fn entity_to_rpc_unit_task(task: &entities::UnitTask) -> rpc_protocol::UnitTask 
         linked_pr_url: task.linked_pr_url.clone(),
         base_commit: task.base_commit.clone(),
         end_commit: task.end_commit.clone(),
-        auto_fix_task_ids: task.auto_fix_task_ids.iter().map(|id| id.to_string()).collect(),
+        auto_fix_task_ids: task
+            .auto_fix_task_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect(),
         status: to_rpc_unit_status(task.status),
         created_at: task.created_at,
         updated_at: task.updated_at,
@@ -176,7 +185,8 @@ pub async fn create_composite_task<S: TaskStore>(
     let planning_task = state.store.create_agent_task(planning_task).await?;
 
     // Create composite task
-    let mut composite_task = CompositeTask::new(repository_group_id, planning_task.id, request.prompt);
+    let mut composite_task =
+        CompositeTask::new(repository_group_id, planning_task.id, request.prompt);
     if let Some(title) = request.title {
         composite_task = composite_task.with_title(title);
     }
@@ -234,7 +244,10 @@ pub async fn list_tasks<S: TaskStore>(
     Json(request): Json<ListTasksRequest>,
 ) -> ServerResult<Json<ListTasksResponse>> {
     let filter = TaskFilter {
-        repository_group_id: request.repository_group_id.as_ref().and_then(|id| id.parse().ok()),
+        repository_group_id: request
+            .repository_group_id
+            .as_ref()
+            .and_then(|id| id.parse().ok()),
         unit_status: request.unit_status.map(to_entity_unit_status),
         composite_status: request.composite_status.map(to_entity_composite_status),
         limit: Some(request.limit as u32),
@@ -246,7 +259,10 @@ pub async fn list_tasks<S: TaskStore>(
 
     Ok(Json(ListTasksResponse {
         unit_tasks: unit_tasks.iter().map(entity_to_rpc_unit_task).collect(),
-        composite_tasks: composite_tasks.iter().map(entity_to_rpc_composite_task).collect(),
+        composite_tasks: composite_tasks
+            .iter()
+            .map(entity_to_rpc_composite_task)
+            .collect(),
         total_count: (unit_count + composite_count) as i32,
     }))
 }
@@ -262,27 +278,27 @@ pub async fn update_task_status<S: TaskStore>(
         .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
 
     // Try unit task first
-    if let Some(mut task) = state.store.get_unit_task(task_id).await? {
-        if let Some(status) = request.unit_status {
-            task.status = to_entity_unit_status(status);
-            task.updated_at = chrono::Utc::now();
-            let task = state.store.update_unit_task(task).await?;
-            return Ok(Json(UpdateTaskStatusResponse::UnitTask {
-                unit_task: entity_to_rpc_unit_task(&task),
-            }));
-        }
+    if let Some(mut task) = state.store.get_unit_task(task_id).await?
+        && let Some(status) = request.unit_status
+    {
+        task.status = to_entity_unit_status(status);
+        task.updated_at = chrono::Utc::now();
+        let task = state.store.update_unit_task(task).await?;
+        return Ok(Json(UpdateTaskStatusResponse::UnitTask {
+            unit_task: entity_to_rpc_unit_task(&task),
+        }));
     }
 
     // Try composite task
-    if let Some(mut task) = state.store.get_composite_task(task_id).await? {
-        if let Some(status) = request.composite_status {
-            task.status = to_entity_composite_status(status);
-            task.updated_at = chrono::Utc::now();
-            let task = state.store.update_composite_task(task).await?;
-            return Ok(Json(UpdateTaskStatusResponse::CompositeTask {
-                composite_task: entity_to_rpc_composite_task(&task),
-            }));
-        }
+    if let Some(mut task) = state.store.get_composite_task(task_id).await?
+        && let Some(status) = request.composite_status
+    {
+        task.status = to_entity_composite_status(status);
+        task.updated_at = chrono::Utc::now();
+        let task = state.store.update_composite_task(task).await?;
+        return Ok(Json(UpdateTaskStatusResponse::CompositeTask {
+            composite_task: entity_to_rpc_composite_task(&task),
+        }));
     }
 
     Err(ServerError::NotFound("Task not found".to_string()))
@@ -423,7 +439,10 @@ pub async fn request_changes<S: TaskStore>(
 
     // Reset to in_progress and append feedback to prompt
     task.status = EntityUnitTaskStatus::InProgress;
-    task.prompt = format!("{}\n\n--- Requested Changes ---\n{}", task.prompt, request.feedback);
+    task.prompt = format!(
+        "{}\n\n--- Requested Changes ---\n{}",
+        task.prompt, request.feedback
+    );
     task.updated_at = chrono::Utc::now();
     let task = state.store.update_unit_task(task).await?;
 

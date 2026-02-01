@@ -2,14 +2,16 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use entities::Workspace;
 use rpc_protocol::{requests::*, responses::*};
 use task_store::{TaskStore, WorkspaceFilter};
 use uuid::Uuid;
 
-use crate::error::{ServerError, ServerResult};
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    state::AppState,
+};
 
 /// Converts entity Workspace to RPC Workspace.
 fn entity_to_rpc_workspace(workspace: &Workspace) -> rpc_protocol::Workspace {

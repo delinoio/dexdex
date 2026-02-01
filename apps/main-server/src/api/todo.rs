@@ -2,18 +2,19 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use entities::TodoItemStatus as EntityTodoItemStatus;
 use rpc_protocol::{
-    requests::*,
+    IssueTriageData, PrReviewData, TodoItem, TodoItemStatus, TodoItemType, requests::*,
     responses::*,
-    TodoItem, TodoItemStatus, TodoItemType, IssueTriageData, PrReviewData,
 };
 use task_store::{TaskStore, TodoFilter};
 use uuid::Uuid;
 
-use crate::error::{ServerError, ServerResult};
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    state::AppState,
+};
 
 /// Converts RPC TodoItemStatus to entity TodoItemStatus.
 fn to_entity_status(status: TodoItemStatus) -> EntityTodoItemStatus {
@@ -78,7 +79,10 @@ pub async fn list_todo_items<S: TaskStore>(
     Json(request): Json<ListTodoItemsRequest>,
 ) -> ServerResult<Json<ListTodoItemsResponse>> {
     let filter = TodoFilter {
-        repository_id: request.repository_id.as_ref().and_then(|id| id.parse().ok()),
+        repository_id: request
+            .repository_id
+            .as_ref()
+            .and_then(|id| id.parse().ok()),
         status: request.status.map(to_entity_status),
         limit: Some(request.limit as u32),
         offset: Some(request.offset as u32),

@@ -1,15 +1,13 @@
 //! Application state.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use auth::JwtManager;
 use task_store::TaskStore;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::config::Config;
-use crate::services::worker_registry::WorkerRegistry;
+use crate::{config::Config, services::worker_registry::WorkerRegistry};
 
 /// Secrets cache for tasks (in-memory storage).
 #[derive(Debug, Default)]

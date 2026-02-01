@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use auth::{Claims, JwtManager};
 use axum::{
+    Json,
     extract::{Request, State},
-    http::{header::AUTHORIZATION, StatusCode},
+    http::{StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 use task_store::TaskStore;
@@ -91,15 +91,13 @@ pub async fn auth_middleware<S: TaskStore + 'static>(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Missing authorization header" })),
             )
-                .into_response()
+                .into_response();
         }
     };
 
     let claims = match validate_token(jwt_manager, token) {
         Ok(claims) => claims,
-        Err(status) => {
-            return (status, Json(json!({ "error": "Invalid token" }))).into_response()
-        }
+        Err(status) => return (status, Json(json!({ "error": "Invalid token" }))).into_response(),
     };
 
     // Store authenticated user in request extensions
@@ -112,7 +110,7 @@ pub async fn auth_middleware<S: TaskStore + 'static>(
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Invalid token claims" })),
             )
-                .into_response()
+                .into_response();
         }
     }
 
@@ -122,7 +120,8 @@ pub async fn auth_middleware<S: TaskStore + 'static>(
 /// Optional authentication middleware.
 ///
 /// This middleware works like `auth_middleware` but doesn't fail if no token
-/// is provided. Useful for endpoints that work both authenticated and anonymously.
+/// is provided. Useful for endpoints that work both authenticated and
+/// anonymously.
 pub async fn optional_auth_middleware<S: TaskStore + 'static>(
     State(state): State<Arc<AppState<S>>>,
     mut request: Request,
@@ -140,12 +139,11 @@ pub async fn optional_auth_middleware<S: TaskStore + 'static>(
     };
 
     // Try to extract and validate token
-    if let Some(token) = extract_token(&request) {
-        if let Ok(claims) = jwt_manager.validate_token(token) {
-            if let Ok(user) = AuthenticatedUser::try_from(claims) {
-                request.extensions_mut().insert(user);
-            }
-        }
+    if let Some(token) = extract_token(&request)
+        && let Ok(claims) = jwt_manager.validate_token(token)
+        && let Ok(user) = AuthenticatedUser::try_from(claims)
+    {
+        request.extensions_mut().insert(user);
     }
 
     next.run(request).await

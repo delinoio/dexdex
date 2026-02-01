@@ -1,9 +1,9 @@
 //! Server error types.
 
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 
@@ -50,33 +50,51 @@ pub enum ServerError {
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
         let (status, error_code, message) = match &self {
-            ServerError::InvalidRequest(msg) => {
-                (StatusCode::BAD_REQUEST, rpc_protocol::error_codes::INVALID_REQUEST, msg.clone())
-            }
-            ServerError::NotFound(msg) => {
-                (StatusCode::NOT_FOUND, rpc_protocol::error_codes::RESOURCE_NOT_FOUND, msg.clone())
-            }
-            ServerError::AuthenticationRequired => {
-                (StatusCode::UNAUTHORIZED, rpc_protocol::error_codes::AUTHENTICATION_REQUIRED, "Authentication required".to_string())
-            }
-            ServerError::PermissionDenied(msg) => {
-                (StatusCode::FORBIDDEN, rpc_protocol::error_codes::PERMISSION_DENIED, msg.clone())
-            }
-            ServerError::Database(e) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, rpc_protocol::error_codes::INTERNAL_ERROR, e.to_string())
-            }
-            ServerError::Auth(e) => {
-                (StatusCode::UNAUTHORIZED, rpc_protocol::error_codes::AUTHENTICATION_REQUIRED, e.to_string())
-            }
-            ServerError::Internal(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, rpc_protocol::error_codes::INTERNAL_ERROR, msg.clone())
-            }
-            ServerError::WorkerUnavailable => {
-                (StatusCode::SERVICE_UNAVAILABLE, rpc_protocol::error_codes::WORKER_UNAVAILABLE, "No workers available".to_string())
-            }
-            ServerError::TaskExecutionFailed(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, rpc_protocol::error_codes::TASK_EXECUTION_FAILED, msg.clone())
-            }
+            ServerError::InvalidRequest(msg) => (
+                StatusCode::BAD_REQUEST,
+                rpc_protocol::error_codes::INVALID_REQUEST,
+                msg.clone(),
+            ),
+            ServerError::NotFound(msg) => (
+                StatusCode::NOT_FOUND,
+                rpc_protocol::error_codes::RESOURCE_NOT_FOUND,
+                msg.clone(),
+            ),
+            ServerError::AuthenticationRequired => (
+                StatusCode::UNAUTHORIZED,
+                rpc_protocol::error_codes::AUTHENTICATION_REQUIRED,
+                "Authentication required".to_string(),
+            ),
+            ServerError::PermissionDenied(msg) => (
+                StatusCode::FORBIDDEN,
+                rpc_protocol::error_codes::PERMISSION_DENIED,
+                msg.clone(),
+            ),
+            ServerError::Database(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                rpc_protocol::error_codes::INTERNAL_ERROR,
+                e.to_string(),
+            ),
+            ServerError::Auth(e) => (
+                StatusCode::UNAUTHORIZED,
+                rpc_protocol::error_codes::AUTHENTICATION_REQUIRED,
+                e.to_string(),
+            ),
+            ServerError::Internal(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                rpc_protocol::error_codes::INTERNAL_ERROR,
+                msg.clone(),
+            ),
+            ServerError::WorkerUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                rpc_protocol::error_codes::WORKER_UNAVAILABLE,
+                "No workers available".to_string(),
+            ),
+            ServerError::TaskExecutionFailed(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                rpc_protocol::error_codes::TASK_EXECUTION_FAILED,
+                msg.clone(),
+            ),
         };
 
         let body = json!({

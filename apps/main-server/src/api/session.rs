@@ -2,13 +2,15 @@
 
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use rpc_protocol::{requests::*, responses::*};
 use task_store::TaskStore;
 use uuid::Uuid;
 
-use crate::error::{ServerError, ServerResult};
-use crate::state::AppState;
+use crate::{
+    error::{ServerError, ServerResult},
+    state::AppState,
+};
 
 /// Gets the output log for an agent session.
 pub async fn get_log<S: TaskStore>(

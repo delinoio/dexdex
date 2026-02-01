@@ -145,13 +145,13 @@ impl WorkerRegistry {
 
     /// Assigns a task to a worker.
     pub fn assign_task(&mut self, worker_id: Uuid, task_id: Uuid) -> bool {
-        if let Some(worker) = self.workers.get_mut(&worker_id) {
-            if worker.is_available(self.heartbeat_timeout) {
-                worker.status = WorkerStatus::Busy;
-                worker.current_task_id = Some(task_id);
-                tracing::info!(worker_id = %worker_id, task_id = %task_id, "Task assigned to worker");
-                return true;
-            }
+        if let Some(worker) = self.workers.get_mut(&worker_id)
+            && worker.is_available(self.heartbeat_timeout)
+        {
+            worker.status = WorkerStatus::Busy;
+            worker.current_task_id = Some(task_id);
+            tracing::info!(worker_id = %worker_id, task_id = %task_id, "Task assigned to worker");
+            return true;
         }
         false
     }
@@ -174,7 +174,8 @@ impl WorkerRegistry {
     /// Checks all workers and marks unhealthy ones.
     pub fn check_health(&mut self) {
         for worker in self.workers.values_mut() {
-            if !worker.is_healthy(self.heartbeat_timeout) && worker.status != WorkerStatus::Unhealthy
+            if !worker.is_healthy(self.heartbeat_timeout)
+                && worker.status != WorkerStatus::Unhealthy
             {
                 tracing::warn!(
                     worker_id = %worker.id,

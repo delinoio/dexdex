@@ -1,7 +1,8 @@
 //! DeliDev Main Server
 //!
 //! The Main Server is the central hub of DeliDev's distributed architecture.
-//! It maintains the task list, coordinates workers, and provides the RPC interface for clients.
+//! It maintains the task list, coordinates workers, and provides the RPC
+//! interface for clients.
 
 pub mod api;
 pub mod config;
@@ -20,8 +21,10 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::config::Config;
-use crate::state::{AppState, create_shared_state};
+use crate::{
+    config::Config,
+    state::{AppState, create_shared_state},
+};
 
 /// Creates the application router with all routes configured.
 pub fn create_app<S: TaskStore + 'static>(state: Arc<AppState<S>>) -> Router {
@@ -40,8 +43,8 @@ pub fn create_app<S: TaskStore + 'static>(state: Arc<AppState<S>>) -> Router {
 pub fn create_state<S: TaskStore>(config: Config, store: S) -> Arc<AppState<S>> {
     let jwt_manager = if config.auth_enabled() {
         config.jwt_secret.as_ref().map(|secret| {
-            let jwt_config = JwtConfig::new(secret)
-                .with_expiration_hours(config.jwt_expiration_hours);
+            let jwt_config =
+                JwtConfig::new(secret).with_expiration_hours(config.jwt_expiration_hours);
             JwtManager::new(jwt_config)
         })
     } else {
@@ -53,10 +56,9 @@ pub fn create_state<S: TaskStore>(config: Config, store: S) -> Arc<AppState<S>> 
 
 /// Initializes tracing with the given log level.
 pub fn init_tracing(log_level: &str) {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     tracing_subscriber::registry()
         .with(fmt::layer())
