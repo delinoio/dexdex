@@ -10,6 +10,7 @@ members = [
     "crates/auth",
     "crates/secrets",
     "crates/git_ops",
+    "crates/coding_agents",
 ]
 
 # Release profile optimizations

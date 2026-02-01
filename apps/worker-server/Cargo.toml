@@ -3,5 +3,54 @@ name = "worker-server"
 version = "0.1.0"
 edition = "2024"
 publish = false
+description = "DeliDev Worker Server - Executes AI coding agents in Docker containers"
 
 [dependencies]
+# Workspace crates
+entities = { path = "../../crates/entities" }
+coding_agents = { path = "../../crates/coding_agents" }
+git_ops = { path = "../../crates/git_ops" }
+rpc_protocol = { path = "../../crates/rpc_protocol" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Docker
+bollard = "0.18"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Configuration
+dotenvy = "0.15"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Archive
+tar = "0.4"
+
+# System info
+hostname = "0.4"
