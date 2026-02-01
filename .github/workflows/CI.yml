@@ -295,8 +295,9 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios-sim
+
+      - name: Add iOS target
+        run: rustup target add aarch64-apple-ios-sim
 
       - name: Cache cargo
         if: ${{ runner.environment != 'self-hosted' }}
