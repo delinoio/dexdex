@@ -5,10 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
-import { useRepositoryGroups } from "@/hooks/useRepositoryGroups";
+import { useRepositoryGroups, useCreateRepositoryGroup } from "@/hooks/useRepositoryGroups";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useCreateUnitTask, useCreateCompositeTask } from "@/hooks/useTasks";
 import { AiAgentType } from "@/api/types";
+
+// Special ID to represent "All Repositories" implicit group
+const ALL_REPOSITORIES_ID = "__all_repositories__";
 
 export function TaskCreation() {
   const [repositoryGroupId, setRepositoryGroupId] = useState("");
@@ -23,14 +26,20 @@ export function TaskCreation() {
   const { data: repositoriesData } = useRepositories({});
   const createUnitTask = useCreateUnitTask();
   const createCompositeTask = useCreateCompositeTask();
+  const createRepositoryGroup = useCreateRepositoryGroup();
 
   const groups = groupsData?.groups ?? [];
   const repositories = repositoriesData?.repositories ?? [];
 
+  // Check if "All Repositories" is selected
+  const isAllRepositoriesSelected = repositoryGroupId === ALL_REPOSITORIES_ID;
+
   const selectedGroup = groups.find((g) => g.id === repositoryGroupId);
-  const groupRepositories = selectedGroup
-    ? repositories.filter((repo) => selectedGroup.repositoryIds.includes(repo.id))
-    : [];
+  const groupRepositories = isAllRepositoriesSelected
+    ? repositories
+    : selectedGroup
+      ? repositories.filter((repo) => selectedGroup.repositoryIds.includes(repo.id))
+      : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,9 +47,25 @@ export function TaskCreation() {
     if (!repositoryGroupId || !prompt) return;
 
     try {
+      let effectiveGroupId = repositoryGroupId;
+
+      // If "All Repositories" is selected, create a temporary repository group
+      if (isAllRepositoriesSelected) {
+        const allRepoIds = repositories.map((repo) => repo.id);
+        if (allRepoIds.length === 0) {
+          console.error("No repositories available");
+          return;
+        }
+        const newGroup = await createRepositoryGroup.mutateAsync({
+          repositoryIds: allRepoIds,
+          // No name - it will show repository names as title
+        });
+        effectiveGroupId = newGroup.id;
+      }
+
       if (isComposite) {
         const task = await createCompositeTask.mutateAsync({
-          repositoryGroupId,
+          repositoryGroupId: effectiveGroupId,
           prompt,
           title: title || undefined,
           executionAgentType: agentType,
@@ -48,7 +73,7 @@ export function TaskCreation() {
         navigate(`/composite-tasks/${task.id}`);
       } else {
         const task = await createUnitTask.mutateAsync({
-          repositoryGroupId,
+          repositoryGroupId: effectiveGroupId,
           prompt,
           title: title || undefined,
           branchName: branchName || undefined,
@@ -61,7 +86,7 @@ export function TaskCreation() {
     }
   };
 
-  const isPending = createUnitTask.isPending || createCompositeTask.isPending;
+  const isPending = createUnitTask.isPending || createCompositeTask.isPending || createRepositoryGroup.isPending;
 
   return (
     <div className="flex h-full flex-col">
@@ -85,15 +110,21 @@ export function TaskCreation() {
                 required
               >
                 <option value="">Select a repository group...</option>
+                {repositories.length > 0 && (
+                  <option value={ALL_REPOSITORIES_ID}>
+                    All Repositories ({repositories.length}{" "}
+                    {repositories.length === 1 ? "repo" : "repos"})
+                  </option>
+                )}
                 {groups.map((group) => (
                   <option key={group.id} value={group.id}>
-                    {group.name || "Unnamed Group"} ({group.repositoryIds.length}{" "}
-                    {group.repositoryIds.length === 1 ? "repo" : "repos"})
+                    {group.name || "Unnamed Group"} ({group.repositoryIds?.length ?? 0}{" "}
+                    {(group.repositoryIds?.length ?? 0) === 1 ? "repo" : "repos"})
                   </option>
                 ))}
               </Select>
 
-              {selectedGroup && groupRepositories.length > 0 && (
+              {(selectedGroup || isAllRepositoriesSelected) && groupRepositories.length > 0 && (
                 <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3">
                   <p className="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
                     Repositories in this group:
@@ -125,13 +156,13 @@ export function TaskCreation() {
                 </div>
               )}
 
-              {groups.length === 0 && (
+              {groups.length === 0 && repositories.length === 0 && (
                 <div className="text-center">
                   <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                    No repository groups available.
+                    No repositories available. Add repositories first to create tasks.
                   </p>
                   <Link
-                    to="/repository-groups"
+                    to="/repositories"
                     className="mt-1 inline-flex items-center text-sm text-[hsl(var(--primary))] hover:underline"
                   >
                     <svg
@@ -149,7 +180,7 @@ export function TaskCreation() {
                       <path d="M5 12h14" />
                       <path d="M12 5v14" />
                     </svg>
-                    Create a repository group
+                    Add repositories
                   </Link>
                 </div>
               )}
