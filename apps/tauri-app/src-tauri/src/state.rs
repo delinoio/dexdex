@@ -4,10 +4,14 @@ use std::sync::Arc;
 
 use secrets::{Keychain, NativeKeychain};
 use task_store::TaskStore;
+use tracing::info;
 
 use crate::{
-    config::{config_to_settings, load_config, AppMode, GlobalSettings},
+    config::{
+        config_to_settings, load_config, save_config, settings_to_config, AppMode, GlobalSettings,
+    },
     error::{AppError, AppResult},
+    mobile::platform::supports_local_mode,
     single_process::SingleProcessRuntime,
 };
 
@@ -32,13 +36,23 @@ impl AppState {
     pub async fn new() -> AppResult<Self> {
         // Load configuration
         let config = load_config()?;
-        let settings = config_to_settings(&config);
+        let mut settings = config_to_settings(&config);
+
+        // On mobile, force remote mode as local mode is not supported
+        if !supports_local_mode() && settings.mode == AppMode::Local {
+            info!("Mobile device detected, forcing remote mode");
+            settings.mode = AppMode::Remote;
+            // Save the corrected config to avoid repeating this on next launch
+            if let Err(e) = save_config(&settings_to_config(&settings)) {
+                tracing::warn!("Failed to save corrected config: {}", e);
+            }
+        }
 
         // Create keychain
         let keychain: Box<dyn Keychain> = Box::new(NativeKeychain::new());
 
-        // Create local runtime if in local mode
-        let local_runtime = if settings.mode == AppMode::Local {
+        // Create local runtime if in local mode (desktop only)
+        let local_runtime = if settings.mode == AppMode::Local && supports_local_mode() {
             Some(SingleProcessRuntime::new().await?)
         } else {
             None

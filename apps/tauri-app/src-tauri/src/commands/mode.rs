@@ -9,6 +9,7 @@ use tracing::info;
 use crate::{
     config::{save_config, settings_to_config, AppMode},
     error::AppResult,
+    mobile::platform::supports_local_mode,
     state::AppState,
 };
 
@@ -24,6 +25,9 @@ pub async fn get_mode(state: State<'_, Arc<RwLock<AppState>>>) -> AppResult<Stri
 }
 
 /// Sets the application mode.
+///
+/// On mobile platforms, only remote mode is supported because local mode
+/// requires Docker and full file system access, which are not available.
 #[tauri::command]
 pub async fn set_mode(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -33,13 +37,22 @@ pub async fn set_mode(
     let mut state = state.write().await;
 
     let app_mode = match mode.as_str() {
-        "local" => AppMode::Local,
+        "local" => {
+            // Check if local mode is supported on this platform
+            if !supports_local_mode() {
+                return Err(crate::error::AppError::PlatformError(
+                    "Local mode is not supported on mobile devices. Please use remote mode."
+                        .to_string(),
+                ));
+            }
+            AppMode::Local
+        }
         "remote" => AppMode::Remote,
         _ => {
             return Err(crate::error::AppError::InvalidRequest(format!(
                 "Invalid mode: {}. Must be 'local' or 'remote'",
                 mode
-            )))
+            )));
         }
     };
 

@@ -3,6 +3,7 @@
 //! This module contains all the Tauri commands that can be invoked from the
 //! frontend.
 
+pub mod mobile;
 pub mod mode;
 pub mod repository;
 pub mod secrets;

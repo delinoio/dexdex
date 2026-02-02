@@ -7,6 +7,7 @@ pub mod commands;
 pub mod config;
 pub mod error;
 pub mod events;
+pub mod mobile;
 pub mod notifications;
 pub mod single_process;
 pub mod state;
@@ -150,6 +151,15 @@ pub fn run() {
             commands::secrets::delete_secret,
             commands::secrets::list_secrets,
             commands::secrets::send_secrets,
+            // Mobile commands
+            commands::mobile::get_platform_info,
+            commands::mobile::is_mobile,
+            commands::mobile::supports_local_mode,
+            commands::mobile::check_biometric_availability,
+            commands::mobile::authenticate_biometric,
+            commands::mobile::request_push_permission,
+            commands::mobile::register_push_notifications,
+            commands::mobile::unregister_push_notifications,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
