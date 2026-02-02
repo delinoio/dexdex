@@ -150,8 +150,9 @@ impl<S: TaskStore> AutoFixService<S> {
         self.store.create_agent_task(agent_task.clone()).await?;
 
         // Update the unit task with the new auto-fix task ID
-        // Note: This would need to be implemented in the store
-        // self.store.add_auto_fix_task(unit_task_id, agent_task.id).await?;
+        let mut updated_unit_task = unit_task;
+        updated_unit_task.auto_fix_task_ids.push(agent_task.id);
+        self.store.update_unit_task(updated_unit_task).await?;
 
         Ok(agent_task)
     }
@@ -256,11 +257,16 @@ fn generate_ci_fix_prompt(unit_task: &UnitTask, context: &CiFailureContext) -> S
     }
     if let Some(log) = &context.log_output {
         prompt.push_str("Log output:\n```\n");
-        // Truncate log if too long
-        if log.len() > 5000 {
-            prompt.push_str(&log[..2500]);
+        // Truncate log if too long, using char_indices for UTF-8 safety
+        if log.chars().count() > 5000 {
+            // Get the first 2500 characters safely
+            let start: String = log.chars().take(2500).collect();
+            prompt.push_str(&start);
             prompt.push_str("\n...[truncated]...\n");
-            prompt.push_str(&log[log.len() - 2500..]);
+            // Get the last 2500 characters safely
+            let char_count = log.chars().count();
+            let end: String = log.chars().skip(char_count.saturating_sub(2500)).collect();
+            prompt.push_str(&end);
         } else {
             prompt.push_str(log);
         }

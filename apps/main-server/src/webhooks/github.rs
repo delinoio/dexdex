@@ -10,8 +10,13 @@ use axum::{
     response::IntoResponse,
     routing::post,
 };
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use subtle::ConstantTimeEq;
 use task_store::TaskStore;
 use tracing::{error, info, warn};
+
+type HmacSha256 = Hmac<Sha256>;
 
 use super::{
     CheckRunConclusion, CheckRunPayload, CheckRunStatus, GitHubEventType,
@@ -51,15 +56,41 @@ fn get_delivery_id(headers: &HeaderMap) -> Option<&str> {
 
 /// Verifies the webhook signature using HMAC-SHA256.
 ///
-/// Note: In production, you should verify the signature against your webhook
-/// secret. This is a placeholder that always returns true for development.
-fn verify_signature(_secret: &str, _signature: &str, _payload: &[u8]) -> bool {
-    // TODO: Implement proper HMAC-SHA256 verification
-    // For now, we accept all webhooks. In production:
-    // 1. Extract the hash from the signature (sha256=XXXX)
-    // 2. Compute HMAC-SHA256 of the payload using the secret
-    // 3. Compare using constant-time comparison
-    true
+/// GitHub sends the signature in the format `sha256=<hex_digest>`.
+/// We compute HMAC-SHA256 of the payload using the webhook secret
+/// and compare using constant-time comparison to prevent timing attacks.
+fn verify_signature(secret: &str, signature: &str, payload: &[u8]) -> bool {
+    // Extract the hex digest from the signature header
+    let expected_hex = match signature.strip_prefix("sha256=") {
+        Some(hex) => hex,
+        None => {
+            warn!("Invalid signature format: missing sha256= prefix");
+            return false;
+        }
+    };
+
+    // Decode the expected signature from hex
+    let expected_bytes = match hex::decode(expected_hex) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            warn!("Invalid signature format: not valid hex");
+            return false;
+        }
+    };
+
+    // Compute HMAC-SHA256 of the payload
+    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+        Ok(mac) => mac,
+        Err(_) => {
+            error!("Failed to create HMAC from secret");
+            return false;
+        }
+    };
+    mac.update(payload);
+    let computed = mac.finalize().into_bytes();
+
+    // Constant-time comparison to prevent timing attacks
+    computed.as_slice().ct_eq(&expected_bytes).into()
 }
 
 /// Main webhook handler.

@@ -42,5 +42,11 @@ dotenvy = "0.15"
 # URL encoding
 urlencoding = "2"
 
+# HMAC for webhook signature verification
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+subtle = "2"
+
 [dev-dependencies]
 tokio-test = "0.4"

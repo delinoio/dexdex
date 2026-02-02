@@ -16,6 +16,14 @@ pub enum ParseError {
         source: std::io::Error,
     },
 
+    /// File write error.
+    #[error("failed to write file {path}: {source}")]
+    WriteFile {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     /// YAML parsing error.
     #[error("failed to parse YAML: {0}")]
     YamlParse(#[from] serde_yaml::Error),
@@ -131,7 +139,7 @@ impl Plan {
     /// Saves the plan to a file.
     pub fn save(&self, path: &Path) -> Result<(), ParseError> {
         let yaml = self.to_yaml()?;
-        std::fs::write(path, yaml).map_err(|e| ParseError::ReadFile {
+        std::fs::write(path, yaml).map_err(|e| ParseError::WriteFile {
             path: path.to_path_buf(),
             source: e,
         })?;

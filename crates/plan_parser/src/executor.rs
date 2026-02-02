@@ -151,12 +151,32 @@ impl PlanExecutor {
     }
 
     /// Returns all tasks that are ready to execute.
-    pub fn get_ready_tasks(&self) -> Vec<&str> {
-        self.states
+    ///
+    /// A task is ready if it's in `Pending` status and all its dependencies are
+    /// completed. This method also updates the status of ready tasks to
+    /// `Ready` to prevent them from being returned multiple times.
+    pub fn get_ready_tasks(&mut self) -> Vec<&str> {
+        // Find all tasks that are pending with completed dependencies
+        let ready_task_ids: Vec<String> = self
+            .states
             .iter()
             .filter(|(task_id, state)| {
                 state.status == TaskExecutionStatus::Pending && self.all_deps_completed(task_id)
             })
+            .map(|(task_id, _)| task_id.clone())
+            .collect();
+
+        // Update their status to Ready
+        for task_id in &ready_task_ids {
+            if let Some(state) = self.states.get_mut(task_id) {
+                state.status = TaskExecutionStatus::Ready;
+            }
+        }
+
+        // Return references to the ready task IDs
+        self.states
+            .iter()
+            .filter(|(_, state)| state.status == TaskExecutionStatus::Ready)
             .map(|(task_id, _)| task_id.as_str())
             .collect()
     }
@@ -270,6 +290,8 @@ impl PlanExecutor {
     }
 
     /// Checks if any dependency of a task has failed.
+    /// This method is intended for future use in advanced execution strategies.
+    #[allow(dead_code)]
     fn any_dep_failed(&self, task_id: &str) -> bool {
         if let Some(deps) = self.dependencies.get(task_id) {
             deps.iter().any(|dep_id| {
@@ -317,7 +339,7 @@ impl PlanExecutor {
 }
 
 /// Determines which tasks can run in parallel at the current state.
-pub fn get_parallel_batch(executor: &PlanExecutor) -> Vec<&str> {
+pub fn get_parallel_batch(executor: &mut PlanExecutor) -> Vec<&str> {
     executor.get_ready_tasks()
 }
 
@@ -391,7 +413,7 @@ mod tests {
             PlanTask::new("c", "Task C").with_depends_on(vec!["a".to_string()]),
         ]);
 
-        let executor = PlanExecutor::new(plan).unwrap();
+        let mut executor = PlanExecutor::new(plan).unwrap();
         let ready = executor.get_ready_tasks();
 
         assert!(ready.contains(&"a"));
@@ -469,8 +491,8 @@ mod tests {
             ]),
         ]);
 
-        let executor = PlanExecutor::new(plan).unwrap();
-        let batch = get_parallel_batch(&executor);
+        let mut executor = PlanExecutor::new(plan).unwrap();
+        let batch = get_parallel_batch(&mut executor);
 
         assert_eq!(batch.len(), 3);
         assert!(batch.contains(&"a"));
