@@ -8,6 +8,7 @@ use crate::{VcsProviderType, VcsType};
 
 /// A repository tracked by DeliDev.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Repository {
     /// Unique identifier.
     pub id: Uuid,
@@ -74,6 +75,7 @@ impl Repository {
 
 /// A group of repositories that work together.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepositoryGroup {
     /// Unique identifier.
     pub id: Uuid,
