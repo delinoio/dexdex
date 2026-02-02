@@ -1,7 +1,8 @@
 //! PLAN.yaml parsing module.
 
-use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Errors that can occur during PLAN.yaml parsing.

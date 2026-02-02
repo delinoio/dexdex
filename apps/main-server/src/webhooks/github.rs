@@ -1,24 +1,24 @@
 //! GitHub webhook handler implementation.
 
+use std::sync::Arc;
+
 use axum::{
+    Json, Router,
     body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::post,
-    Json, Router,
 };
-use std::sync::Arc;
 use task_store::TaskStore;
 use tracing::{error, info, warn};
-
-use crate::state::AppState;
 
 use super::{
     CheckRunConclusion, CheckRunPayload, CheckRunStatus, GitHubEventType,
     PullRequestReviewCommentPayload, PullRequestReviewPayload, ReviewAction, ReviewState,
     WebhookResult,
 };
+use crate::state::AppState;
 
 /// Creates the webhook router.
 pub fn webhook_router<S: TaskStore + 'static>() -> Router<Arc<AppState<S>>> {
@@ -51,8 +51,8 @@ fn get_delivery_id(headers: &HeaderMap) -> Option<&str> {
 
 /// Verifies the webhook signature using HMAC-SHA256.
 ///
-/// Note: In production, you should verify the signature against your webhook secret.
-/// This is a placeholder that always returns true for development.
+/// Note: In production, you should verify the signature against your webhook
+/// secret. This is a placeholder that always returns true for development.
 fn verify_signature(_secret: &str, _signature: &str, _payload: &[u8]) -> bool {
     // TODO: Implement proper HMAC-SHA256 verification
     // For now, we accept all webhooks. In production:
@@ -105,9 +105,7 @@ async fn handle_github_webhook<S: TaskStore>(
             handle_review_comment(&state, &body, delivery_id).await
         }
         GitHubEventType::CheckRun => handle_check_run(&state, &body, delivery_id).await,
-        GitHubEventType::CheckSuite => {
-            WebhookResult::skipped("Check suite events not processed")
-        }
+        GitHubEventType::CheckSuite => WebhookResult::skipped("Check suite events not processed"),
         GitHubEventType::Status => WebhookResult::skipped("Status events not processed"),
         _ => WebhookResult::skipped(format!("Event type {:?} not handled", event_type)),
     };
@@ -153,20 +151,17 @@ async fn handle_pull_request_review<S: TaskStore>(
     match payload.review.state {
         ReviewState::ChangesRequested | ReviewState::Commented => {
             // Check if auto-fix is enabled and create task
-            if let Some(body) = &payload.review.body {
-                if !body.trim().is_empty() {
-                    return create_auto_fix_task_for_review(
-                        state,
-                        &payload,
-                        body,
-                        delivery_id,
-                    )
-                    .await;
-                }
+            if let Some(body) = &payload.review.body
+                && !body.trim().is_empty()
+            {
+                return create_auto_fix_task_for_review(state, &payload, body, delivery_id).await;
             }
             WebhookResult::skipped("No review body to process")
         }
-        _ => WebhookResult::skipped(format!("Review state {:?} not actionable", payload.review.state)),
+        _ => WebhookResult::skipped(format!(
+            "Review state {:?} not actionable",
+            payload.review.state
+        )),
     }
 }
 

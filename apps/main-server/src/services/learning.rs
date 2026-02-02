@@ -127,7 +127,11 @@ pub struct FeedbackItem {
 
 impl FeedbackItem {
     /// Creates a new feedback item.
-    pub fn new(unit_task_id: Uuid, reviewer: impl Into<String>, feedback: impl Into<String>) -> Self {
+    pub fn new(
+        unit_task_id: Uuid,
+        reviewer: impl Into<String>,
+        feedback: impl Into<String>,
+    ) -> Self {
         let feedback_str = feedback.into();
         let category = FeedbackCategory::from_feedback(&feedback_str);
 
@@ -176,6 +180,7 @@ impl Default for LearningConfig {
 
 /// Service for managing AI document learning.
 pub struct LearningService<S: TaskStore> {
+    #[allow(dead_code)] // Will be used when full learning implementation is complete
     store: Arc<S>,
     config: LearningConfig,
 }
@@ -200,7 +205,11 @@ impl<S: TaskStore> LearningService<S> {
         );
 
         // Check if the category is learnable
-        if !self.config.learnable_categories.contains(&feedback.category) {
+        if !self
+            .config
+            .learnable_categories
+            .contains(&feedback.category)
+        {
             info!(
                 feedback_id = %feedback.id,
                 category = ?feedback.category,
@@ -221,7 +230,10 @@ impl<S: TaskStore> LearningService<S> {
     /// 2. Checking if similar feedback has been given before
     /// 3. Using AI to determine generalizability
     /// 4. Generating the appropriate documentation update
-    pub async fn process_feedback(&self, feedback_id: Uuid) -> Result<Option<String>, LearningError> {
+    pub async fn process_feedback(
+        &self,
+        feedback_id: Uuid,
+    ) -> Result<Option<String>, LearningError> {
         if !self.config.auto_learn_from_reviews {
             return Err(LearningError::LearningDisabled);
         }
@@ -261,7 +273,8 @@ impl<S: TaskStore> LearningService<S> {
         prompt.push_str(&format!("\nFeedback:\n{}\n\n", feedback.feedback));
 
         prompt.push_str("## Questions to Answer\n");
-        prompt.push_str("1. Is this feedback specific to this task, or is it a general principle?\n");
+        prompt
+            .push_str("1. Is this feedback specific to this task, or is it a general principle?\n");
         prompt.push_str("2. Would this guidance apply to similar future tasks?\n");
         prompt.push_str("3. If generalizable, what document should be updated?\n");
         prompt.push_str("   - AGENTS.md for project-wide coding guidelines\n");
@@ -350,8 +363,9 @@ mod tests {
     #[test]
     fn test_feedback_item_creation() {
         let task_id = Uuid::new_v4();
-        let feedback = FeedbackItem::new(task_id, "alice", "Please add input validation for security")
-            .with_file_path("src/api.rs");
+        let feedback =
+            FeedbackItem::new(task_id, "alice", "Please add input validation for security")
+                .with_file_path("src/api.rs");
 
         assert_eq!(feedback.unit_task_id, task_id);
         assert_eq!(feedback.reviewer, "alice");
@@ -365,8 +379,16 @@ mod tests {
     fn test_learning_config_default() {
         let config = LearningConfig::default();
         assert!(!config.auto_learn_from_reviews);
-        assert!(config.learnable_categories.contains(&FeedbackCategory::Security));
-        assert!(config.learnable_categories.contains(&FeedbackCategory::Architecture));
+        assert!(
+            config
+                .learnable_categories
+                .contains(&FeedbackCategory::Security)
+        );
+        assert!(
+            config
+                .learnable_categories
+                .contains(&FeedbackCategory::Architecture)
+        );
     }
 
     #[test]

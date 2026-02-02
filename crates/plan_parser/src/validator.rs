@@ -125,8 +125,11 @@ fn detect_cycle(plan: &Plan) -> Option<String> {
     }
 
     // Build reverse mapping: task_id -> dependencies
-    let task_deps: HashMap<&str, &Vec<String>> =
-        plan.tasks.iter().map(|t| (t.id.as_str(), &t.depends_on)).collect();
+    let task_deps: HashMap<&str, &Vec<String>> = plan
+        .tasks
+        .iter()
+        .map(|t| (t.id.as_str(), &t.depends_on))
+        .collect();
 
     // DFS from each unvisited node
     for task in &plan.tasks {
@@ -248,9 +251,8 @@ pub fn get_dependent_tasks<'a>(plan: &'a Plan, task_id: &str) -> Vec<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    use crate::PlanTask;
-
     use super::*;
+    use crate::PlanTask;
 
     fn create_plan_with_tasks(tasks: Vec<PlanTask>) -> Plan {
         Plan { tasks }
@@ -285,8 +287,9 @@ mod tests {
 
     #[test]
     fn test_invalid_dependency() {
-        let plan = create_plan_with_tasks(vec![PlanTask::new("a", "Task A")
-            .with_depends_on(vec!["non-existent".to_string()])]);
+        let plan = create_plan_with_tasks(vec![
+            PlanTask::new("a", "Task A").with_depends_on(vec!["non-existent".to_string()])
+        ]);
 
         let result = validate_plan(&plan);
         assert!(!result.is_valid());
@@ -330,9 +333,9 @@ mod tests {
 
     #[test]
     fn test_self_dependency() {
-        let plan =
-            create_plan_with_tasks(vec![PlanTask::new("a", "Task A")
-                .with_depends_on(vec!["a".to_string()])]);
+        let plan = create_plan_with_tasks(vec![
+            PlanTask::new("a", "Task A").with_depends_on(vec!["a".to_string()])
+        ]);
 
         let result = validate_plan(&plan);
         assert!(!result.is_valid());

@@ -17,10 +17,10 @@
 //!     dependsOn: ["setup-db"]
 //! ```
 
+mod executor;
 mod parser;
 mod validator;
-mod executor;
 
+pub use executor::*;
 pub use parser::*;
 pub use validator::*;
-pub use executor::*;

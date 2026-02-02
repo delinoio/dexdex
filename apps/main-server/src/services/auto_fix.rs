@@ -227,10 +227,7 @@ fn generate_review_fix_prompt(unit_task: &UnitTask, context: &ReviewCommentConte
         context.reviewer
     );
 
-    prompt.push_str(&format!(
-        "## Original Task\n{}\n\n",
-        unit_task.prompt
-    ));
+    prompt.push_str(&format!("## Original Task\n{}\n\n", unit_task.prompt));
 
     prompt.push_str("## Review Feedback\n");
     prompt.push_str(&format!("File: `{}`\n", context.file_path));
@@ -249,15 +246,9 @@ fn generate_review_fix_prompt(unit_task: &UnitTask, context: &ReviewCommentConte
 
 /// Generates a prompt for fixing a CI failure.
 fn generate_ci_fix_prompt(unit_task: &UnitTask, context: &CiFailureContext) -> String {
-    let mut prompt = format!(
-        "The CI check '{}' has failed.\n\n",
-        context.check_name
-    );
+    let mut prompt = format!("The CI check '{}' has failed.\n\n", context.check_name);
 
-    prompt.push_str(&format!(
-        "## Original Task\n{}\n\n",
-        unit_task.prompt
-    ));
+    prompt.push_str(&format!("## Original Task\n{}\n\n", unit_task.prompt));
 
     prompt.push_str("## CI Failure Details\n");
     if let Some(summary) = &context.summary {

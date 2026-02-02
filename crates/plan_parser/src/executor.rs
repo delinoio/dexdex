@@ -4,8 +4,10 @@
 //! tasks defined in a PLAN.yaml file, including parallel execution where
 //! dependencies allow.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use thiserror::Error;
 use uuid::Uuid;
@@ -192,11 +194,7 @@ impl PlanExecutor {
     }
 
     /// Marks a task as started.
-    pub fn start_task(
-        &mut self,
-        task_id: &str,
-        unit_task_id: Uuid,
-    ) -> Result<(), ExecutionError> {
+    pub fn start_task(&mut self, task_id: &str, unit_task_id: Uuid) -> Result<(), ExecutionError> {
         let state = self
             .states
             .get_mut(task_id)
@@ -357,9 +355,8 @@ impl ExecutionConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::PlanTask;
-
     use super::*;
+    use crate::PlanTask;
 
     fn create_plan_with_tasks(tasks: Vec<PlanTask>) -> Plan {
         Plan { tasks }
@@ -378,8 +375,9 @@ mod tests {
 
     #[test]
     fn test_executor_invalid_plan() {
-        let plan = create_plan_with_tasks(vec![PlanTask::new("a", "Task A")
-            .with_depends_on(vec!["non-existent".to_string()])]);
+        let plan = create_plan_with_tasks(vec![
+            PlanTask::new("a", "Task A").with_depends_on(vec!["non-existent".to_string()])
+        ]);
 
         let result = PlanExecutor::new(plan);
         assert!(result.is_err());
@@ -464,8 +462,11 @@ mod tests {
             PlanTask::new("a", "Task A"),
             PlanTask::new("b", "Task B"),
             PlanTask::new("c", "Task C"),
-            PlanTask::new("d", "Task D")
-                .with_depends_on(vec!["a".to_string(), "b".to_string(), "c".to_string()]),
+            PlanTask::new("d", "Task D").with_depends_on(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+            ]),
         ]);
 
         let executor = PlanExecutor::new(plan).unwrap();
