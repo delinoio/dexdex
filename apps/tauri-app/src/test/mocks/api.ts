@@ -4,6 +4,7 @@
  * These utilities help create mock API responses for unit and integration tests.
  */
 
+import { vi } from 'vitest';
 import type {
   UnitTask,
   CompositeTask,
@@ -11,6 +12,14 @@ import type {
   Repository,
   RepositoryGroup,
   TodoItem,
+  GlobalSettings,
+  UnitTaskStatus,
+  CompositeTaskStatus,
+  VcsType,
+  VcsProviderType,
+  TodoItemType,
+  TodoItemStatus,
+  AiAgentType,
 } from '../../api/types';
 
 /**
@@ -20,18 +29,18 @@ export function createMockUnitTask(overrides?: Partial<UnitTask>): UnitTask {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
-    repository_group_id: crypto.randomUUID(),
-    agent_task_id: crypto.randomUUID(),
+    repositoryGroupId: crypto.randomUUID(),
+    agentTaskId: crypto.randomUUID(),
     prompt: 'Fix the bug in the login flow',
     title: 'Bug Fix',
-    branch_name: 'fix/login-bug',
-    linked_pr_url: null,
-    base_commit: null,
-    end_commit: null,
-    auto_fix_task_ids: [],
-    status: 'in_progress',
-    created_at: now,
-    updated_at: now,
+    branchName: 'fix/login-bug',
+    linkedPrUrl: undefined,
+    baseCommit: undefined,
+    endCommit: undefined,
+    autoFixTaskIds: [],
+    status: 'in_progress' as UnitTaskStatus,
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -43,15 +52,15 @@ export function createMockCompositeTask(overrides?: Partial<CompositeTask>): Com
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
-    repository_group_id: crypto.randomUUID(),
-    planning_task_id: crypto.randomUUID(),
+    repositoryGroupId: crypto.randomUUID(),
+    planningTaskId: crypto.randomUUID(),
     prompt: 'Implement feature X',
     title: 'Feature X',
-    node_ids: [],
-    status: 'planning',
-    execution_agent_type: 'claude_code',
-    created_at: now,
-    updated_at: now,
+    nodeIds: [],
+    status: 'planning' as CompositeTaskStatus,
+    executionAgentType: 'claude_code' as AiAgentType,
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -65,9 +74,9 @@ export function createMockWorkspace(overrides?: Partial<Workspace>): Workspace {
     id: crypto.randomUUID(),
     name: 'My Workspace',
     description: 'A test workspace',
-    user_id: null,
-    created_at: now,
-    updated_at: now,
+    userId: undefined,
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -79,14 +88,14 @@ export function createMockRepository(overrides?: Partial<Repository>): Repositor
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
-    workspace_id: crypto.randomUUID(),
+    workspaceId: crypto.randomUUID(),
     name: 'my-repo',
-    remote_url: 'https://github.com/user/my-repo.git',
-    default_branch: 'main',
-    vcs_type: 'git',
-    vcs_provider_type: 'github',
-    created_at: now,
-    updated_at: now,
+    remoteUrl: 'https://github.com/user/my-repo.git',
+    defaultBranch: 'main',
+    vcsType: 'git' as VcsType,
+    vcsProviderType: 'github' as VcsProviderType,
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -98,11 +107,11 @@ export function createMockRepositoryGroup(overrides?: Partial<RepositoryGroup>):
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
-    workspace_id: crypto.randomUUID(),
+    workspaceId: crypto.randomUUID(),
     name: 'My Group',
-    repository_ids: [],
-    created_at: now,
-    updated_at: now,
+    repositoryIds: [],
+    createdAt: now,
+    updatedAt: now,
     ...overrides,
   };
 }
@@ -114,16 +123,51 @@ export function createMockTodoItem(overrides?: Partial<TodoItem>): TodoItem {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
-    item_type: 'issue_triage',
-    source: 'github',
-    status: 'pending',
-    repository_id: crypto.randomUUID(),
-    data: {
-      issue_url: 'https://github.com/user/repo/issues/1',
-      issue_title: 'Test Issue',
+    itemType: 'issue_triage' as TodoItemType,
+    status: 'pending' as TodoItemStatus,
+    repositoryId: crypto.randomUUID(),
+    issueTriage: {
+      issueUrl: 'https://github.com/user/repo/issues/1',
+      issueTitle: 'Test Issue',
+      suggestedLabels: [],
+      suggestedAssignees: [],
     },
-    created_at: now,
-    updated_at: now,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+/**
+ * Creates a mock GlobalSettings object with default values.
+ */
+export function createMockGlobalSettings(overrides?: Partial<GlobalSettings>): GlobalSettings {
+  return {
+    mode: 'local',
+    serverUrl: undefined,
+    hotkey: {
+      openChat: 'Option+Z',
+    },
+    notification: {
+      enabled: true,
+      approvalRequest: true,
+      userQuestion: true,
+      reviewReady: true,
+    },
+    agent: {
+      planning: {
+        type: 'claude_code' as AiAgentType,
+        model: 'claude-sonnet-4-20250514',
+      },
+      execution: {
+        type: 'claude_code' as AiAgentType,
+        model: 'claude-sonnet-4-20250514',
+      },
+      chat: {
+        type: 'claude_code' as AiAgentType,
+        model: 'claude-sonnet-4-20250514',
+      },
+    },
     ...overrides,
   };
 }
@@ -136,9 +180,9 @@ export function createMockTodoItem(overrides?: Partial<TodoItem>): TodoItem {
 export const mockTauriResponses = {
   // Task commands
   list_tasks: {
-    unit_tasks: [createMockUnitTask()],
-    composite_tasks: [createMockCompositeTask()],
-    total_count: 2,
+    unitTasks: [createMockUnitTask()],
+    compositeTasks: [createMockCompositeTask()],
+    totalCount: 2,
   },
   get_task: createMockUnitTask(),
   create_unit_task: { task: createMockUnitTask() },
@@ -167,18 +211,14 @@ export const mockTauriResponses = {
   delete_repository_group: {},
 
   // Todo commands
-  list_todo_items: { items: [createMockTodoItem()], total_count: 1 },
+  list_todo_items: { items: [createMockTodoItem()], totalCount: 1 },
   get_todo_item: { item: createMockTodoItem() },
   update_todo_status: { item: createMockTodoItem() },
   dismiss_todo: {},
 
   // Settings commands
   get_global_settings: {
-    settings: {
-      learning: { auto_learn_from_reviews: false },
-      hotkey: { open_chat: 'Option+Z' },
-      notification: { enabled: true },
-    },
+    settings: createMockGlobalSettings(),
   },
   update_global_settings: { settings: {} },
   get_repository_settings: { settings: {} },

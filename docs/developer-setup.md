@@ -188,7 +188,7 @@ pnpm dev
 ```
 
 This starts:
-- Vite dev server at `http://localhost:5173`
+- Vite dev server at `http://localhost:1420` (Tauri-specific port)
 - Tauri desktop window with hot reload
 
 ### Running Frontend Only
@@ -198,6 +198,7 @@ cd apps/tauri-app
 pnpm dev:frontend
 ```
 
+This starts the Vite dev server at `http://localhost:5173` (default Vite port).
 Useful for UI development without the Tauri overhead.
 
 ### Running with Docker Compose
@@ -344,9 +345,9 @@ cargo clippy --fix
 Configuration in `.rustfmt.toml`:
 
 ```toml
-edition = "2024"
-max_width = 100
-use_small_heuristics = "Default"
+edition = "2018"
+format_strings = true
+group_imports = "StdExternalCrate"
 ```
 
 ### TypeScript/JavaScript
