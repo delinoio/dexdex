@@ -113,20 +113,36 @@ pub async fn list_repositories(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
+    let limit = params
+        .limit
+        .map(|l| {
+            u32::try_from(l)
+                .map_err(|_| AppError::InvalidRequest("limit must be non-negative".to_string()))
+        })
+        .transpose()?;
+    let offset = params
+        .offset
+        .map(|o| {
+            u32::try_from(o)
+                .map_err(|_| AppError::InvalidRequest("offset must be non-negative".to_string()))
+        })
+        .transpose()?;
+
     let filter = RepositoryFilter {
         workspace_id: params
             .workspace_id
             .as_ref()
             .and_then(|s| Uuid::parse_str(s).ok()),
-        limit: params.limit.map(|l| l as u32),
-        offset: params.offset.map(|o| o as u32),
+        limit,
+        offset,
     };
 
     let (repositories, total) = runtime.task_store_arc().list_repositories(filter).await?;
 
+    let total_count = i32::try_from(total).unwrap_or(i32::MAX);
     Ok(ListRepositoriesResult {
         repositories,
-        total_count: total as i32,
+        total_count,
     })
 }
 
@@ -316,6 +332,12 @@ pub async fn create_repository_group(
         ));
     }
 
+    // Validate and sanitize name if provided
+    let name = params
+        .name
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty());
+
     // Parse repository IDs
     let repository_ids: Vec<Uuid> = params
         .repository_ids
@@ -334,7 +356,7 @@ pub async fn create_repository_group(
     }
 
     let mut group = RepositoryGroup::new(workspace_id);
-    if let Some(name) = params.name {
+    if let Some(name) = name {
         group = group.with_name(name);
     }
     for repo_id in repository_ids {
@@ -372,6 +394,21 @@ pub async fn list_repository_groups(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
+    let limit = params
+        .limit
+        .map(|l| {
+            u32::try_from(l)
+                .map_err(|_| AppError::InvalidRequest("limit must be non-negative".to_string()))
+        })
+        .transpose()?;
+    let offset = params
+        .offset
+        .map(|o| {
+            u32::try_from(o)
+                .map_err(|_| AppError::InvalidRequest("offset must be non-negative".to_string()))
+        })
+        .transpose()?;
+
     let filter = RepositoryGroupFilter {
         workspace_id: params
             .workspace_id
@@ -379,8 +416,8 @@ pub async fn list_repository_groups(
             .map(|s| Uuid::parse_str(s))
             .transpose()
             .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?,
-        limit: params.limit.map(|l| l as u32),
-        offset: params.offset.map(|o| o as u32),
+        limit,
+        offset,
     };
 
     let (groups, total) = runtime
@@ -388,9 +425,10 @@ pub async fn list_repository_groups(
         .list_repository_groups(filter)
         .await?;
 
+    let total_count = i32::try_from(total).unwrap_or(i32::MAX);
     Ok(ListRepositoryGroupsResult {
         groups,
-        total_count: total as i32,
+        total_count,
     })
 }
 
@@ -453,6 +491,12 @@ pub async fn update_repository_group(
         ));
     }
 
+    // Validate and sanitize name if provided
+    let name = params
+        .name
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty());
+
     // Parse repository IDs
     let repository_ids: Vec<Uuid> = params
         .repository_ids
@@ -476,7 +520,7 @@ pub async fn update_repository_group(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)))?;
 
-    group.name = params.name;
+    group.name = name;
     group.repository_ids = repository_ids;
     group.updated_at = chrono::Utc::now();
 
@@ -558,10 +602,12 @@ mod tests {
     fn test_validate_repository_url_invalid_format() {
         let result = validate_repository_url("not-a-valid-url");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid repository URL format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid repository URL format")
+        );
     }
 
     #[test]
