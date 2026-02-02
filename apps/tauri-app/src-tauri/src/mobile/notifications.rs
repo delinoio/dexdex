@@ -18,7 +18,7 @@ pub enum PushService {
 }
 
 /// Push notification registration status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PushRegistrationStatus {
     /// Whether push notifications are supported on this platform.
@@ -31,18 +31,6 @@ pub struct PushRegistrationStatus {
     pub service: Option<PushService>,
     /// Error message if registration failed.
     pub error: Option<String>,
-}
-
-impl Default for PushRegistrationStatus {
-    fn default() -> Self {
-        Self {
-            supported: false,
-            permission_granted: false,
-            device_token: None,
-            service: None,
-            error: None,
-        }
-    }
 }
 
 /// Push notification payload.
