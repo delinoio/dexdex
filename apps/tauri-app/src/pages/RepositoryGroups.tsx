@@ -18,6 +18,7 @@ export function RepositoryGroups() {
   const [editingGroup, setEditingGroup] = useState<RepositoryGroup | undefined>(
     undefined
   );
+  const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
 
   const { data: groupsData, isLoading, error } = useRepositoryGroups({});
   const { data: repositoriesData } = useRepositories({});
@@ -58,10 +59,13 @@ export function RepositoryGroups() {
   };
 
   const handleDelete = async (groupId: string) => {
+    setDeletingGroupId(groupId);
     try {
       await deleteGroup.mutateAsync(groupId);
     } catch (error) {
       console.error("Failed to delete repository group:", error);
+    } finally {
+      setDeletingGroupId(null);
     }
   };
 
@@ -166,7 +170,7 @@ export function RepositoryGroups() {
                 repositories={repositories}
                 onEdit={() => openEditDialog(group)}
                 onDelete={() => handleDelete(group.id)}
-                isDeleting={deleteGroup.isPending}
+                isDeleting={deletingGroupId === group.id}
               />
             ))
           )}

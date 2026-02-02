@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Button } from "@/components/ui/Button";
 import type { Repository, RepositoryGroup } from "@/api/types";
 
@@ -16,8 +17,17 @@ export function RepositoryGroupCard({
   onDelete,
   isDeleting,
 }: RepositoryGroupCardProps) {
-  const groupRepositories = repositories.filter((repo) =>
-    group.repositoryIds.includes(repo.id)
+  const repositoryMap = useMemo(
+    () => new Map(repositories.map((r) => [r.id, r])),
+    [repositories]
+  );
+
+  const groupRepositories = useMemo(
+    () =>
+      group.repositoryIds
+        .map((id) => repositoryMap.get(id))
+        .filter((r): r is Repository => r !== undefined),
+    [group.repositoryIds, repositoryMap]
   );
 
   const displayName = group.name || "Unnamed Group";

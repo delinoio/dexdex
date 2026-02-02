@@ -227,16 +227,8 @@ pub async fn list_repository_groups<S: TaskStore>(
 ) -> ServerResult<Json<ListRepositoryGroupsResponse>> {
     let filter = RepositoryGroupFilter {
         workspace_id: request.workspace_id.as_ref().and_then(|id| id.parse().ok()),
-        limit: if request.limit > 0 {
-            Some(request.limit as u32)
-        } else {
-            None
-        },
-        offset: if request.offset > 0 {
-            Some(request.offset as u32)
-        } else {
-            None
-        },
+        limit: request.limit.try_into().ok().filter(|&v| v > 0),
+        offset: request.offset.try_into().ok().filter(|&v| v > 0),
     };
 
     let (groups, total) = state.store.list_repository_groups(filter).await?;

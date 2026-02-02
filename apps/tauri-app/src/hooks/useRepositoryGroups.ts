@@ -65,10 +65,10 @@ export function useUpdateRepositoryGroup() {
       groupId: string;
       params: UpdateRepositoryGroupParams;
     }) => updateRepositoryGroup(groupId, params),
-    onSuccess: (data) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: repositoryGroupKeys.lists() });
       queryClient.invalidateQueries({
-        queryKey: repositoryGroupKeys.detail(data.id),
+        queryKey: repositoryGroupKeys.detail(variables.groupId),
       });
     },
   });
