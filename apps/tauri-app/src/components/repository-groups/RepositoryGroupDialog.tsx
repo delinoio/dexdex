@@ -57,8 +57,13 @@ export function RepositoryGroupDialog({
 
   const handleSubmit = async () => {
     if (selectedRepoIds.length === 0) return;
-    await onSubmit(name || undefined, selectedRepoIds);
-    onOpenChange(false);
+    try {
+      await onSubmit(name || undefined, selectedRepoIds);
+      onOpenChange(false);
+    } catch (error) {
+      // Keep the dialog open on error; surface details via logging (or UI if available).
+      console.error("Failed to submit repository group:", error);
+    }
   };
 
   return (

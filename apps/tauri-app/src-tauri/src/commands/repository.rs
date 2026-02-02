@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use entities::{Repository, RepositoryGroup, VcsProviderType};
 use serde::{Deserialize, Serialize};
-use task_store::{RepositoryFilter, TaskStore};
+use task_store::{RepositoryFilter, RepositoryGroupFilter, TaskStore};
 use tauri::State;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -372,40 +372,25 @@ pub async fn list_repository_groups(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let workspace_id = params
-        .workspace_id
-        .as_ref()
-        .map(|s| Uuid::parse_str(s))
-        .transpose()
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+    let filter = RepositoryGroupFilter {
+        workspace_id: params
+            .workspace_id
+            .as_ref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?,
+        limit: params.limit.map(|l| l as u32),
+        offset: params.offset.map(|o| o as u32),
+    };
 
-    let groups = runtime
+    let (groups, total) = runtime
         .task_store_arc()
-        .list_repository_groups(workspace_id)
+        .list_repository_groups(filter)
         .await?;
-
-    // Apply pagination if specified
-    let total_count = groups.len() as i32;
-    let groups = if let Some(offset) = params.offset {
-        let offset = offset as usize;
-        if offset < groups.len() {
-            groups.into_iter().skip(offset).collect()
-        } else {
-            Vec::new()
-        }
-    } else {
-        groups
-    };
-
-    let groups = if let Some(limit) = params.limit {
-        groups.into_iter().take(limit as usize).collect()
-    } else {
-        groups
-    };
 
     Ok(ListRepositoryGroupsResult {
         groups,
-        total_count,
+        total_count: total as i32,
     })
 }
 

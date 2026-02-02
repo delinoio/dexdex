@@ -60,6 +60,17 @@ pub struct WorkspaceFilter {
     pub offset: Option<u32>,
 }
 
+/// Filter options for listing repository groups.
+#[derive(Debug, Clone, Default)]
+pub struct RepositoryGroupFilter {
+    /// Filter by workspace ID.
+    pub workspace_id: Option<Uuid>,
+    /// Maximum number of results.
+    pub limit: Option<u32>,
+    /// Offset for pagination.
+    pub offset: Option<u32>,
+}
+
 /// Filter options for listing TTY input requests.
 #[derive(Debug, Clone, Default)]
 pub struct TtyInputFilter {
@@ -154,11 +165,11 @@ pub trait TaskStore: Send + Sync {
     /// Gets a repository group by ID.
     async fn get_repository_group(&self, id: Uuid) -> TaskStoreResult<Option<RepositoryGroup>>;
 
-    /// Lists repository groups by workspace ID.
+    /// Lists repository groups with optional filters.
     async fn list_repository_groups(
         &self,
-        workspace_id: Option<Uuid>,
-    ) -> TaskStoreResult<Vec<RepositoryGroup>>;
+        filter: RepositoryGroupFilter,
+    ) -> TaskStoreResult<(Vec<RepositoryGroup>, u32)>;
 
     /// Updates a repository group.
     async fn update_repository_group(
@@ -257,7 +268,7 @@ pub trait TaskStore: Send + Sync {
 
     /// Gets a composite task node by ID.
     async fn get_composite_task_node(&self, id: Uuid)
-        -> TaskStoreResult<Option<CompositeTaskNode>>;
+    -> TaskStoreResult<Option<CompositeTaskNode>>;
 
     /// Lists composite task nodes by composite task ID.
     async fn list_composite_task_nodes(

@@ -29,10 +29,14 @@ export function RepositoryGroups() {
     name: string | undefined,
     repositoryIds: string[]
   ) => {
-    await createGroup.mutateAsync({
-      name,
-      repositoryIds,
-    });
+    try {
+      await createGroup.mutateAsync({
+        name,
+        repositoryIds,
+      });
+    } catch (error) {
+      console.error("Failed to create repository group:", error);
+    }
   };
 
   const handleUpdate = async (
@@ -40,17 +44,25 @@ export function RepositoryGroups() {
     repositoryIds: string[]
   ) => {
     if (!editingGroup) return;
-    await updateGroup.mutateAsync({
-      groupId: editingGroup.id,
-      params: {
-        name,
-        repositoryIds,
-      },
-    });
+    try {
+      await updateGroup.mutateAsync({
+        groupId: editingGroup.id,
+        params: {
+          name,
+          repositoryIds,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to update repository group:", error);
+    }
   };
 
   const handleDelete = async (groupId: string) => {
-    await deleteGroup.mutateAsync(groupId);
+    try {
+      await deleteGroup.mutateAsync(groupId);
+    } catch (error) {
+      console.error("Failed to delete repository group:", error);
+    }
   };
 
   const openCreateDialog = () => {

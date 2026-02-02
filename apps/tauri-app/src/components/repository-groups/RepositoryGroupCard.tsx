@@ -59,6 +59,7 @@ export function RepositoryGroupCard({
             size="icon"
             onClick={onDelete}
             disabled={isDeleting}
+            aria-label="Delete repository group"
             className="text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive))] hover:text-white"
           >
             <svg

@@ -10,13 +10,13 @@ use entities::{
     AgentSession, AgentTask, CompositeTask, CompositeTaskNode, Repository, RepositoryGroup,
     TodoItem, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace,
 };
-use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    RepositoryFilter, TaskFilter, TaskStore, TaskStoreError, TaskStoreResult, TodoFilter,
-    TtyInputFilter, WorkspaceFilter,
+    RepositoryFilter, RepositoryGroupFilter, TaskFilter, TaskStore, TaskStoreError,
+    TaskStoreResult, TodoFilter, TtyInputFilter, WorkspaceFilter,
 };
 
 /// SQLite-backed task store for persistent storage.
@@ -697,17 +697,42 @@ impl TaskStore for SqliteTaskStore {
 
     async fn list_repository_groups(
         &self,
-        workspace_id: Option<Uuid>,
-    ) -> TaskStoreResult<Vec<RepositoryGroup>> {
-        let rows = if let Some(ws_id) = workspace_id {
-            sqlx::query("SELECT * FROM repository_groups WHERE workspace_id = ?")
+        filter: RepositoryGroupFilter,
+    ) -> TaskStoreResult<(Vec<RepositoryGroup>, u32)> {
+        let mut query = String::from("SELECT * FROM repository_groups");
+        let mut conditions = Vec::new();
+
+        if filter.workspace_id.is_some() {
+            conditions.push("workspace_id = ?");
+        }
+
+        if !conditions.is_empty() {
+            query.push_str(" WHERE ");
+            query.push_str(&conditions.join(" AND "));
+        }
+
+        // Get total count
+        let count_query = query.replace("SELECT *", "SELECT COUNT(*) as count");
+        let count_row = if let Some(ws_id) = filter.workspace_id {
+            sqlx::query(&count_query)
+                .bind(ws_id.to_string())
+                .fetch_one(&self.pool)
+                .await?
+        } else {
+            sqlx::query(&count_query).fetch_one(&self.pool).await?
+        };
+        let total: i64 = count_row.get("count");
+
+        // Add pagination (uses safe numeric formatting - see append_pagination docs)
+        Self::append_pagination(&mut query, filter.limit, filter.offset);
+
+        let rows = if let Some(ws_id) = filter.workspace_id {
+            sqlx::query(&query)
                 .bind(ws_id.to_string())
                 .fetch_all(&self.pool)
                 .await?
         } else {
-            sqlx::query("SELECT * FROM repository_groups")
-                .fetch_all(&self.pool)
-                .await?
+            sqlx::query(&query).fetch_all(&self.pool).await?
         };
 
         let mut groups = Vec::new();
@@ -727,7 +752,7 @@ impl TaskStore for SqliteTaskStore {
             });
         }
 
-        Ok(groups)
+        Ok((groups, total as u32))
     }
 
     async fn update_repository_group(
