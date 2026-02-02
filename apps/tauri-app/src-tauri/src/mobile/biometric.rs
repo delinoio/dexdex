@@ -140,10 +140,16 @@ impl BiometricAuth {
         //
         // This would be implemented using Swift/ObjC bindings.
         let _ = reason;
-        tracing::info!("iOS biometric authentication requested: {}", reason);
+        tracing::warn!(
+            "iOS biometric authentication not yet implemented - reason: {}",
+            reason
+        );
 
-        // Placeholder - would actually authenticate
-        Ok(true)
+        // Return error instead of placeholder success for security
+        Err(AppError::PlatformError(
+            "iOS biometric authentication not yet implemented. Native integration required."
+                .to_string(),
+        ))
     }
 
     /// Android-specific authentication.
@@ -159,10 +165,16 @@ impl BiometricAuth {
         // This would be implemented using JNI bindings or Tauri's Android plugin
         // system.
         let _ = reason;
-        tracing::info!("Android biometric authentication requested: {}", reason);
+        tracing::warn!(
+            "Android biometric authentication not yet implemented - reason: {}",
+            reason
+        );
 
-        // Placeholder - would actually authenticate
-        Ok(true)
+        // Return error instead of placeholder success for security
+        Err(AppError::PlatformError(
+            "Android biometric authentication not yet implemented. Native integration required."
+                .to_string(),
+        ))
     }
 }
 

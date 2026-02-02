@@ -145,8 +145,11 @@ impl MobilePushNotifications {
         // .badge, .sound])
         //
         // This would be implemented using Swift/ObjC bindings.
-        tracing::info!("Requesting iOS push notification permission");
-        Ok(true) // Placeholder
+        tracing::warn!("iOS push notification permission not yet implemented");
+        Err(AppError::PlatformError(
+            "iOS push notification permission not yet implemented. Native integration required."
+                .to_string(),
+        ))
     }
 
     /// Android permission request.
@@ -157,8 +160,12 @@ impl MobilePushNotifications {
         //
         // This would be implemented using JNI bindings or Tauri's Android plugin
         // system.
-        tracing::info!("Requesting Android push notification permission");
-        Ok(true) // Placeholder
+        tracing::warn!("Android push notification permission not yet implemented");
+        Err(AppError::PlatformError(
+            "Android push notification permission not yet implemented. Native integration \
+             required."
+                .to_string(),
+        ))
     }
 
     /// iOS registration.
@@ -172,14 +179,19 @@ impl MobilePushNotifications {
         //    didRegisterForRemoteNotificationsWithDeviceToken
         //
         // This would be implemented using Swift/ObjC bindings.
-        tracing::info!("Registering for iOS push notifications (APNs)");
+        tracing::warn!("iOS push notification registration not yet implemented");
 
+        // Return status indicating not implemented rather than fake success
         Ok(PushRegistrationStatus {
             supported: true,
-            permission_granted: true,
-            device_token: Some("ios-device-token-placeholder".to_string()),
+            permission_granted: false,
+            device_token: None,
             service: Some(PushService::Apns),
-            error: None,
+            error: Some(
+                "iOS push notification registration not yet implemented. Native integration \
+                 required."
+                    .to_string(),
+            ),
         })
     }
 
@@ -193,14 +205,19 @@ impl MobilePushNotifications {
         //
         // This would be implemented using JNI bindings or Tauri's Android plugin
         // system.
-        tracing::info!("Registering for Android push notifications (FCM)");
+        tracing::warn!("Android push notification registration not yet implemented");
 
+        // Return status indicating not implemented rather than fake success
         Ok(PushRegistrationStatus {
             supported: true,
-            permission_granted: true,
-            device_token: Some("android-device-token-placeholder".to_string()),
+            permission_granted: false,
+            device_token: None,
             service: Some(PushService::Fcm),
-            error: None,
+            error: Some(
+                "Android push notification registration not yet implemented. Native integration \
+                 required."
+                    .to_string(),
+            ),
         })
     }
 

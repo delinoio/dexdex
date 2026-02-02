@@ -48,12 +48,22 @@ export function useIsMobileViewport(): boolean {
   );
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
     const checkMobile = () => {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
     };
 
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    const debouncedCheckMobile = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(checkMobile, 150);
+    };
+
+    window.addEventListener("resize", debouncedCheckMobile);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener("resize", debouncedCheckMobile);
+    };
   }, []);
 
   return isMobile;

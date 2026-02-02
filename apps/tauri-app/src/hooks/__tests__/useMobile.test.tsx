@@ -39,7 +39,9 @@ describe("useMobile hooks", () => {
       expect(result.current).toBe(false);
     });
 
-    it("updates when window is resized", () => {
+    it("updates when window is resized", async () => {
+      vi.useFakeTimers();
+
       Object.defineProperty(window, "innerWidth", {
         writable: true,
         value: 1024,
@@ -57,7 +59,14 @@ describe("useMobile hooks", () => {
         window.dispatchEvent(new Event("resize"));
       });
 
+      // Wait for debounce to complete (150ms)
+      await act(async () => {
+        vi.advanceTimersByTime(150);
+      });
+
       expect(result.current).toBe(true);
+
+      vi.useRealTimers();
     });
 
     it("adds and removes resize event listener", () => {

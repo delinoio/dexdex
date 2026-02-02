@@ -7,7 +7,9 @@ use task_store::TaskStore;
 use tracing::info;
 
 use crate::{
-    config::{AppMode, GlobalSettings, config_to_settings, load_config},
+    config::{
+        AppMode, GlobalSettings, config_to_settings, load_config, save_config, settings_to_config,
+    },
     error::{AppError, AppResult},
     mobile::platform::supports_local_mode,
     single_process::SingleProcessRuntime,
@@ -40,6 +42,10 @@ impl AppState {
         if !supports_local_mode() && settings.mode == AppMode::Local {
             info!("Mobile device detected, forcing remote mode");
             settings.mode = AppMode::Remote;
+            // Save the corrected config to avoid repeating this on next launch
+            if let Err(e) = save_config(&settings_to_config(&settings)) {
+                tracing::warn!("Failed to save corrected config: {}", e);
+            }
         }
 
         // Create keychain

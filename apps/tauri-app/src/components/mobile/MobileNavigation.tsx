@@ -114,10 +114,16 @@ export function MobileNavigation() {
                   : "text-[hsl(var(--muted-foreground))]"
               )
             }
-            aria-current={({ isActive }) => (isActive ? "page" : undefined)}
           >
-            {item.icon}
-            <span>{item.label}</span>
+            {({ isActive }) => (
+              <div
+                className="flex flex-col items-center justify-center gap-1"
+                aria-current={isActive ? "page" : undefined}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </div>
+            )}
           </NavLink>
         ))}
       </div>
