@@ -332,3 +332,27 @@ export interface ListWorkspacesResult {
   workspaces: Workspace[];
   totalCount: number;
 }
+
+// Repository Group Request/Response types
+
+export interface CreateRepositoryGroupParams {
+  workspaceId?: string;
+  name?: string;
+  repositoryIds: string[];
+}
+
+export interface ListRepositoryGroupsParams {
+  workspaceId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListRepositoryGroupsResult {
+  groups: RepositoryGroup[];
+  totalCount: number;
+}
+
+export interface UpdateRepositoryGroupParams {
+  name?: string;
+  repositoryIds: string[];
+}

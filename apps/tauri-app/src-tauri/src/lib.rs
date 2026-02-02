@@ -133,6 +133,12 @@ pub fn run() {
             commands::repository::add_repository,
             commands::repository::list_repositories,
             commands::repository::remove_repository,
+            // Repository Group commands
+            commands::repository::create_repository_group,
+            commands::repository::list_repository_groups,
+            commands::repository::get_repository_group,
+            commands::repository::update_repository_group,
+            commands::repository::delete_repository_group,
             // Workspace commands
             commands::workspace::create_workspace,
             commands::workspace::list_workspaces,

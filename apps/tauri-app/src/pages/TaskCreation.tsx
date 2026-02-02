@@ -1,16 +1,21 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useCallback } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { useRepositoryGroups, useCreateRepositoryGroup } from "@/hooks/useRepositoryGroups";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useCreateUnitTask, useCreateCompositeTask } from "@/hooks/useTasks";
-import { AiAgentType } from "@/api/types";
+import { AiAgentType, RepositoryGroup, Repository } from "@/api/types";
+
+// Prefix to identify individual repository selections (treated as implicit groups)
+const REPO_PREFIX = "__repo__";
 
 export function TaskCreation() {
-  const [repositoryGroupId, setRepositoryGroupId] = useState("");
+  // Selection can be either a group ID or a repository ID prefixed with REPO_PREFIX
+  const [selection, setSelection] = useState("");
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
   const [branchName, setBranchName] = useState("");
@@ -18,19 +23,67 @@ export function TaskCreation() {
   const [isComposite, setIsComposite] = useState(false);
   const navigate = useNavigate();
 
+  const { data: groupsData } = useRepositoryGroups({});
   const { data: repositoriesData } = useRepositories({});
   const createUnitTask = useCreateUnitTask();
   const createCompositeTask = useCreateCompositeTask();
+  const createRepositoryGroup = useCreateRepositoryGroup();
+
+  const groups = groupsData?.groups ?? [];
+  const repositories = repositoriesData?.repositories ?? [];
+
+  // Helper function to get display name for a group (name or list of repo names)
+  const getGroupDisplayName = useCallback(
+    (group: RepositoryGroup, repos: Repository[]): string => {
+      if (group.name) {
+        return group.name;
+      }
+      const repoIds = group.repositoryIds ?? [];
+      const repoNames = repoIds
+        .map((id) => repos.find((r) => r.id === id)?.name)
+        .filter((name): name is string => name !== undefined);
+      if (repoNames.length > 0) {
+        return repoNames.join(", ");
+      }
+      return "Unnamed Group";
+    },
+    []
+  );
+
+  // Check if an individual repository is selected (vs an existing group)
+  const isRepositorySelected = selection.startsWith(REPO_PREFIX);
+  const selectedRepositoryId = isRepositorySelected ? selection.slice(REPO_PREFIX.length) : null;
+  const selectedRepository = selectedRepositoryId
+    ? repositories.find((r) => r.id === selectedRepositoryId)
+    : null;
+
+  const selectedGroup = !isRepositorySelected ? groups.find((g) => g.id === selection) : null;
+  const groupRepositories = isRepositorySelected && selectedRepository
+    ? [selectedRepository]
+    : selectedGroup
+      ? repositories.filter((repo) => (selectedGroup.repositoryIds ?? []).includes(repo.id))
+      : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!repositoryGroupId || !prompt) return;
+    if (!selection || !prompt) return;
 
     try {
+      let effectiveGroupId = selection;
+
+      // If an individual repository is selected, create a repository group for it
+      if (isRepositorySelected && selectedRepositoryId) {
+        const newGroup = await createRepositoryGroup.mutateAsync({
+          repositoryIds: [selectedRepositoryId],
+          // No name - it will show the repository name as title
+        });
+        effectiveGroupId = newGroup.id;
+      }
+
       if (isComposite) {
         const task = await createCompositeTask.mutateAsync({
-          repositoryGroupId,
+          repositoryGroupId: effectiveGroupId,
           prompt,
           title: title || undefined,
           executionAgentType: agentType,
@@ -38,7 +91,7 @@ export function TaskCreation() {
         navigate(`/composite-tasks/${task.id}`);
       } else {
         const task = await createUnitTask.mutateAsync({
-          repositoryGroupId,
+          repositoryGroupId: effectiveGroupId,
           prompt,
           title: title || undefined,
           branchName: branchName || undefined,
@@ -51,7 +104,7 @@ export function TaskCreation() {
     }
   };
 
-  const isPending = createUnitTask.isPending || createCompositeTask.isPending;
+  const isPending = createUnitTask.isPending || createCompositeTask.isPending || createRepositoryGroup.isPending;
 
   return (
     <div className="flex h-full flex-col">
@@ -65,22 +118,97 @@ export function TaskCreation() {
             <CardHeader>
               <CardTitle>Repository</CardTitle>
               <CardDescription>
-                Select the repository or repository group for this task.
+                Select a repository or repository group for this task.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <Select
-                value={repositoryGroupId}
-                onChange={(e) => setRepositoryGroupId(e.target.value)}
+                value={selection}
+                onChange={(e) => setSelection(e.target.value)}
                 required
               >
                 <option value="">Select a repository...</option>
-                {repositoriesData?.repositories.map((repo) => (
-                  <option key={repo.id} value={repo.id}>
-                    {repo.name}
-                  </option>
-                ))}
+                {repositories.length > 0 && (
+                  <optgroup label="Repositories">
+                    {repositories.map((repo) => (
+                      <option key={repo.id} value={`${REPO_PREFIX}${repo.id}`}>
+                        {repo.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {groups.length > 0 && (
+                  <optgroup label="Repository Groups">
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {getGroupDisplayName(group, repositories)} ({group.repositoryIds?.length ?? 0}{" "}
+                        {(group.repositoryIds?.length ?? 0) === 1 ? "repo" : "repos"})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
+
+              {(selectedGroup || selectedRepository) && groupRepositories.length > 0 && (
+                <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3">
+                  <p className="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                    Repositories in this group:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {groupRepositories.map((repo) => (
+                      <div
+                        key={repo.id}
+                        className="flex items-center gap-1.5 rounded-md bg-[hsl(var(--background))] px-2 py-1 text-xs"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="text-[hsl(var(--muted-foreground))]"
+                        >
+                          <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                        </svg>
+                        <span>{repo.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {repositories.length === 0 && (
+                <div className="text-center">
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                    No repositories available. Add repositories first to create tasks.
+                  </p>
+                  <Link
+                    to="/repositories"
+                    className="mt-1 inline-flex items-center text-sm text-[hsl(var(--primary))] hover:underline"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="mr-1"
+                    >
+                      <path d="M5 12h14" />
+                      <path d="M12 5v14" />
+                    </svg>
+                    Add repositories
+                  </Link>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -185,7 +313,7 @@ export function TaskCreation() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!repositoryGroupId || !prompt || isPending}>
+            <Button type="submit" disabled={!selection || !prompt || isPending}>
               {isPending ? "Creating..." : "Create Task"}
             </Button>
           </div>

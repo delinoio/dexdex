@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::{Json, extract::State};
 use entities::{Repository, RepositoryGroup, VcsProviderType, VcsType};
 use rpc_protocol::{requests::*, responses::*};
-use task_store::{RepositoryFilter, TaskStore};
+use task_store::{RepositoryFilter, RepositoryGroupFilter, TaskStore};
 use uuid::Uuid;
 
 use crate::{
@@ -225,13 +225,17 @@ pub async fn list_repository_groups<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<ListRepositoryGroupsRequest>,
 ) -> ServerResult<Json<ListRepositoryGroupsResponse>> {
-    let workspace_id = request.workspace_id.as_ref().and_then(|id| id.parse().ok());
+    let filter = RepositoryGroupFilter {
+        workspace_id: request.workspace_id.as_ref().and_then(|id| id.parse().ok()),
+        limit: request.limit.try_into().ok().filter(|&v| v > 0),
+        offset: request.offset.try_into().ok().filter(|&v| v > 0),
+    };
 
-    let groups = state.store.list_repository_groups(workspace_id).await?;
+    let (groups, total) = state.store.list_repository_groups(filter).await?;
 
     Ok(Json(ListRepositoryGroupsResponse {
         groups: groups.iter().map(entity_to_rpc_repository_group).collect(),
-        total_count: groups.len() as i32,
+        total_count: total as i32,
     }))
 }
 

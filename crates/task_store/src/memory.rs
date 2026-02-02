@@ -11,8 +11,8 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    RepositoryFilter, TaskFilter, TaskStore, TaskStoreError, TaskStoreResult, TodoFilter,
-    TtyInputFilter, WorkspaceFilter,
+    RepositoryFilter, RepositoryGroupFilter, TaskFilter, TaskStore, TaskStoreError,
+    TaskStoreResult, TodoFilter, TtyInputFilter, WorkspaceFilter,
 };
 
 /// In-memory task store for testing purposes.
@@ -246,20 +246,31 @@ impl TaskStore for MemoryTaskStore {
 
     async fn list_repository_groups(
         &self,
-        workspace_id: Option<Uuid>,
-    ) -> TaskStoreResult<Vec<RepositoryGroup>> {
+        filter: RepositoryGroupFilter,
+    ) -> TaskStoreResult<(Vec<RepositoryGroup>, u32)> {
         let groups = self.repository_groups.read().await;
-        Ok(groups
+        let mut result: Vec<RepositoryGroup> = groups
             .values()
             .filter(|g| {
-                if let Some(ws_id) = workspace_id {
+                if let Some(ws_id) = filter.workspace_id {
                     g.workspace_id == ws_id
                 } else {
                     true
                 }
             })
             .cloned()
-            .collect())
+            .collect();
+
+        let total = result.len() as u32;
+
+        if let Some(offset) = filter.offset {
+            result = result.into_iter().skip(offset as usize).collect();
+        }
+        if let Some(limit) = filter.limit {
+            result = result.into_iter().take(limit as usize).collect();
+        }
+
+        Ok((result, total))
     }
 
     async fn update_repository_group(

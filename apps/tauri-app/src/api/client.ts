@@ -4,19 +4,24 @@ import type {
   AddRepositoryParams,
   CompositeTask,
   CreateCompositeTaskParams,
+  CreateRepositoryGroupParams,
   CreateUnitTaskParams,
   CreateWorkspaceParams,
   GlobalSettings,
   ListRepositoriesParams,
   ListRepositoriesResult,
+  ListRepositoryGroupsParams,
+  ListRepositoryGroupsResult,
   ListTasksParams,
   ListTasksResult,
   ListWorkspacesParams,
   ListWorkspacesResult,
   Repository,
+  RepositoryGroup,
   RepositorySettings,
   TaskResponse,
   UnitTask,
+  UpdateRepositoryGroupParams,
   UpdateWorkspaceParams,
   Workspace,
 } from "./types";
@@ -90,6 +95,35 @@ export async function listRepositories(
 
 export async function removeRepository(repositoryId: string): Promise<void> {
   return invoke<void>("remove_repository", { repositoryId });
+}
+
+// Repository Group commands
+
+export async function createRepositoryGroup(
+  params: CreateRepositoryGroupParams
+): Promise<RepositoryGroup> {
+  return invoke<RepositoryGroup>("create_repository_group", { params });
+}
+
+export async function listRepositoryGroups(
+  params: ListRepositoryGroupsParams = {}
+): Promise<ListRepositoryGroupsResult> {
+  return invoke<ListRepositoryGroupsResult>("list_repository_groups", { params });
+}
+
+export async function getRepositoryGroup(groupId: string): Promise<RepositoryGroup> {
+  return invoke<RepositoryGroup>("get_repository_group", { groupId });
+}
+
+export async function updateRepositoryGroup(
+  groupId: string,
+  params: UpdateRepositoryGroupParams
+): Promise<RepositoryGroup> {
+  return invoke<RepositoryGroup>("update_repository_group", { groupId, params });
+}
+
+export async function deleteRepositoryGroup(groupId: string): Promise<void> {
+  return invoke<void>("delete_repository_group", { groupId });
 }
 
 // Settings commands
