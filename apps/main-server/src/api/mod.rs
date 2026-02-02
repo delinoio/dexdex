@@ -43,6 +43,10 @@ pub fn create_router<S: TaskStore + 'static>() -> Router<Arc<AppState<S>>> {
             "/api/session/submit-tty-input",
             post(session::submit_tty_input),
         )
+        .route(
+            "/api/session/wait-tty-response",
+            post(session::wait_tty_response),
+        )
         // Repository endpoints
         .route("/api/repository/add", post(repository::add_repository))
         .route("/api/repository/list", post(repository::list_repositories))
