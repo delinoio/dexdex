@@ -4,6 +4,7 @@ export * from "./Dashboard";
 export * from "./ModeSelection";
 export * from "./Onboarding";
 export * from "./Repositories";
+export * from "./RepositoryGroups";
 export * from "./Settings";
 export * from "./TaskCreation";
 export * from "./UnitTaskDetail";

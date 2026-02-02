@@ -8,6 +8,7 @@ import {
   ModeSelection,
   Onboarding,
   Repositories,
+  RepositoryGroups,
   Settings,
   TaskCreation,
   UnitTaskDetail,
@@ -40,6 +41,7 @@ function AppRoutes() {
         <Route path="/unit-tasks/:id" element={<UnitTaskDetail />} />
         <Route path="/composite-tasks/:id" element={<CompositeTaskDetail />} />
         <Route path="/repositories" element={<Repositories />} />
+        <Route path="/repository-groups" element={<RepositoryGroups />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

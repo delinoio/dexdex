@@ -40,7 +40,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize tracing for logging.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tauri=warn"));
@@ -133,6 +133,12 @@ pub fn run() {
             commands::repository::add_repository,
             commands::repository::list_repositories,
             commands::repository::remove_repository,
+            // Repository Group commands
+            commands::repository::create_repository_group,
+            commands::repository::list_repository_groups,
+            commands::repository::get_repository_group,
+            commands::repository::update_repository_group,
+            commands::repository::delete_repository_group,
             // Workspace commands
             commands::workspace::create_workspace,
             commands::workspace::list_workspaces,

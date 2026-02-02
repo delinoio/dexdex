@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use entities::{Repository, VcsProviderType};
+use entities::{Repository, RepositoryGroup, VcsProviderType};
 use serde::{Deserialize, Serialize};
 use task_store::{RepositoryFilter, TaskStore};
 use tauri::State;
@@ -244,6 +244,296 @@ fn extract_repo_name(url: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+// =========================================================================
+// Repository Group commands
+// =========================================================================
+
+/// Parameters for creating a repository group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRepositoryGroupParams {
+    pub workspace_id: Option<String>,
+    pub name: Option<String>,
+    pub repository_ids: Vec<String>,
+}
+
+/// Parameters for listing repository groups.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListRepositoryGroupsParams {
+    pub workspace_id: Option<String>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+/// Response for list_repository_groups command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListRepositoryGroupsResult {
+    pub groups: Vec<RepositoryGroup>,
+    pub total_count: i32,
+}
+
+/// Parameters for updating a repository group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRepositoryGroupParams {
+    pub name: Option<String>,
+    pub repository_ids: Vec<String>,
+}
+
+/// Creates a repository group.
+#[tauri::command]
+pub async fn create_repository_group(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    params: CreateRepositoryGroupParams,
+) -> AppResult<RepositoryGroup> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let workspace_id = params
+        .workspace_id
+        .as_ref()
+        .map(|s| Uuid::parse_str(s))
+        .transpose()
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
+        .unwrap_or_else(|| runtime.default_workspace_id());
+
+    // Validate that at least one repository is provided
+    if params.repository_ids.is_empty() {
+        return Err(AppError::InvalidRequest(
+            "At least one repository is required".to_string(),
+        ));
+    }
+
+    // Parse repository IDs
+    let repository_ids: Vec<Uuid> = params
+        .repository_ids
+        .iter()
+        .map(|s| Uuid::parse_str(s))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+
+    // Verify all repositories exist
+    for repo_id in &repository_ids {
+        runtime
+            .task_store_arc()
+            .get_repository(*repo_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+    }
+
+    let mut group = RepositoryGroup::new(workspace_id);
+    if let Some(name) = params.name {
+        group = group.with_name(name);
+    }
+    for repo_id in repository_ids {
+        group.add_repository(repo_id);
+    }
+
+    let created = runtime
+        .task_store_arc()
+        .create_repository_group(group)
+        .await?;
+    info!(
+        "Created repository group: {} ({})",
+        created.name.as_deref().unwrap_or("unnamed"),
+        created.id
+    );
+    Ok(created)
+}
+
+/// Lists repository groups.
+#[tauri::command]
+pub async fn list_repository_groups(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    params: ListRepositoryGroupsParams,
+) -> AppResult<ListRepositoryGroupsResult> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let workspace_id = params
+        .workspace_id
+        .as_ref()
+        .map(|s| Uuid::parse_str(s))
+        .transpose()
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
+    let groups = runtime
+        .task_store_arc()
+        .list_repository_groups(workspace_id)
+        .await?;
+
+    // Apply pagination if specified
+    let total_count = groups.len() as i32;
+    let groups = if let Some(offset) = params.offset {
+        let offset = offset as usize;
+        if offset < groups.len() {
+            groups.into_iter().skip(offset).collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        groups
+    };
+
+    let groups = if let Some(limit) = params.limit {
+        groups.into_iter().take(limit as usize).collect()
+    } else {
+        groups
+    };
+
+    Ok(ListRepositoryGroupsResult {
+        groups,
+        total_count,
+    })
+}
+
+/// Gets a repository group by ID.
+#[tauri::command]
+pub async fn get_repository_group(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    group_id: String,
+) -> AppResult<RepositoryGroup> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&group_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    runtime
+        .task_store_arc()
+        .get_repository_group(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)))
+}
+
+/// Updates a repository group.
+#[tauri::command]
+pub async fn update_repository_group(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    group_id: String,
+    params: UpdateRepositoryGroupParams,
+) -> AppResult<RepositoryGroup> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&group_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Validate that at least one repository is provided
+    if params.repository_ids.is_empty() {
+        return Err(AppError::InvalidRequest(
+            "At least one repository is required".to_string(),
+        ));
+    }
+
+    // Parse repository IDs
+    let repository_ids: Vec<Uuid> = params
+        .repository_ids
+        .iter()
+        .map(|s| Uuid::parse_str(s))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+
+    // Verify all repositories exist
+    for repo_id in &repository_ids {
+        runtime
+            .task_store_arc()
+            .get_repository(*repo_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+    }
+
+    let mut group = runtime
+        .task_store_arc()
+        .get_repository_group(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)))?;
+
+    group.name = params.name;
+    group.repository_ids = repository_ids;
+    group.updated_at = chrono::Utc::now();
+
+    let updated = runtime
+        .task_store_arc()
+        .update_repository_group(group)
+        .await?;
+    info!(
+        "Updated repository group: {} ({})",
+        updated.name.as_deref().unwrap_or("unnamed"),
+        updated.id
+    );
+    Ok(updated)
+}
+
+/// Deletes a repository group.
+#[tauri::command]
+pub async fn delete_repository_group(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    group_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&group_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    runtime.task_store_arc().delete_repository_group(id).await?;
+    info!("Deleted repository group: {}", id);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,10 +573,12 @@ mod tests {
     fn test_validate_repository_url_invalid_format() {
         let result = validate_repository_url("not-a-valid-url");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid repository URL format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid repository URL format")
+        );
     }
 
     #[test]

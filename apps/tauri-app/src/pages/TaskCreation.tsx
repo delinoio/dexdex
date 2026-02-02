@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { useRepositoryGroups } from "@/hooks/useRepositoryGroups";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useCreateUnitTask, useCreateCompositeTask } from "@/hooks/useTasks";
 import { AiAgentType } from "@/api/types";
@@ -18,9 +19,18 @@ export function TaskCreation() {
   const [isComposite, setIsComposite] = useState(false);
   const navigate = useNavigate();
 
+  const { data: groupsData } = useRepositoryGroups({});
   const { data: repositoriesData } = useRepositories({});
   const createUnitTask = useCreateUnitTask();
   const createCompositeTask = useCreateCompositeTask();
+
+  const groups = groupsData?.groups ?? [];
+  const repositories = repositoriesData?.repositories ?? [];
+
+  const selectedGroup = groups.find((g) => g.id === repositoryGroupId);
+  const groupRepositories = selectedGroup
+    ? repositories.filter((repo) => selectedGroup.repositoryIds.includes(repo.id))
+    : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,24 +73,86 @@ export function TaskCreation() {
         <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Repository</CardTitle>
+              <CardTitle>Repository Group</CardTitle>
               <CardDescription>
-                Select the repository or repository group for this task.
+                Select a repository group for this task.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <Select
                 value={repositoryGroupId}
                 onChange={(e) => setRepositoryGroupId(e.target.value)}
                 required
               >
-                <option value="">Select a repository...</option>
-                {repositoriesData?.repositories.map((repo) => (
-                  <option key={repo.id} value={repo.id}>
-                    {repo.name}
+                <option value="">Select a repository group...</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name || "Unnamed Group"} ({group.repositoryIds.length}{" "}
+                    {group.repositoryIds.length === 1 ? "repo" : "repos"})
                   </option>
                 ))}
               </Select>
+
+              {selectedGroup && groupRepositories.length > 0 && (
+                <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3">
+                  <p className="mb-2 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                    Repositories in this group:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {groupRepositories.map((repo) => (
+                      <div
+                        key={repo.id}
+                        className="flex items-center gap-1.5 rounded-md bg-[hsl(var(--background))] px-2 py-1 text-xs"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="text-[hsl(var(--muted-foreground))]"
+                        >
+                          <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                        </svg>
+                        <span>{repo.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {groups.length === 0 && (
+                <div className="text-center">
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                    No repository groups available.
+                  </p>
+                  <Link
+                    to="/repository-groups"
+                    className="mt-1 inline-flex items-center text-sm text-[hsl(var(--primary))] hover:underline"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="mr-1"
+                    >
+                      <path d="M5 12h14" />
+                      <path d="M12 5v14" />
+                    </svg>
+                    Create a repository group
+                  </Link>
+                </div>
+              )}
             </CardContent>
           </Card>
 
