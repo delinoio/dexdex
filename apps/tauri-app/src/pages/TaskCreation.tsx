@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useRepositoryGroups, useCreateRepositoryGroup } from "@/hooks/useRepositoryGroups";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useCreateUnitTask, useCreateCompositeTask } from "@/hooks/useTasks";
-import { AiAgentType } from "@/api/types";
+import { AiAgentType, RepositoryGroup, Repository } from "@/api/types";
 
 // Special ID to represent "All Repositories" implicit group
 const ALL_REPOSITORIES_ID = "__all_repositories__";
@@ -30,6 +30,24 @@ export function TaskCreation() {
 
   const groups = groupsData?.groups ?? [];
   const repositories = repositoriesData?.repositories ?? [];
+
+  // Helper function to get display name for a group (name or list of repo names)
+  const getGroupDisplayName = useCallback(
+    (group: RepositoryGroup, repos: Repository[]): string => {
+      if (group.name) {
+        return group.name;
+      }
+      const repoIds = group.repositoryIds ?? [];
+      const repoNames = repoIds
+        .map((id) => repos.find((r) => r.id === id)?.name)
+        .filter((name): name is string => name !== undefined);
+      if (repoNames.length > 0) {
+        return repoNames.join(", ");
+      }
+      return "Unnamed Group";
+    },
+    []
+  );
 
   // Check if "All Repositories" is selected
   const isAllRepositoriesSelected = repositoryGroupId === ALL_REPOSITORIES_ID;
@@ -118,7 +136,7 @@ export function TaskCreation() {
                 )}
                 {groups.map((group) => (
                   <option key={group.id} value={group.id}>
-                    {group.name || "Unnamed Group"} ({group.repositoryIds?.length ?? 0}{" "}
+                    {getGroupDisplayName(group, repositories)} ({group.repositoryIds?.length ?? 0}{" "}
                     {(group.repositoryIds?.length ?? 0) === 1 ? "repo" : "repos"})
                   </option>
                 ))}
