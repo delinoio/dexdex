@@ -22,16 +22,29 @@ export function RepositoryGroupCard({
     [repositories]
   );
 
+  // Handle case where repositoryIds might be undefined
+  const repositoryIds = group.repositoryIds ?? [];
+
   const groupRepositories = useMemo(
     () =>
-      group.repositoryIds
+      repositoryIds
         .map((id) => repositoryMap.get(id))
         .filter((r): r is Repository => r !== undefined),
-    [group.repositoryIds, repositoryMap]
+    [repositoryIds, repositoryMap]
   );
 
-  const displayName = group.name || "Unnamed Group";
-  const repoCount = group.repositoryIds.length;
+  // If no name is set, show the list of repository names as the title
+  const displayName = useMemo(() => {
+    if (group.name) {
+      return group.name;
+    }
+    if (groupRepositories.length > 0) {
+      return groupRepositories.map((r) => r.name).join(", ");
+    }
+    return "Unnamed Group";
+  }, [group.name, groupRepositories]);
+
+  const repoCount = repositoryIds.length;
 
   return (
     <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4">
@@ -112,9 +125,9 @@ export function RepositoryGroupCard({
             <span className="truncate max-w-[150px]">{repo.name}</span>
           </div>
         ))}
-        {group.repositoryIds.length > groupRepositories.length && (
+        {repositoryIds.length > groupRepositories.length && (
           <div className="flex items-center gap-1.5 rounded-md bg-[hsl(var(--muted))] px-2 py-1 text-xs text-[hsl(var(--muted-foreground))]">
-            +{group.repositoryIds.length - groupRepositories.length} unknown
+            +{repositoryIds.length - groupRepositories.length} unknown
           </div>
         )}
       </div>
