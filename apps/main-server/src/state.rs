@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use auth::JwtManager;
 use task_store::TaskStore;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, oneshot};
 use uuid::Uuid;
 
 use crate::{config::Config, services::worker_registry::WorkerRegistry};
@@ -38,6 +38,68 @@ impl SecretsCache {
     }
 }
 
+/// TTY response relay for delivering user responses to workers.
+#[derive(Default)]
+pub struct TtyResponseRelay {
+    /// Map of request ID to response channel.
+    /// Workers wait on these channels for user responses.
+    pending: HashMap<Uuid, oneshot::Sender<String>>,
+    /// Map of request ID to responses that arrived before the worker polled.
+    /// This handles the case where the user responds before the worker checks.
+    early_responses: HashMap<Uuid, String>,
+}
+
+impl TtyResponseRelay {
+    /// Creates a new TTY response relay.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers a pending TTY input request.
+    /// Returns a receiver that the worker can use to wait for the response.
+    pub fn register(&mut self, request_id: Uuid) -> oneshot::Receiver<String> {
+        // Check if there's already an early response
+        if let Some(response) = self.early_responses.remove(&request_id) {
+            let (tx, rx) = oneshot::channel();
+            // Immediately send the early response
+            let _ = tx.send(response);
+            return rx;
+        }
+
+        let (tx, rx) = oneshot::channel();
+        self.pending.insert(request_id, tx);
+        rx
+    }
+
+    /// Delivers a response to a pending TTY input request.
+    /// Returns true if the response was delivered successfully.
+    pub fn deliver(&mut self, request_id: Uuid, response: String) -> bool {
+        if let Some(tx) = self.pending.remove(&request_id) {
+            tx.send(response).is_ok()
+        } else {
+            // Worker hasn't polled yet, store as early response
+            self.early_responses.insert(request_id, response);
+            true
+        }
+    }
+
+    /// Cancels a pending TTY input request.
+    pub fn cancel(&mut self, request_id: &Uuid) {
+        self.pending.remove(request_id);
+        self.early_responses.remove(request_id);
+    }
+
+    /// Checks if there's a pending request.
+    pub fn is_pending(&self, request_id: &Uuid) -> bool {
+        self.pending.contains_key(request_id) || self.early_responses.contains_key(request_id)
+    }
+
+    /// Gets the number of pending requests.
+    pub fn pending_count(&self) -> usize {
+        self.pending.len() + self.early_responses.len()
+    }
+}
+
 /// Shared application state.
 pub struct AppState<S: TaskStore> {
     /// Server configuration.
@@ -50,6 +112,8 @@ pub struct AppState<S: TaskStore> {
     pub worker_registry: RwLock<WorkerRegistry>,
     /// Secrets cache.
     pub secrets_cache: RwLock<SecretsCache>,
+    /// TTY response relay.
+    pub tty_response_relay: RwLock<TtyResponseRelay>,
 }
 
 impl<S: TaskStore> AppState<S> {
@@ -61,6 +125,7 @@ impl<S: TaskStore> AppState<S> {
             jwt_manager,
             worker_registry: RwLock::new(WorkerRegistry::new()),
             secrets_cache: RwLock::new(SecretsCache::new()),
+            tty_response_relay: RwLock::new(TtyResponseRelay::new()),
         }
     }
 

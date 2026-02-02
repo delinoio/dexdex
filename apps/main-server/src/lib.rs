@@ -10,6 +10,7 @@ pub mod error;
 pub mod middleware;
 pub mod services;
 pub mod state;
+pub mod webhooks;
 
 use std::sync::Arc;
 
@@ -34,6 +35,7 @@ pub fn create_app<S: TaskStore + 'static>(state: Arc<AppState<S>>) -> Router {
         .allow_headers(Any);
 
     api::create_router()
+        .merge(Router::new().nest("/webhooks", webhooks::webhook_router()))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

@@ -27,6 +27,8 @@ pub struct Config {
     pub oidc_redirect_url: Option<String>,
     /// Log level.
     pub log_level: String,
+    /// GitHub webhook secret for signature verification.
+    pub webhook_secret: Option<String>,
 }
 
 impl Config {
@@ -67,6 +69,7 @@ impl Config {
             oidc_client_secret: env::var("DELIDEV_OIDC_CLIENT_SECRET").ok(),
             oidc_redirect_url: env::var("DELIDEV_OIDC_REDIRECT_URL").ok(),
             log_level: env::var("DELIDEV_LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
+            webhook_secret: env::var("DELIDEV_WEBHOOK_SECRET").ok(),
         })
     }
 
