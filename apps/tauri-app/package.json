@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -36,6 +38,7 @@
     "vitest": "^3.0.5",
     "@testing-library/react": "^16.2.0",
     "@testing-library/jest-dom": "^6.6.3",
-    "jsdom": "^26.0.0"
+    "jsdom": "^26.0.0",
+    "@playwright/test": "^1.50.1"
   }
 }
