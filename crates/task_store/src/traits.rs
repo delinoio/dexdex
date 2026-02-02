@@ -268,7 +268,7 @@ pub trait TaskStore: Send + Sync {
 
     /// Gets a composite task node by ID.
     async fn get_composite_task_node(&self, id: Uuid)
-    -> TaskStoreResult<Option<CompositeTaskNode>>;
+        -> TaskStoreResult<Option<CompositeTaskNode>>;
 
     /// Lists composite task nodes by composite task ID.
     async fn list_composite_task_nodes(

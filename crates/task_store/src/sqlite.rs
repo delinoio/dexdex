@@ -10,7 +10,7 @@ use entities::{
     AgentSession, AgentTask, CompositeTask, CompositeTaskNode, Repository, RepositoryGroup,
     TodoItem, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace,
 };
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use tracing::info;
 use uuid::Uuid;
 

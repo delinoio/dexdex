@@ -174,7 +174,7 @@ describe("useRepositoryGroups hooks", () => {
     });
 
     it("creates repository group without name", async () => {
-      const groupWithoutName = { ...mockRepositoryGroup, name: null };
+      const groupWithoutName = { ...mockRepositoryGroup, name: undefined };
       vi.mocked(client.createRepositoryGroup).mockResolvedValue(
         groupWithoutName
       );
