@@ -24,6 +24,9 @@ pub enum AppError {
     #[error("Remote error: {0}")]
     Remote(String),
 
+    #[error("Platform error: {0}")]
+    PlatformError(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
