@@ -15,8 +15,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { cn } from "@/lib/utils";
-import type {
-  CompositeTaskNodeWithUnitTask,
+import {
+  type CompositeTaskNodeWithUnitTask,
   UnitTaskStatus,
 } from "@/api/types";
 
@@ -34,45 +34,40 @@ const LAYOUT_CONFIG = {
 
 // Node status colors based on issue requirements
 const STATUS_COLORS: Record<
-  UnitTaskStatus | "pending",
+  UnitTaskStatus,
   { bg: string; border: string; text: string }
 > = {
-  pending: {
+  [UnitTaskStatus.Unspecified]: {
     bg: "hsl(var(--muted))",
     border: "hsl(var(--border))",
     text: "hsl(var(--muted-foreground))",
   },
-  unspecified: {
-    bg: "hsl(var(--muted))",
-    border: "hsl(var(--border))",
-    text: "hsl(var(--muted-foreground))",
-  },
-  in_progress: {
+  [UnitTaskStatus.InProgress]: {
     bg: "hsl(217 91% 60% / 0.1)",
     border: "hsl(217 91% 60%)",
     text: "hsl(217 91% 50%)",
   },
-  in_review: {
+  [UnitTaskStatus.InReview]: {
     bg: "hsl(217 91% 60% / 0.1)",
     border: "hsl(217 91% 60%)",
     text: "hsl(217 91% 50%)",
   },
-  approved: {
+  [UnitTaskStatus.Approved]: {
     bg: "hsl(142 76% 36% / 0.1)",
     border: "hsl(142 76% 36%)",
     text: "hsl(142 76% 30%)",
   },
-  pr_open: {
+  [UnitTaskStatus.PrOpen]: {
     bg: "hsl(142 76% 36% / 0.1)",
     border: "hsl(142 76% 36%)",
     text: "hsl(142 76% 30%)",
   },
-  done: {
+  [UnitTaskStatus.Done]: {
     bg: "hsl(142 76% 36% / 0.1)",
     border: "hsl(142 76% 36%)",
     text: "hsl(142 76% 30%)",
   },
-  rejected: {
+  [UnitTaskStatus.Rejected]: {
     bg: "hsl(0 84% 60% / 0.1)",
     border: "hsl(0 84% 60%)",
     text: "hsl(0 84% 45%)",
@@ -81,7 +76,7 @@ const STATUS_COLORS: Record<
 
 interface TaskNodeData extends Record<string, unknown> {
   label: string;
-  status: UnitTaskStatus | "pending";
+  status: UnitTaskStatus;
   prompt: string;
 }
 
@@ -91,10 +86,16 @@ interface TaskNodeProps {
 }
 
 function TaskNode({ data, selected }: TaskNodeProps) {
-  const colors = STATUS_COLORS[data.status] || STATUS_COLORS.pending;
+  const colors = STATUS_COLORS[data.status] || STATUS_COLORS[UnitTaskStatus.Unspecified];
+  // Convert the status enum value to a human-readable label
+  const statusLabel = (data.status as string).replace(/_/g, " ");
 
   return (
     <div
+      role="button"
+      aria-label={`Task: ${data.label}. Status: ${statusLabel}`}
+      aria-selected={selected}
+      tabIndex={0}
       className={cn(
         "rounded-lg px-4 py-3 shadow-sm min-w-[160px] max-w-[220px] transition-all",
         selected && "ring-2 ring-[hsl(var(--primary))] ring-offset-2"
@@ -125,7 +126,7 @@ function TaskNode({ data, selected }: TaskNodeProps) {
           className="text-xs font-medium capitalize"
           style={{ color: colors.text }}
         >
-          {data.status.replaceAll("_", " ")}
+          {statusLabel}
         </div>
       </div>
       <Handle
@@ -215,7 +216,7 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
         -(nodesInLevel.length - 1) * VERTICAL_SPACING * 0.5;
 
       nodesInLevel.forEach((node, index) => {
-        const status = node.unitTask?.status || "pending";
+        const status = node.unitTask?.status || UnitTaskStatus.Unspecified;
         flowNodes.push({
           id: node.node.id,
           type: "taskNode",
@@ -225,7 +226,7 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
           },
           data: {
             label: node.unitTask?.title || `Task ${node.node.id.slice(0, 8)}`,
-            status: status as UnitTaskStatus | "pending",
+            status,
             prompt: node.unitTask?.prompt || "",
           },
         });
@@ -247,6 +248,12 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
               strokeWidth: 2,
             },
           });
+        } else {
+          // Log warning when a node depends on a missing node ID
+          // This could indicate data integrity issues
+          console.warn(
+            `TaskGraph: Node ${node.node.id} depends on missing node ${depId}. Edge will be skipped.`
+          );
         }
       });
     });
@@ -299,7 +306,7 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
         <MiniMap
           nodeColor={(node) => {
             const data = node.data as unknown as TaskNodeData;
-            const colors = STATUS_COLORS[data.status] || STATUS_COLORS.pending;
+            const colors = STATUS_COLORS[data.status] || STATUS_COLORS[UnitTaskStatus.Unspecified];
             return colors.border;
           }}
           maskColor="hsl(var(--background) / 0.8)"

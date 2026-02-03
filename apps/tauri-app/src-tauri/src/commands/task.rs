@@ -423,6 +423,13 @@ pub async fn request_changes(
 }
 
 /// Gets all nodes for a composite task with their associated unit tasks.
+///
+/// # Note
+/// Remote mode is not yet implemented for this command. The frontend will
+/// gracefully handle this by showing an error message. Remote mode support
+/// is tracked in: https://github.com/delinoio/delidev/issues/96#issuecomment-remote-mode
+/// TODO(remote-mode): Implement remote API call when server supports this
+/// endpoint.
 #[tauri::command]
 pub async fn get_composite_task_nodes(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -430,9 +437,12 @@ pub async fn get_composite_task_nodes(
 ) -> AppResult<CompositeTaskNodesResult> {
     let state = state.read().await;
 
+    // TODO(remote-mode): Implement remote API call when server supports this
+    // endpoint. For now, only local mode is supported for task graph
+    // visualization.
     if state.mode == AppMode::Remote {
         return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
+            "Remote mode not yet implemented for task graph visualization".to_string(),
         ));
     }
 
@@ -449,6 +459,10 @@ pub async fn get_composite_task_nodes(
         .list_composite_task_nodes(id)
         .await?;
 
+    // TODO(performance): Consider adding a bulk fetch method
+    // `get_unit_tasks_by_ids(Vec<Uuid>)` to the TaskStore trait to avoid N+1
+    // queries for large graphs. For now, this is acceptable for typical graph
+    // sizes (< 50 nodes).
     let mut result = Vec::with_capacity(nodes.len());
     for node in nodes {
         if let Some(unit_task) = runtime
@@ -561,10 +575,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -615,10 +631,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -665,9 +683,11 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
     }
 }
