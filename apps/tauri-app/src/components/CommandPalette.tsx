@@ -8,6 +8,7 @@ import {
   SettingsIcon,
   FolderIcon,
   CompositeTaskIcon,
+  SearchIcon,
 } from "@/components/ui/Icons";
 
 enum CommandId {
@@ -71,6 +72,8 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
   const filteredCommands = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -87,16 +90,24 @@ export function CommandPalette() {
     });
   }, [searchQuery]);
 
-  // Reset state when opening
+  // Reset state when opening, manage focus trap
   useEffect(() => {
     if (isCommandPaletteOpen) {
+      // Store the previously focused element to restore focus on close
+      previousActiveElement.current = document.activeElement as HTMLElement;
       setSearchQuery("");
       setSelectedIndex(0);
-      // Focus input after a small delay to ensure dialog is rendered
+      // Defer focus to next tick to ensure dialog is fully rendered
       const timeoutId = setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
       return () => clearTimeout(timeoutId);
+    } else {
+      // Restore focus to previously focused element when closing
+      if (previousActiveElement.current) {
+        previousActiveElement.current.focus();
+        previousActiveElement.current = null;
+      }
     }
   }, [isCommandPaletteOpen]);
 
@@ -109,7 +120,7 @@ export function CommandPalette() {
   useEffect(() => {
     if (listRef.current && filteredCommands.length > 0) {
       const selectedItem = listRef.current.children[selectedIndex] as HTMLElement;
-      if (selectedItem) {
+      if (selectedItem?.scrollIntoView) {
         selectedItem.scrollIntoView({ block: "nearest" });
       }
     }
@@ -117,6 +128,7 @@ export function CommandPalette() {
 
   const executeCommand = useCallback(
     (command: Command) => {
+      setSearchQuery("");
       setCommandPaletteOpen(false);
       navigate(command.path);
     },
@@ -144,7 +156,12 @@ export function CommandPalette() {
           break;
         case "Escape":
           e.preventDefault();
+          e.stopPropagation();
           setCommandPaletteOpen(false);
+          break;
+        case "Tab":
+          // Trap focus within the dialog
+          e.preventDefault();
           break;
       }
     },
@@ -163,6 +180,11 @@ export function CommandPalette() {
     return null;
   }
 
+  const listboxId = "command-palette-listbox";
+  const selectedCommandId = filteredCommands[selectedIndex]
+    ? `command-${filteredCommands[selectedIndex].id}`
+    : undefined;
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/80"
@@ -170,12 +192,18 @@ export function CommandPalette() {
       onKeyDown={handleKeyDown}
     >
       <div
-        className="fixed left-[50%] top-[20%] z-50 w-full max-w-lg translate-x-[-50%] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-lg"
+        ref={dialogRef}
+        className="fixed left-[50%] top-[20%] w-full max-w-lg translate-x-[-50%] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-lg"
         onClick={handleContentClick}
         role="dialog"
         aria-modal="true"
-        aria-label="Command Palette"
+        aria-labelledby="command-palette-title"
       >
+        {/* Visually hidden heading for screen readers */}
+        <h2 id="command-palette-title" className="sr-only">
+          Command Palette
+        </h2>
+
         {/* Search Input */}
         <div className="flex items-center border-b border-[hsl(var(--border))] px-3">
           <SearchIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
@@ -186,12 +214,18 @@ export function CommandPalette() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Type a command or search..."
             className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-[hsl(var(--muted-foreground))] disabled:cursor-not-allowed disabled:opacity-50"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={listboxId}
+            aria-expanded="true"
+            aria-activedescendant={selectedCommandId}
           />
         </div>
 
         {/* Command List */}
         <div
           ref={listRef}
+          id={listboxId}
           className="max-h-[300px] overflow-y-auto p-1"
           role="listbox"
         >
@@ -203,6 +237,7 @@ export function CommandPalette() {
             filteredCommands.map((command, index) => (
               <button
                 key={command.id}
+                id={`command-${command.id}`}
                 type="button"
                 role="option"
                 aria-selected={index === selectedIndex}
@@ -252,24 +287,3 @@ export function CommandPalette() {
   );
 }
 
-// Search icon component (not exported from Icons.tsx yet, so define locally)
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.3-4.3" />
-    </svg>
-  );
-}
