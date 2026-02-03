@@ -38,6 +38,18 @@ pub enum AppError {
 
     #[error("Internal error: {0}")]
     Internal(String),
+
+    #[error("Git error: {0}")]
+    Git(String),
+
+    #[error("Agent error: {0}")]
+    Agent(String),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    #[error("Operation cancelled")]
+    Cancelled,
 }
 
 impl Serialize for AppError {

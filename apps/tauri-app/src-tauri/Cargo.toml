@@ -28,6 +28,7 @@ tauri-plugin-window-state = "2"
 entities = { path = "../../../crates/entities" }
 rpc_protocol = { path = "../../../crates/rpc_protocol" }
 task_store = { path = "../../../crates/task_store" }
+coding_agents = { path = "../../../crates/coding_agents" }
 auth = { path = "../../../crates/auth" }
 secrets = { path = "../../../crates/secrets" }
 git_ops = { path = "../../../crates/git_ops" }
@@ -46,6 +47,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 anyhow = "1"
+async-trait = "0.1"
 
 # Logging
 tracing = "0.1"

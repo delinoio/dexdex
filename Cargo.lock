@@ -5368,8 +5368,10 @@ name = "tauri-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "auth",
  "chrono",
+ "coding_agents",
  "config",
  "dirs 5.0.1",
  "entities",

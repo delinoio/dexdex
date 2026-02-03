@@ -99,6 +99,8 @@ For desktop usage, all components can run in a single process for a seamless loc
 - SQLite storage for local data
 - Authentication disabled (trusted local execution)
 - Secrets read directly from local keychain
+- Background task polling loop (5s interval) for automatic task execution
+- AI agents run directly without Docker (EmbeddedExecutor)
 
 ### Communication
 

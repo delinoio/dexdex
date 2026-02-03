@@ -53,7 +53,10 @@ impl AppState {
 
         // Create local runtime if in local mode (desktop only)
         let local_runtime = if settings.mode == AppMode::Local && supports_local_mode() {
-            Some(SingleProcessRuntime::new().await?)
+            let mut runtime = SingleProcessRuntime::new().await?;
+            // Start the background task polling loop
+            runtime.start_polling_loop();
+            Some(runtime)
         } else {
             None
         };
@@ -91,10 +94,14 @@ impl AppState {
         match mode {
             AppMode::Local => {
                 if self.local_runtime.is_none() {
-                    self.local_runtime = Some(SingleProcessRuntime::new().await?);
+                    let mut runtime = SingleProcessRuntime::new().await?;
+                    // Start the background task polling loop
+                    runtime.start_polling_loop();
+                    self.local_runtime = Some(runtime);
                 }
             }
             AppMode::Remote => {
+                // Stop polling loop if runtime exists (Drop impl handles this)
                 self.local_runtime = None;
             }
         }

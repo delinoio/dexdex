@@ -61,10 +61,33 @@ Desktop apps can run in single-process mode, embedding both Server and Worker:
 
 ```
 apps/tauri-app/src-tauri/src/single_process/
-├── mod.rs              # SingleProcessRuntime orchestration
-├── config.rs           # Mode configuration (single_process vs remote)
-├── embedded_server.rs  # Local RPC handling without network
-└── embedded_worker.rs  # Local task execution
+├── mod.rs              # Module exports
+├── runtime.rs          # SingleProcessRuntime with SQLite task store and polling loop
+└── executor.rs         # EmbeddedExecutor for running AI agents locally without Docker
+```
+
+### Task Execution Flow
+
+In single-process mode, tasks are executed automatically by the embedded executor:
+
+```
+1. User creates UnitTask via Tauri command
+         ▼
+2. Task stored in SQLite with status InProgress
+         ▼
+3. Background polling loop (5s interval) finds task
+         ▼
+4. EmbeddedExecutor creates AgentSession
+         ▼
+5. Executor clones repository to worktree
+         ▼
+6. AI agent runs directly (without Docker)
+         ▼
+7. Agent output collected and stored in session
+         ▼
+8. Task status updated to InReview on success
+         ▼
+9. User reviews results in UI
 ```
 
 ### Behavior
