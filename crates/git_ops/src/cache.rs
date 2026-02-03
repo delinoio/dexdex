@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 use crate::{
-    FetchOpts, GitCredentials, GitError, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
-    validate_branch_name, validate_repository_url,
+    validate_branch_name, validate_repository_url, FetchOpts, GitCredentials, GitError,
+    GitRepository, GitResult, WorktreeExt, WorktreeOptions,
 };
 
 /// Default cache directory name within the data directory.
