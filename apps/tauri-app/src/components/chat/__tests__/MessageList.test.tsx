@@ -126,16 +126,55 @@ describe("MessageList", () => {
   });
 
   describe("Auto-scroll", () => {
-    it("calls scrollIntoView when messages change", () => {
+    it("calls scrollIntoView only when new messages are added", () => {
+      const initialMessages = [
+        { id: "msg-1", role: MessageRole.User, content: "Hello", timestamp: new Date() },
+      ];
+
       (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-        messages: [
-          { id: "msg-1", role: MessageRole.User, content: "Hello", timestamp: new Date() },
-        ],
+        messages: initialMessages,
         isLoading: false,
       });
-      render(<MessageList />);
 
+      const { rerender } = render(<MessageList />);
+
+      // Initial render should not scroll (same message count as initial state)
+      vi.clearAllMocks();
+
+      // Add a new message
+      const updatedMessages = [
+        ...initialMessages,
+        { id: "msg-2", role: MessageRole.Assistant, content: "Hi there!", timestamp: new Date() },
+      ];
+
+      (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        messages: updatedMessages,
+        isLoading: false,
+      });
+
+      rerender(<MessageList />);
+
+      // Should scroll after new message is added
       expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    });
+
+    it("does not scroll when message count stays the same", () => {
+      const messages = [
+        { id: "msg-1", role: MessageRole.User, content: "Hello", timestamp: new Date() },
+      ];
+
+      (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        messages,
+        isLoading: false,
+      });
+
+      const { rerender } = render(<MessageList />);
+      vi.clearAllMocks();
+
+      // Rerender with same message count
+      rerender(<MessageList />);
+
+      expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useChatStore, MessageRole, type ChatMessage } from "@/stores/chatStore";
 import { cn } from "@/lib/utils";
 
@@ -37,11 +37,15 @@ interface MessageListProps {
 export function MessageList({ className }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { messages, isLoading } = useChatStore();
+  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom only when new messages are added
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (messages.length > prevMessageCount) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    setPrevMessageCount(messages.length);
+  }, [messages.length, prevMessageCount]);
 
   return (
     <div className={cn("flex-1 overflow-y-auto p-4 space-y-3", className)}>

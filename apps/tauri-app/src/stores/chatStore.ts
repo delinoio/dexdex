@@ -34,8 +34,6 @@ interface ChatState {
   setLoading: (loading: boolean) => void;
 }
 
-let messageIdCounter = 0;
-
 export const useChatStore = create<ChatState>()((set) => ({
   // Chat window visibility
   isOpen: false,
@@ -49,7 +47,7 @@ export const useChatStore = create<ChatState>()((set) => ({
       messages: [
         ...state.messages,
         {
-          id: `msg-${++messageIdCounter}`,
+          id: crypto.randomUUID(),
           role,
           content,
           timestamp: new Date(),

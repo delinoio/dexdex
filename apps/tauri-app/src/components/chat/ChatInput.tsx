@@ -11,12 +11,14 @@ interface ChatInputProps {
 
 export function ChatInput({ className }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { inputValue, setInputValue, addMessage, isLoading } = useChatStore();
+  const { inputValue, setInputValue, addMessage, isLoading, isOpen } = useChatStore();
 
   // Auto-focus the textarea when the chat opens
   useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
+    if (isOpen) {
+      textareaRef.current?.focus();
+    }
+  }, [isOpen]);
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value);
