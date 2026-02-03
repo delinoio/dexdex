@@ -310,7 +310,7 @@ pub async fn get_default_workspace_id(
         return Ok(runtime.default_workspace_id().to_string());
     }
 
-    return Err(AppError::InvalidRequest(
+    Err(AppError::InvalidRequest(
         "Remote mode not yet implemented".to_string(),
-    ));
+    ))
 }

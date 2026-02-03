@@ -10,7 +10,7 @@ use chrono::Utc;
 use entities::AiAgentType;
 use git_ops::RepositoryCache;
 use tokio::{
-    sync::{RwLock, mpsc},
+    sync::{Mutex, RwLock, mpsc},
     task::JoinHandle,
 };
 use tracing::{debug, error, info, warn};
@@ -268,10 +268,14 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         // Run the agent
         let agent = create_agent(config.agent_type);
 
+        // Use a shared logs structure to ensure logs are preserved even if the event
+        // handler panics
+        let logs = Arc::new(Mutex::new(Vec::<String>::new()));
+        let logs_clone = logs.clone();
+
         // Spawn a task to handle events
         let emitter_clone = emitter.clone();
         let event_handler = tokio::spawn(async move {
-            let mut logs = Vec::new();
             while let Some(event) = event_rx.recv().await {
                 // Create a timestamped event for storage
                 let timestamped = TimestampedEvent {
@@ -281,7 +285,7 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
 
                 // Serialize the timestamped event for the output log
                 if let Ok(json) = serde_json::to_string(&timestamped) {
-                    logs.push(json);
+                    logs_clone.lock().await.push(json);
                 }
 
                 // Emit the event
@@ -295,7 +299,6 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
                     warn!("Failed to emit agent output event: {}", e);
                 }
             }
-            logs
         });
 
         // Run the agent
@@ -312,16 +315,26 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             run_result.as_ref().map(|_| "Ok").unwrap_or("Err")
         );
 
-        // Wait for event handler to finish and collect logs
-        let logs = match event_handler.await {
-            Ok(logs) => logs,
-            Err(e) => {
-                error!("Event handler task failed: {}", e);
-                Vec::new()
-            }
+        // Wait for event handler to finish
+        if let Err(e) = event_handler.await {
+            error!(
+                "Event handler task failed: {}. Logs collected before failure will be preserved.",
+                e
+            );
+        }
+
+        // Collect logs from the shared structure - this preserves logs even if the
+        // handler panicked
+        let collected_logs = {
+            let logs_guard = logs.lock().await;
+            logs_guard.clone()
         };
 
-        debug!("Collected {} log entries for task {}", logs.len(), task_id);
+        debug!(
+            "Collected {} log entries for task {}",
+            collected_logs.len(),
+            task_id
+        );
 
         // Clean up the worktree after task completion
         if let Err(e) = repo_cache.remove_worktree_for_task(
@@ -338,10 +351,12 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         }
 
         match run_result {
-            Ok(()) => ExecutionResult::Success { logs },
+            Ok(()) => ExecutionResult::Success {
+                logs: collected_logs,
+            },
             Err(e) => ExecutionResult::Failed {
                 error: e.to_string(),
-                logs,
+                logs: collected_logs,
             },
         }
     }

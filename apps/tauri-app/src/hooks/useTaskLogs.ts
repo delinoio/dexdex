@@ -64,6 +64,10 @@ function getEventFingerprint(event: NormalizedEvent): string {
   }
 }
 
+// Maximum number of fingerprints to track to prevent unbounded memory growth
+// This is typically more than enough for even long-running tasks
+const MAX_FINGERPRINTS = 10000;
+
 /**
  * Hook for streaming task logs from an AI agent session.
  *
@@ -77,6 +81,11 @@ function getEventFingerprint(event: NormalizedEvent): string {
  * Real-time events are shown immediately for responsiveness, but may also
  * arrive later via polling with different IDs. We use content-based fingerprinting
  * to detect and skip duplicates, ensuring each logical event appears only once.
+ *
+ * ## Memory Management
+ * The fingerprint set is bounded to MAX_FINGERPRINTS entries. When the limit is
+ * reached, we reset the set. This may cause some duplicate events to appear in
+ * rare cases for very long-running tasks, but prevents unbounded memory growth.
  */
 export function useTaskLogs({
   taskId,
@@ -87,6 +96,7 @@ export function useTaskLogs({
   const [events, setEvents] = useState<NormalizedEventEntry[]>([]);
   const [lastEventId, setLastEventId] = useState<number | undefined>();
   // Track fingerprints of all events we've seen to detect duplicates
+  // Bounded to MAX_FINGERPRINTS to prevent unbounded memory growth
   const seenFingerprints = useRef(new Set<string>());
   const eventIdCounter = useRef(0);
 
@@ -111,6 +121,13 @@ export function useTaskLogs({
           const fingerprint = getEventFingerprint(e.event);
           if (seenFingerprints.current.has(fingerprint)) {
             return false;
+          }
+          // Prevent unbounded memory growth by resetting if we exceed the limit
+          if (seenFingerprints.current.size >= MAX_FINGERPRINTS) {
+            console.warn(
+              "Fingerprint set exceeded limit, resetting. Some duplicates may appear.",
+            );
+            seenFingerprints.current.clear();
           }
           seenFingerprints.current.add(fingerprint);
           return true;
@@ -142,6 +159,13 @@ export function useTaskLogs({
           if (seenFingerprints.current.has(fingerprint)) {
             // Skip duplicate - already have this event from polling
             return;
+          }
+          // Prevent unbounded memory growth by resetting if we exceed the limit
+          if (seenFingerprints.current.size >= MAX_FINGERPRINTS) {
+            console.warn(
+              "Fingerprint set exceeded limit, resetting. Some duplicates may appear.",
+            );
+            seenFingerprints.current.clear();
           }
           seenFingerprints.current.add(fingerprint);
 
