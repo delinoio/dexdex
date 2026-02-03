@@ -3,10 +3,7 @@
 //! This module provides functionality for caching cloned repositories
 //! and creating worktrees from them for task execution.
 
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
@@ -26,6 +23,7 @@ const WORKTREES_DIR_NAME: &str = "worktrees";
 /// Manages a cache of bare git repositories and creates worktrees from them
 /// for task execution. This improves performance by avoiding repeated full
 /// clones of repositories.
+#[derive(Clone)]
 pub struct RepositoryCache {
     /// Base directory for the cache.
     cache_dir: PathBuf,
@@ -223,21 +221,28 @@ impl RepositoryCache {
         url.starts_with("https://") || url.starts_with("http://")
     }
 
-    /// Clones a repository using the system git command.
+    /// Clones a repository using the system git command (blocking).
+    ///
+    /// Note: This is a synchronous operation. Consider using
+    /// `clone_with_system_git_async` for non-blocking behavior.
     fn clone_with_system_git(
         url: &str,
         path: &Path,
         credentials: Option<&GitCredentials>,
     ) -> GitResult<()> {
+        use std::process::Command;
+
         let mut cmd = Command::new("git");
         cmd.arg("clone").arg("--bare");
 
         // Apply credentials to URL if provided
         let effective_url = Self::apply_credentials_to_url(url, credentials);
+        // Log redacted URL to avoid leaking credentials
+        let redacted_url = Self::redact_url_for_logging(&effective_url);
 
         cmd.arg(&effective_url).arg(path);
 
-        debug!("Running: git clone --bare {} {:?}", url, path);
+        debug!("Running: git clone --bare {} {:?}", redacted_url, path);
 
         let output = cmd
             .output()
@@ -254,11 +259,55 @@ impl RepositoryCache {
         Ok(())
     }
 
-    /// Fetches from origin using the system git command.
+    /// Clones a repository using the system git command (async/non-blocking).
+    pub async fn clone_with_system_git_async(
+        url: &str,
+        path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        use tokio::process::Command;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("clone").arg("--bare");
+
+        // Apply credentials to URL if provided
+        let effective_url = Self::apply_credentials_to_url(url, credentials);
+        // Log redacted URL to avoid leaking credentials
+        let redacted_url = Self::redact_url_for_logging(&effective_url);
+
+        cmd.arg(&effective_url).arg(path);
+
+        debug!(
+            "Running (async): git clone --bare {} {:?}",
+            redacted_url, path
+        );
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| GitError::CloneFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::CloneFailed(format!(
+                "git clone failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Fetches from origin using the system git command (blocking).
+    ///
+    /// Note: This is a synchronous operation. Consider using
+    /// `fetch_with_system_git_async` for non-blocking behavior.
     fn fetch_with_system_git(
         repo_path: &Path,
         credentials: Option<&GitCredentials>,
     ) -> GitResult<()> {
+        use std::process::Command;
+
         let mut cmd = Command::new("git");
         cmd.arg("-C")
             .arg(repo_path)
@@ -281,6 +330,45 @@ impl RepositoryCache {
 
         let output = cmd
             .output()
+            .map_err(|e| GitError::FetchFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::FetchFailed(format!(
+                "git fetch failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Fetches from origin using the system git command (async/non-blocking).
+    pub async fn fetch_with_system_git_async(
+        repo_path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        use tokio::process::Command;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("-C")
+            .arg(repo_path)
+            .arg("fetch")
+            .arg("--prune")
+            .arg("origin");
+
+        if credentials.is_some() {
+            debug!("Note: Fetch credentials are handled by system git credential helpers");
+        }
+
+        debug!(
+            "Running (async): git -C {:?} fetch --prune origin",
+            repo_path
+        );
+
+        let output = cmd
+            .output()
+            .await
             .map_err(|e| GitError::FetchFailed(format!("Failed to execute git command: {}", e)))?;
 
         if !output.status.success() {

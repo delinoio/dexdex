@@ -224,9 +224,10 @@ impl LocalExecutor {
         // Clone values needed for the spawned task
         let task_store = self.task_store.clone();
         let app_handle = self.app_handle.clone();
-        let data_dir = data_dir().unwrap_or_else(|_| dirs::home_dir().unwrap().join(".delidev"));
+        // Reuse the existing repo_cache to avoid redundant clones
+        let repo_cache = self.executor.repo_cache().clone();
         let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
-        let executor = TaskExecutor::new(data_dir, emitter);
+        let executor = TaskExecutor::with_repo_cache(repo_cache, emitter);
 
         // Spawn the execution task
         tokio::spawn(async move {
@@ -250,7 +251,18 @@ impl LocalExecutor {
                 }
                 ExecutionResult::Failed(error) => {
                     error!("Task {} failed: {}", task_id, error);
-                    // Keep task in InProgress status but log the error
+                    // Update task status to Failed
+                    if let Err(e) = Self::update_task_status(
+                        &task_store,
+                        &app_handle,
+                        task_id,
+                        session_id,
+                        UnitTaskStatus::Failed,
+                    )
+                    .await
+                    {
+                        error!("Failed to update task status to Failed: {}", e);
+                    }
                 }
                 ExecutionResult::Cancelled => {
                     info!("Task {} was cancelled", task_id);

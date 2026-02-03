@@ -32,6 +32,7 @@ export enum UnitTaskStatus {
   PrOpen = "pr_open",
   Done = "done",
   Rejected = "rejected",
+  Failed = "failed",
 }
 
 export enum CompositeTaskStatus {

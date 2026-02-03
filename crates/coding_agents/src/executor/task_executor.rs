@@ -116,7 +116,12 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         // Clone values needed for the spawned task
         let emitter = self.emitter.clone();
         let tty_manager = self.tty_request_manager.clone();
-        let repo_cache = RepositoryCache::new(self.repo_cache.cache_dir().parent().unwrap());
+        let cache_parent = self
+            .repo_cache
+            .cache_dir()
+            .parent()
+            .ok_or_else(|| "Invalid cache directory path: no parent directory".to_string())?;
+        let repo_cache = RepositoryCache::new(cache_parent);
         let task_id = config.task_id;
 
         // Spawn the execution task
@@ -124,8 +129,10 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             Self::run_agent_task(config, emitter, tty_manager, repo_cache).await
         });
 
-        // Store the handle
+        // Store the handle and clean up finished ones
         let mut handles = self.execution_handles.write().await;
+        // Clean up finished handles to prevent memory leaks
+        handles.retain(|_id, h| !h.is_finished());
         handles.insert(task_id, handle);
 
         Ok(())
@@ -138,9 +145,23 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
     pub async fn execute_and_wait(&self, config: TaskExecutionConfig) -> ExecutionResult {
         let emitter = self.emitter.clone();
         let tty_manager = self.tty_request_manager.clone();
-        let repo_cache = RepositoryCache::new(self.repo_cache.cache_dir().parent().unwrap());
+        let cache_parent = match self.repo_cache.cache_dir().parent() {
+            Some(parent) => parent,
+            None => {
+                return ExecutionResult::Failed(
+                    "Invalid cache directory path: no parent directory".to_string(),
+                );
+            }
+        };
+        let repo_cache = RepositoryCache::new(cache_parent);
 
         Self::run_agent_task(config, emitter, tty_manager, repo_cache).await
+    }
+
+    /// Cleans up finished execution handles to prevent memory leaks.
+    pub async fn cleanup_finished_handles(&self) {
+        let mut handles = self.execution_handles.write().await;
+        handles.retain(|_task_id, handle| !handle.is_finished());
     }
 
     /// Runs the agent task (internal implementation).

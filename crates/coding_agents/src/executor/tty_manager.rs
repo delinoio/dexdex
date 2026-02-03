@@ -1,14 +1,17 @@
 //! TTY input request manager for handling interactive prompts.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use tokio::sync::{RwLock, oneshot};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::{EventEmitter, TtyInputRequestEvent};
 use crate::{AgentError, AgentResult, TtyInputHandler};
+
+/// Default timeout for TTY input requests (5 minutes).
+const DEFAULT_TTY_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// A pending TTY input request waiting for a response.
 struct PendingRequest {
@@ -137,17 +140,29 @@ impl<E: EventEmitter + 'static> TtyInputHandler for EventEmitterTtyHandler<E> {
 
         debug!("Waiting for TTY response for request {}", request_id);
 
-        // Wait for the response
-        match response_rx.await {
-            Ok(response) => {
+        // Wait for the response with timeout
+        match tokio::time::timeout(DEFAULT_TTY_TIMEOUT, response_rx).await {
+            Ok(Ok(response)) => {
                 debug!("Received TTY response: {}", response);
                 Ok(response)
             }
-            Err(_) => {
+            Ok(Err(_)) => {
                 // Channel was dropped (e.g., request was cancelled)
                 Err(AgentError::TtyInputRequired(
                     "TTY input request was cancelled".to_string(),
                 ))
+            }
+            Err(_) => {
+                // Timeout elapsed - clean up the pending request
+                warn!(
+                    "TTY input request {} timed out after {:?}",
+                    request_id, DEFAULT_TTY_TIMEOUT
+                );
+                self.request_manager.cancel(request_id).await;
+                Err(AgentError::TtyInputRequired(format!(
+                    "TTY input request timed out after {} seconds",
+                    DEFAULT_TTY_TIMEOUT.as_secs()
+                )))
             }
         }
     }

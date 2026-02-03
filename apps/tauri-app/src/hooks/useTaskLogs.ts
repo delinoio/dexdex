@@ -101,7 +101,9 @@ export function useTaskLogs({
       });
     };
 
-    setupListener();
+    setupListener().catch((error) => {
+      console.error("Failed to set up agent-output listener:", error);
+    });
 
     return () => {
       if (unlisten) {

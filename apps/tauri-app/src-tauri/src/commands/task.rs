@@ -696,6 +696,7 @@ fn parse_unit_status(s: &str) -> AppResult<UnitTaskStatus> {
         "pr_open" => Ok(UnitTaskStatus::PrOpen),
         "done" => Ok(UnitTaskStatus::Done),
         "rejected" => Ok(UnitTaskStatus::Rejected),
+        "failed" => Ok(UnitTaskStatus::Failed),
         _ => Err(AppError::InvalidRequest(format!(
             "Unknown unit task status: {}",
             s

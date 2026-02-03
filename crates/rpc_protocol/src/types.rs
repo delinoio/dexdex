@@ -45,6 +45,7 @@ pub enum UnitTaskStatus {
     PrOpen,
     Done,
     Rejected,
+    Failed,
 }
 
 /// Composite task status.
