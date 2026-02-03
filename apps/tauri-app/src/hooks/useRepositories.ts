@@ -6,6 +6,7 @@ import {
   removeRepository,
 } from "@/api/client";
 import type { AddRepositoryParams, ListRepositoriesParams } from "@/api/types";
+import { repositoryGroupKeys } from "./useRepositoryGroups";
 
 // Query keys
 export const repositoryKeys = {
@@ -46,6 +47,9 @@ export function useRemoveRepository() {
     mutationFn: (repositoryId: string) => removeRepository(repositoryId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: repositoryKeys.lists() });
+      // Also invalidate repository groups since the backend removes
+      // the deleted repository from all groups
+      queryClient.invalidateQueries({ queryKey: repositoryGroupKeys.lists() });
     },
   });
 }
