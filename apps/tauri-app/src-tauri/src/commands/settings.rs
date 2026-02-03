@@ -8,7 +8,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    config::{save_config, settings_to_config, GlobalSettings, RepositorySettings},
+    config::{GlobalSettings, RepositorySettings, save_config, settings_to_config},
     error::{AppError, AppResult},
     state::AppState,
 };
@@ -60,22 +60,31 @@ pub async fn get_repository_settings(
 ) -> AppResult<RepositorySettings> {
     let state = state.read().await;
 
-    // Parse the repo_id as UUID
-    let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
-        AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
-    })?;
+    #[cfg(desktop)]
+    if state.mode == crate::config::AppMode::Local {
+        // Parse the repo_id as UUID
+        let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
+            AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
+        })?;
 
-    // Get the repository from the task store to verify it exists
-    let task_store = state.task_store()?;
-    let _repo = task_store
-        .get_repository(repo_uuid)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+        // Get the repository from the task store to verify it exists
+        let task_store = state.task_store()?;
+        let _repo = task_store
+            .get_repository(repo_uuid)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Return default settings - actual repository settings are loaded
-    // from the repository's .delidev/config.toml when performing operations
-    tracing::debug!("Returning default repository settings for {}", repo_id);
-    Ok(RepositorySettings::default())
+        // Return default settings - actual repository settings are loaded
+        // from the repository's .delidev/config.toml when performing operations
+        tracing::debug!("Returning default repository settings for {}", repo_id);
+        return Ok(RepositorySettings::default());
+    }
+
+    let _ = &repo_id;
+
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Updates repository-specific settings.
@@ -91,23 +100,32 @@ pub async fn update_repository_settings(
 ) -> AppResult<RepositorySettings> {
     let state = state.read().await;
 
-    // Parse the repo_id as UUID
-    let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
-        AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
-    })?;
+    #[cfg(desktop)]
+    if state.mode == crate::config::AppMode::Local {
+        // Parse the repo_id as UUID
+        let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
+            AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
+        })?;
 
-    // Get the repository from the task store to verify it exists
-    let task_store = state.task_store()?;
-    let _repo = task_store
-        .get_repository(repo_uuid)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+        // Get the repository from the task store to verify it exists
+        let task_store = state.task_store()?;
+        let _repo = task_store
+            .get_repository(repo_uuid)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-    // Repository settings are managed directly in each repository's
-    // .delidev/config.toml file
-    Err(AppError::InvalidRequest(format!(
-        "Cannot save repository settings for '{}': repository settings must be edited directly in \
-         the repository's .delidev/config.toml file.",
-        repo_id
-    )))
+        // Repository settings are managed directly in each repository's
+        // .delidev/config.toml file
+        return Err(AppError::InvalidRequest(format!(
+            "Cannot save repository settings for '{}': repository settings must be edited \
+             directly in the repository's .delidev/config.toml file.",
+            repo_id
+        )));
+    }
+
+    let _ = &repo_id;
+
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }

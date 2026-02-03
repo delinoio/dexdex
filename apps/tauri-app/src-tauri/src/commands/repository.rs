@@ -51,47 +51,51 @@ pub async fn add_repository(
 ) -> AppResult<Repository> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let workspace_id = params
+            .workspace_id
+            .as_ref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
+            .unwrap_or_else(|| runtime.default_workspace_id());
+
+        // Validate the remote URL
+        validate_repository_url(&params.remote_url)?;
+
+        // Parse the remote URL to extract repository info
+        let name = params.name.unwrap_or_else(|| {
+            extract_repo_name(&params.remote_url).unwrap_or_else(|| "Unknown".to_string())
+        });
+
+        let vcs_provider =
+            Repository::detect_provider(&params.remote_url).unwrap_or(VcsProviderType::Github);
+
+        let mut repository = Repository::new(workspace_id, &name, &params.remote_url, vcs_provider);
+        if let Some(branch) = params.default_branch.clone() {
+            repository = repository.with_default_branch(branch);
+        }
+
+        let created = runtime
+            .task_store_arc()
+            .create_repository(repository)
+            .await?;
+        info!("Added repository: {} ({})", created.name, created.id);
+        return Ok(created);
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    // Suppress unused variable warnings on non-desktop platforms
+    let _ = &params;
 
-    let workspace_id = params
-        .workspace_id
-        .as_ref()
-        .map(|s| Uuid::parse_str(s))
-        .transpose()
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
-        .unwrap_or_else(|| runtime.default_workspace_id());
-
-    // Validate the remote URL
-    validate_repository_url(&params.remote_url)?;
-
-    // Parse the remote URL to extract repository info
-    let name = params.name.unwrap_or_else(|| {
-        extract_repo_name(&params.remote_url).unwrap_or_else(|| "Unknown".to_string())
-    });
-
-    let vcs_provider =
-        Repository::detect_provider(&params.remote_url).unwrap_or(VcsProviderType::Github);
-
-    let mut repository = Repository::new(workspace_id, &name, &params.remote_url, vcs_provider);
-    if let Some(branch) = params.default_branch {
-        repository = repository.with_default_branch(branch);
-    }
-
-    let created = runtime
-        .task_store_arc()
-        .create_repository(repository)
-        .await?;
-    info!("Added repository: {} ({})", created.name, created.id);
-    Ok(created)
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Lists repositories.
@@ -102,48 +106,52 @@ pub async fn list_repositories(
 ) -> AppResult<ListRepositoriesResult> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let limit = params
+            .limit
+            .map(|l| {
+                u32::try_from(l)
+                    .map_err(|_| AppError::InvalidRequest("limit must be non-negative".to_string()))
+            })
+            .transpose()?;
+        let offset = params
+            .offset
+            .map(|o| {
+                u32::try_from(o).map_err(|_| {
+                    AppError::InvalidRequest("offset must be non-negative".to_string())
+                })
+            })
+            .transpose()?;
+
+        let filter = RepositoryFilter {
+            workspace_id: params
+                .workspace_id
+                .as_ref()
+                .and_then(|s| Uuid::parse_str(s).ok()),
+            limit,
+            offset,
+        };
+
+        let (repositories, total) = runtime.task_store_arc().list_repositories(filter).await?;
+
+        let total_count = i32::try_from(total).unwrap_or(i32::MAX);
+        return Ok(ListRepositoriesResult {
+            repositories,
+            total_count,
+        });
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    let _ = &params;
 
-    let limit = params
-        .limit
-        .map(|l| {
-            u32::try_from(l)
-                .map_err(|_| AppError::InvalidRequest("limit must be non-negative".to_string()))
-        })
-        .transpose()?;
-    let offset = params
-        .offset
-        .map(|o| {
-            u32::try_from(o)
-                .map_err(|_| AppError::InvalidRequest("offset must be non-negative".to_string()))
-        })
-        .transpose()?;
-
-    let filter = RepositoryFilter {
-        workspace_id: params
-            .workspace_id
-            .as_ref()
-            .and_then(|s| Uuid::parse_str(s).ok()),
-        limit,
-        offset,
-    };
-
-    let (repositories, total) = runtime.task_store_arc().list_repositories(filter).await?;
-
-    let total_count = i32::try_from(total).unwrap_or(i32::MAX);
-    Ok(ListRepositoriesResult {
-        repositories,
-        total_count,
-    })
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Removes a repository.
@@ -154,23 +162,26 @@ pub async fn remove_repository(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&repository_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        runtime.task_store_arc().delete_repository(id).await?;
+        info!("Removed repository: {}", id);
+        return Ok(());
     }
 
-    let id = Uuid::parse_str(&repository_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+    let _ = &repository_id;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    runtime.task_store_arc().delete_repository(id).await?;
-    info!("Removed repository: {}", id);
-    Ok(())
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 // Helper functions
@@ -306,73 +317,77 @@ pub async fn create_repository_group(
 ) -> AppResult<RepositoryGroup> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
-    }
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let workspace_id = params
+            .workspace_id
+            .as_ref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
+            .unwrap_or_else(|| runtime.default_workspace_id());
 
-    let workspace_id = params
-        .workspace_id
-        .as_ref()
-        .map(|s| Uuid::parse_str(s))
-        .transpose()
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
-        .unwrap_or_else(|| runtime.default_workspace_id());
+        // Validate that at least one repository is provided
+        if params.repository_ids.is_empty() {
+            return Err(AppError::InvalidRequest(
+                "At least one repository is required".to_string(),
+            ));
+        }
 
-    // Validate that at least one repository is provided
-    if params.repository_ids.is_empty() {
-        return Err(AppError::InvalidRequest(
-            "At least one repository is required".to_string(),
-        ));
-    }
+        // Validate and sanitize name if provided
+        let name = params
+            .name
+            .clone()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty());
 
-    // Validate and sanitize name if provided
-    let name = params
-        .name
-        .map(|n| n.trim().to_string())
-        .filter(|n| !n.is_empty());
+        // Parse repository IDs
+        let repository_ids: Vec<Uuid> = params
+            .repository_ids
+            .iter()
+            .map(|s| Uuid::parse_str(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
 
-    // Parse repository IDs
-    let repository_ids: Vec<Uuid> = params
-        .repository_ids
-        .iter()
-        .map(|s| Uuid::parse_str(s))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+        // Verify all repositories exist
+        for repo_id in &repository_ids {
+            runtime
+                .task_store_arc()
+                .get_repository(*repo_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+        }
 
-    // Verify all repositories exist
-    for repo_id in &repository_ids {
-        runtime
+        let mut group = RepositoryGroup::new(workspace_id);
+        if let Some(name) = name {
+            group = group.with_name(name);
+        }
+        for repo_id in repository_ids {
+            group.add_repository(repo_id);
+        }
+
+        let created = runtime
             .task_store_arc()
-            .get_repository(*repo_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+            .create_repository_group(group)
+            .await?;
+        info!(
+            "Created repository group: {} ({})",
+            created.name.as_deref().unwrap_or("unnamed"),
+            created.id
+        );
+        return Ok(created);
     }
 
-    let mut group = RepositoryGroup::new(workspace_id);
-    if let Some(name) = name {
-        group = group.with_name(name);
-    }
-    for repo_id in repository_ids {
-        group.add_repository(repo_id);
-    }
+    let _ = &params;
 
-    let created = runtime
-        .task_store_arc()
-        .create_repository_group(group)
-        .await?;
-    info!(
-        "Created repository group: {} ({})",
-        created.name.as_deref().unwrap_or("unnamed"),
-        created.id
-    );
-    Ok(created)
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Lists repository groups.
@@ -383,53 +398,57 @@ pub async fn list_repository_groups(
 ) -> AppResult<ListRepositoryGroupsResult> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let limit = params
+            .limit
+            .map(|l| {
+                u32::try_from(l)
+                    .map_err(|_| AppError::InvalidRequest("limit must be non-negative".to_string()))
+            })
+            .transpose()?;
+        let offset = params
+            .offset
+            .map(|o| {
+                u32::try_from(o).map_err(|_| {
+                    AppError::InvalidRequest("offset must be non-negative".to_string())
+                })
+            })
+            .transpose()?;
+
+        let filter = RepositoryGroupFilter {
+            workspace_id: params
+                .workspace_id
+                .as_ref()
+                .map(|s| Uuid::parse_str(s))
+                .transpose()
+                .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?,
+            limit,
+            offset,
+        };
+
+        let (groups, total) = runtime
+            .task_store_arc()
+            .list_repository_groups(filter)
+            .await?;
+
+        let total_count = i32::try_from(total).unwrap_or(i32::MAX);
+        return Ok(ListRepositoryGroupsResult {
+            groups,
+            total_count,
+        });
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    let _ = &params;
 
-    let limit = params
-        .limit
-        .map(|l| {
-            u32::try_from(l)
-                .map_err(|_| AppError::InvalidRequest("limit must be non-negative".to_string()))
-        })
-        .transpose()?;
-    let offset = params
-        .offset
-        .map(|o| {
-            u32::try_from(o)
-                .map_err(|_| AppError::InvalidRequest("offset must be non-negative".to_string()))
-        })
-        .transpose()?;
-
-    let filter = RepositoryGroupFilter {
-        workspace_id: params
-            .workspace_id
-            .as_ref()
-            .map(|s| Uuid::parse_str(s))
-            .transpose()
-            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?,
-        limit,
-        offset,
-    };
-
-    let (groups, total) = runtime
-        .task_store_arc()
-        .list_repository_groups(filter)
-        .await?;
-
-    let total_count = i32::try_from(total).unwrap_or(i32::MAX);
-    Ok(ListRepositoryGroupsResult {
-        groups,
-        total_count,
-    })
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Gets a repository group by ID.
@@ -440,25 +459,28 @@ pub async fn get_repository_group(
 ) -> AppResult<RepositoryGroup> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        return runtime
+            .task_store_arc()
+            .get_repository_group(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)));
     }
 
-    let id = Uuid::parse_str(&group_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+    let _ = &group_id;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    runtime
-        .task_store_arc()
-        .get_repository_group(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)))
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Updates a repository group.
@@ -470,70 +492,74 @@ pub async fn update_repository_group(
 ) -> AppResult<RepositoryGroup> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
-    }
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
 
-    let id = Uuid::parse_str(&group_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        // Validate that at least one repository is provided
+        if params.repository_ids.is_empty() {
+            return Err(AppError::InvalidRequest(
+                "At least one repository is required".to_string(),
+            ));
+        }
 
-    // Validate that at least one repository is provided
-    if params.repository_ids.is_empty() {
-        return Err(AppError::InvalidRequest(
-            "At least one repository is required".to_string(),
-        ));
-    }
+        // Validate and sanitize name if provided
+        let name = params
+            .name
+            .clone()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty());
 
-    // Validate and sanitize name if provided
-    let name = params
-        .name
-        .map(|n| n.trim().to_string())
-        .filter(|n| !n.is_empty());
+        // Parse repository IDs
+        let repository_ids: Vec<Uuid> = params
+            .repository_ids
+            .iter()
+            .map(|s| Uuid::parse_str(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
 
-    // Parse repository IDs
-    let repository_ids: Vec<Uuid> = params
-        .repository_ids
-        .iter()
-        .map(|s| Uuid::parse_str(s))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+        // Verify all repositories exist
+        for repo_id in &repository_ids {
+            runtime
+                .task_store_arc()
+                .get_repository(*repo_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+        }
 
-    // Verify all repositories exist
-    for repo_id in &repository_ids {
-        runtime
+        let mut group = runtime
             .task_store_arc()
-            .get_repository(*repo_id)
+            .get_repository_group(id)
             .await?
-            .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
+            .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)))?;
+
+        group.name = name;
+        group.repository_ids = repository_ids;
+        group.updated_at = chrono::Utc::now();
+
+        let updated = runtime
+            .task_store_arc()
+            .update_repository_group(group)
+            .await?;
+        info!(
+            "Updated repository group: {} ({})",
+            updated.name.as_deref().unwrap_or("unnamed"),
+            updated.id
+        );
+        return Ok(updated);
     }
 
-    let mut group = runtime
-        .task_store_arc()
-        .get_repository_group(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)))?;
+    let _ = (&group_id, &params);
 
-    group.name = name;
-    group.repository_ids = repository_ids;
-    group.updated_at = chrono::Utc::now();
-
-    let updated = runtime
-        .task_store_arc()
-        .update_repository_group(group)
-        .await?;
-    info!(
-        "Updated repository group: {} ({})",
-        updated.name.as_deref().unwrap_or("unnamed"),
-        updated.id
-    );
-    Ok(updated)
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Deletes a repository group.
@@ -544,23 +570,26 @@ pub async fn delete_repository_group(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        runtime.task_store_arc().delete_repository_group(id).await?;
+        info!("Deleted repository group: {}", id);
+        return Ok(());
     }
 
-    let id = Uuid::parse_str(&group_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+    let _ = &group_id;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    runtime.task_store_arc().delete_repository_group(id).await?;
-    info!("Deleted repository group: {}", id);
-    Ok(())
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -602,10 +631,12 @@ mod tests {
     fn test_validate_repository_url_invalid_format() {
         let result = validate_repository_url("not-a-valid-url");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid repository URL format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid repository URL format")
+        );
     }
 
     #[test]
