@@ -4,4 +4,4 @@ pre-commit:
     cargo-fmt:
       stage_fixed: true
       glob: "**/*.rs"
-      run: cargo fmt -- {staged_files}
+      run: cargo +nightly-2026-01-01 fmt -- {staged_files}
