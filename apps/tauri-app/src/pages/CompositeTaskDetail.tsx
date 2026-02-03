@@ -7,7 +7,10 @@ import { TaskGraph } from "@/components/task/TaskGraph";
 import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
 import type { CompositeTaskNodeWithUnitTask } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
-
+import { useTask, useApproveTask, useRejectTask } from "@/hooks/useTasks";
+import { useTabTitle } from "@/hooks/useTabNavigation";
+import { CompositeTaskStatus } from "@/api/types";
+        
 interface ProgressSectionProps {
   nodes: CompositeTaskNodeWithUnitTask[];
   totalCount: number;
@@ -70,6 +73,10 @@ export function CompositeTaskDetail() {
   }
 
   const task = data.compositeTask;
+
+  // Set dynamic tab title with task context
+  const tabTitle = task?.title ? `Composite Task: ${task.title}` : "Composite Task";
+  useTabTitle(tabTitle);
 
   const handleApprovePlan = async () => {
     await approveMutation.mutateAsync(task.id);

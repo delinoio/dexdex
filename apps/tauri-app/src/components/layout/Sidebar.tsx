@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/uiStore";
 import { WorkspaceSelector } from "@/components/workspace";
 import { useMode } from "@/hooks/useMode";
+import { useTabNavigation } from "@/hooks/useTabNavigation";
 
 const navItems = [
   {
@@ -93,6 +94,7 @@ export function Sidebar() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const { data: mode } = useMode();
+  const { handleLinkClick } = useTabNavigation();
 
   return (
     <aside
@@ -137,6 +139,7 @@ export function Sidebar() {
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={(e) => handleLinkClick(e, item.path, item.label)}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",

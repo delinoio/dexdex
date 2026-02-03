@@ -124,6 +124,31 @@ describe("uiStore", () => {
       useUiStore.getState().updateTabTitle("dashboard", "Home");
       expect(useUiStore.getState().tabs.find((t) => t.id === "dashboard")?.title).toBe("Home");
     });
+
+    it("updates tab path", () => {
+      const tabId = useUiStore.getState().addTab({
+        title: "Test Tab",
+        path: "/test",
+        closable: true,
+      });
+
+      useUiStore.getState().updateTabPath(tabId, "/updated-path");
+      expect(useUiStore.getState().tabs.find((t) => t.id === tabId)?.path).toBe("/updated-path");
+    });
+
+    it("updates multiple tab properties with updateTab", () => {
+      const tabId = useUiStore.getState().addTab({
+        title: "Test Tab",
+        path: "/test",
+        closable: true,
+      });
+
+      useUiStore.getState().updateTab(tabId, { title: "Updated Title", path: "/new-path" });
+
+      const tab = useUiStore.getState().tabs.find((t) => t.id === tabId);
+      expect(tab?.title).toBe("Updated Title");
+      expect(tab?.path).toBe("/new-path");
+    });
   });
 
   describe("dialogs", () => {

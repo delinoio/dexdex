@@ -670,6 +670,49 @@ When user requests changes on a task:
 
 ---
 
+## Chat Interface
+
+The chat interface provides a global communication channel with AI agents.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| ChatWindow | Modal overlay containing the chat UI |
+| MessageList | Scrollable list of chat messages |
+| ChatInput | Text input with send button |
+
+### State Management
+
+Chat state is managed via Zustand in `chatStore.ts`:
+
+| State | Type | Description |
+|-------|------|-------------|
+| isOpen | boolean | Chat window visibility |
+| messages | ChatMessage[] | Message history |
+| inputValue | string | Current input text |
+| isLoading | boolean | AI response pending |
+
+### Message Structure
+
+```typescript
+interface ChatMessage {
+  id: string;          // UUID (crypto.randomUUID)
+  role: MessageRole;   // User or Assistant
+  content: string;     // Message text
+  timestamp: Date;     // Creation time
+}
+```
+
+### Global Hotkey
+
+- **macOS**: `Option + Z`
+- **Windows/Linux**: `Alt + Z`
+
+Toggles chat window visibility from anywhere in the app.
+
+---
+
 ## Related Documents
 
 - [Main Server](./main-server.md) - Main Server details

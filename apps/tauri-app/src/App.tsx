@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ChatWindow } from "@/components/chat";
 import {
   CompositeTaskDetail,
   Dashboard,
@@ -32,22 +34,26 @@ function AppRoutes() {
   useNotificationPermission();
 
   return (
-    <Routes>
-      {/* Standalone pages (no sidebar) */}
-      <Route path="/mode-select" element={<ModeSelection />} />
-      <Route path="/onboarding" element={<Onboarding />} />
+    <>
+      <CommandPalette />
+      <ChatWindow />
+      <Routes>
+        {/* Standalone pages (no sidebar) */}
+        <Route path="/mode-select" element={<ModeSelection />} />
+        <Route path="/onboarding" element={<Onboarding />} />
 
-      {/* Main app with sidebar */}
-      <Route element={<MainLayout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/tasks/new" element={<TaskCreation />} />
-        <Route path="/unit-tasks/:id" element={<UnitTaskDetail />} />
-        <Route path="/composite-tasks/:id" element={<CompositeTaskDetail />} />
-        <Route path="/repositories" element={<Repositories />} />
-        <Route path="/repository-groups" element={<RepositoryGroups />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-    </Routes>
+        {/* Main app with sidebar */}
+        <Route element={<MainLayout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/tasks/new" element={<TaskCreation />} />
+          <Route path="/unit-tasks/:id" element={<UnitTaskDetail />} />
+          <Route path="/composite-tasks/:id" element={<CompositeTaskDetail />} />
+          <Route path="/repositories" element={<Repositories />} />
+          <Route path="/repository-groups" element={<RepositoryGroups />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
 
