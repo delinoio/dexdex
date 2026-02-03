@@ -4,11 +4,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import {
-  InlineComment,
-  CommentInputForm,
-  LineComments,
-} from "./InlineComment";
+import { InlineComment, CommentInputForm } from "./InlineComment";
 import type { ReviewComment } from "@/hooks/useReviewComments";
 
 export enum DiffLineType {
@@ -64,16 +60,6 @@ export function DiffViewer({
   const getCommentsForLine = useCallback(
     (lineNumber: number): ReviewComment[] => {
       return comments.filter(
-        (c) => c.filePath === file.filePath && c.lineNumber === lineNumber
-      );
-    },
-    [comments, file.filePath]
-  );
-
-  // Check if line has comments
-  const hasCommentsForLine = useCallback(
-    (lineNumber: number): boolean => {
-      return comments.some(
         (c) => c.filePath === file.filePath && c.lineNumber === lineNumber
       );
     },
@@ -224,8 +210,6 @@ export function DiffViewer({
               const lineNumber = line.newLineNumber ?? line.oldLineNumber ?? 0;
               const lineComments = getCommentsForLine(lineNumber);
               const hasComments = lineComments.length > 0;
-              const isCommentsExpanded = expandedCommentLines.has(lineNumber);
-              const isAddingComment = activeCommentLine === lineNumber;
               const isClickable = line.type !== DiffLineType.Header;
 
               return (
