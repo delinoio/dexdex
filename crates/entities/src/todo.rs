@@ -42,6 +42,7 @@ pub enum TodoItemType {
 
 /// Data for an issue triage todo item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IssueTriageData {
     /// Issue URL.
     pub issue_url: String,
@@ -55,6 +56,7 @@ pub struct IssueTriageData {
 
 /// Data for a PR review todo item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PrReviewData {
     /// PR URL.
     pub pr_url: String,
@@ -78,6 +80,7 @@ pub enum TodoItemData {
 
 /// Tasks that humans should do but AI can assist with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TodoItem {
     /// Unique identifier.
     pub id: Uuid,

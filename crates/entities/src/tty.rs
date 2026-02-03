@@ -36,6 +36,7 @@ pub enum TtyInputStatus {
 
 /// A request for TTY input from an AI agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TtyInputRequest {
     /// Unique identifier.
     pub id: Uuid,

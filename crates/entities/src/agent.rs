@@ -72,6 +72,7 @@ impl AiAgentType {
 
 /// A single AI coding agent session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentSession {
     /// Unique identifier.
     pub id: Uuid,
@@ -115,6 +116,7 @@ impl AgentSession {
 
 /// Base remote information for an agent task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BaseRemote {
     /// Path to the git remote directory.
     pub git_remote_dir_path: String,
@@ -124,6 +126,7 @@ pub struct BaseRemote {
 
 /// A collection of AgentSessions. The retryable unit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentTask {
     /// Unique identifier.
     pub id: Uuid,
