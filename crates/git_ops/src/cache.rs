@@ -9,8 +9,7 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 
 use crate::{
-    CloneOptions, FetchOpts, GitCredentials, GitRepository, GitResult, WorktreeExt,
-    WorktreeOptions,
+    CloneOptions, FetchOpts, GitCredentials, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
 };
 
 /// Default cache directory name within the data directory.
@@ -88,7 +87,8 @@ impl RepositoryCache {
     ///
     /// Examples:
     /// - `https://token@github.com/user/repo` -> `https://github.com/user/repo`
-    /// - `git@github.com:user/repo` -> `git@github.com:user/repo` (no change for SSH)
+    /// - `git@github.com:user/repo` -> `git@github.com:user/repo` (no change
+    ///   for SSH)
     fn strip_userinfo_from_url(url: &str) -> String {
         // Handle HTTPS/HTTP URLs with embedded credentials
         if let Some(rest) = url.strip_prefix("https://") {
@@ -145,18 +145,20 @@ impl RepositoryCache {
         std::fs::create_dir_all(&self.cache_dir)?;
 
         // Use a lockfile to prevent concurrent clones/fetches to the same repo
-        let lock_path = self.cache_dir.join(format!("{}.lock", Self::url_to_cache_name(remote_url)));
+        let lock_path = self
+            .cache_dir
+            .join(format!("{}.lock", Self::url_to_cache_name(remote_url)));
         let mut lock = fslock::LockFile::open(&lock_path).map_err(|e| {
-            crate::GitError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to open lockfile: {}", e),
-            ))
+            crate::GitError::Io(std::io::Error::other(format!(
+                "Failed to open lockfile: {}",
+                e
+            )))
         })?;
         lock.lock().map_err(|e| {
-            crate::GitError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to acquire lock: {}", e),
-            ))
+            crate::GitError::Io(std::io::Error::other(format!(
+                "Failed to acquire lock: {}",
+                e
+            )))
         })?;
 
         // Re-check existence after acquiring lock (another process may have cloned)
@@ -238,7 +240,10 @@ impl RepositoryCache {
             std::fs::remove_dir_all(&worktree_path).map_err(|e| {
                 crate::GitError::Io(std::io::Error::new(
                     e.kind(),
-                    format!("Failed to remove worktree directory {:?}: {}", worktree_path, e),
+                    format!(
+                        "Failed to remove worktree directory {:?}: {}",
+                        worktree_path, e
+                    ),
                 ))
             })?;
         }
@@ -345,7 +350,8 @@ impl RepositoryCache {
 
     /// Sanitizes a branch name for use in file paths.
     ///
-    /// Replaces special characters with hyphens to ensure safe filesystem paths.
+    /// Replaces special characters with hyphens to ensure safe filesystem
+    /// paths.
     pub fn sanitize_branch_name(branch: &str) -> String {
         branch
             .chars()
