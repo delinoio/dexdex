@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 /// A user in the system (only used in multi-user mode).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     /// Unique identifier.
     pub id: Uuid,
