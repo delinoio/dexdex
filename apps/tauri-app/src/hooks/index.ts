@@ -5,5 +5,6 @@ export * from "./useNotificationPermission";
 export * from "./useRepositories";
 export * from "./useRepositoryGroups";
 export * from "./useSettings";
+export * from "./useTabNavigation";
 export * from "./useTasks";
 export * from "./useWorkspaces";
