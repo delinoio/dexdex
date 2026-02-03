@@ -93,6 +93,9 @@ export function Settings() {
                       <option value={AiAgentType.ClaudeCode}>Claude Code</option>
                       <option value={AiAgentType.OpenCode}>OpenCode</option>
                       <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
+                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
+                      <option value={AiAgentType.Aider}>Aider</option>
+                      <option value={AiAgentType.Amp}>Amp</option>
                     </Select>
                   </div>
                 </CardContent>
@@ -117,6 +120,7 @@ export function Settings() {
                       <option value={AiAgentType.ClaudeCode}>Claude Code</option>
                       <option value={AiAgentType.OpenCode}>OpenCode</option>
                       <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
+                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
                       <option value={AiAgentType.Aider}>Aider</option>
                       <option value={AiAgentType.Amp}>Amp</option>
                     </Select>
@@ -143,6 +147,9 @@ export function Settings() {
                       <option value={AiAgentType.ClaudeCode}>Claude Code</option>
                       <option value={AiAgentType.OpenCode}>OpenCode</option>
                       <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
+                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
+                      <option value={AiAgentType.Aider}>Aider</option>
+                      <option value={AiAgentType.Amp}>Amp</option>
                     </Select>
                   </div>
                 </CardContent>
