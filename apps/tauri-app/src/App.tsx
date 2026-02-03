@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ChatWindow } from "@/components/chat";
 import {
   CompositeTaskDetail,
   Dashboard,
@@ -35,6 +36,7 @@ function AppRoutes() {
   return (
     <>
       <CommandPalette />
+      <ChatWindow />
       <Routes>
         {/* Standalone pages (no sidebar) */}
         <Route path="/mode-select" element={<ModeSelection />} />

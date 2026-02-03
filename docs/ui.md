@@ -451,12 +451,25 @@ Built-in diff viewer for reviewing AI-generated code.
 
 ### Features
 
-| Feature | Description |
-|---------|-------------|
-| File Tree | List of changed files with viewed status |
-| Diff Viewer | Side-by-side or unified diff |
-| Inline Comments | Add comments on specific lines |
-| Viewed Tracking | Mark files as reviewed |
+| Feature | Description | Implementation |
+|---------|-------------|----------------|
+| File Tree | List of changed files with viewed status | `DiffFileList` component |
+| Diff Viewer | Side-by-side or unified diff | `DiffViewer` component |
+| Inline Comments | Add comments on specific lines | `InlineComment`, `CommentInputForm`, `LineComments` components |
+| Viewed Tracking | Mark files as reviewed | `DiffViewer` with `isViewed` prop |
+
+### Implementation Components
+
+The review interface is built from the following components:
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `DiffViewer` | `components/review/DiffViewer.tsx` | Main diff display with inline commenting support |
+| `DiffFileList` | `components/review/DiffViewer.tsx` | Sidebar file list with status indicators |
+| `InlineComment` | `components/review/InlineComment.tsx` | Single comment display with edit/delete |
+| `CommentInputForm` | `components/review/InlineComment.tsx` | Form for adding new comments |
+| `LineComments` | `components/review/InlineComment.tsx` | Container for multiple comments on a line |
+| `useReviewComments` | `hooks/useReviewComments.ts` | Hook for comment CRUD operations |
 
 ### Actions
 
@@ -630,6 +643,8 @@ Built-in diff viewer for reviewing AI-generated code.
 
 ## Multi-Tab Interface
 
+The tab bar appears above the main content area when there are multiple tabs open. It is hidden on mobile devices.
+
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  [Dashboard]  [Task: Add auth ×]  [Task: Fix bug ×]                        │
@@ -640,12 +655,37 @@ Built-in diff viewer for reviewing AI-generated code.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Implementation
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| `TabBar` | `components/layout/TabBar.tsx` | Horizontal tab bar UI with close buttons |
+| `useTabNavigation` | `hooks/useTabNavigation.ts` | Syncs router with tab state |
+| `useTabTitle` | `hooks/useTabNavigation.ts` | Updates active tab title |
+
+### Features
+
 | Feature | Description |
 |---------|-------------|
-| Ctrl/Cmd+Click | Open in new tab |
+| Ctrl/Cmd+Click | Open in new tab (via `handleLinkClick` from `useTabNavigation`) |
 | Middle Click | Close tab |
-| Tab Title | Auto-updated task title |
-| Close Button | Appears on hover |
+| Tab Title | Auto-updated based on route |
+| Close Button | Appears on hover for closable tabs |
+| Hidden on Single Tab | Tab bar hidden when only one tab exists |
+| Desktop Only | Tab bar hidden on mobile viewports |
+
+### State Management
+
+Tab state is managed in `stores/uiStore.ts`:
+
+| Function | Description |
+|----------|-------------|
+| `addTab` | Creates new tab, returns ID |
+| `removeTab` | Closes tab, handles active tab selection |
+| `setActiveTab` | Switches to specified tab |
+| `updateTabTitle` | Updates tab title |
+| `updateTabPath` | Updates tab path |
+| `updateTab` | Updates multiple tab properties |
 
 ---
 

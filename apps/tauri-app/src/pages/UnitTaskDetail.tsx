@@ -6,6 +6,7 @@ import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
+import { useTabTitle } from "@/hooks/useTabNavigation";
 import { UnitTaskStatus } from "@/api/types";
 import { useState, useCallback } from "react";
 
@@ -22,6 +23,10 @@ export function UnitTaskDetail() {
   const requestChangesMutation = useRequestChanges();
 
   const task = data?.unitTask;
+
+  // Set dynamic tab title with task context
+  const tabTitle = task?.title ? `Task: ${task.title}` : "Task";
+  useTabTitle(tabTitle);
 
   // Keyboard shortcut handlers
   const handleShortcutApprove = useCallback(async () => {
