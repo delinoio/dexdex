@@ -6,5 +6,6 @@ export * from "./useRepositories";
 export * from "./useRepositoryGroups";
 export * from "./useReviewShortcuts";
 export * from "./useSettings";
+export * from "./useTabNavigation";
 export * from "./useTasks";
 export * from "./useWorkspaces";

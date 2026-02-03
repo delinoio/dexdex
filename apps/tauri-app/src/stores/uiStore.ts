@@ -26,6 +26,8 @@ interface UiState {
   removeTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   updateTabTitle: (id: string, title: string) => void;
+  updateTabPath: (id: string, path: string) => void;
+  updateTab: (id: string, updates: Partial<Omit<Tab, "id">>) => void;
 
   // Dialog state
   isCommandPaletteOpen: boolean;
@@ -98,6 +100,14 @@ export const useUiStore = create<UiState>()(
   updateTabTitle: (id, title) =>
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, title } : t)),
+    })),
+  updateTabPath: (id, path) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, path } : t)),
+    })),
+  updateTab: (id, updates) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
     })),
 
   // Command palette
