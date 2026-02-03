@@ -118,8 +118,8 @@ impl AgentSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BaseRemote {
-    /// Path to the git remote directory.
-    pub git_remote_dir_path: String,
+    /// Remote git repository URL.
+    pub git_remote_url: String,
     /// Git branch name.
     pub git_branch_name: String,
 }
@@ -156,9 +156,13 @@ impl AgentTask {
     }
 
     /// Adds a base remote to this task.
-    pub fn add_base_remote(&mut self, dir_path: impl Into<String>, branch_name: impl Into<String>) {
+    pub fn add_base_remote(
+        &mut self,
+        remote_url: impl Into<String>,
+        branch_name: impl Into<String>,
+    ) {
         self.base_remotes.push(BaseRemote {
-            git_remote_dir_path: dir_path.into(),
+            git_remote_url: remote_url.into(),
             git_branch_name: branch_name.into(),
         });
     }
@@ -206,10 +210,13 @@ mod tests {
     #[test]
     fn test_agent_task_creation() {
         let mut task = AgentTask::new();
-        task.add_base_remote("/path/to/repo", "main");
+        task.add_base_remote("https://github.com/user/repo", "main");
 
         assert_eq!(task.base_remotes.len(), 1);
-        assert_eq!(task.base_remotes[0].git_remote_dir_path, "/path/to/repo");
+        assert_eq!(
+            task.base_remotes[0].git_remote_url,
+            "https://github.com/user/repo"
+        );
         assert_eq!(task.base_remotes[0].git_branch_name, "main");
     }
 }

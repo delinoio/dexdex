@@ -114,7 +114,7 @@ pub enum TodoItemStatus {
 /// Base remote information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BaseRemote {
-    pub git_remote_dir_path: String,
+    pub git_remote_url: String,
     pub git_branch_name: String,
 }
 

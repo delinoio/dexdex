@@ -157,7 +157,7 @@ pub async fn get_next_task<S: TaskStore>(
                         .base_remotes
                         .iter()
                         .map(|br| rpc_protocol::BaseRemote {
-                            git_remote_dir_path: br.git_remote_dir_path.clone(),
+                            git_remote_url: br.git_remote_url.clone(),
                             git_branch_name: br.git_branch_name.clone(),
                         })
                         .collect(),

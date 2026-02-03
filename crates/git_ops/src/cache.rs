@@ -1,0 +1,466 @@
+//! Repository cache management.
+//!
+//! This module provides functionality for caching cloned repositories
+//! and creating worktrees from them for task execution.
+
+use std::path::{Path, PathBuf};
+
+use sha2::{Digest, Sha256};
+use tracing::{debug, info};
+
+use crate::{
+    CloneOptions, FetchOpts, GitCredentials, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
+};
+
+/// Default cache directory name within the data directory.
+const CACHE_DIR_NAME: &str = "repo-cache";
+
+/// Default worktrees directory name within the data directory.
+const WORKTREES_DIR_NAME: &str = "worktrees";
+
+/// Repository cache manager.
+///
+/// Manages a cache of bare git repositories and creates worktrees from them
+/// for task execution. This improves performance by avoiding repeated full
+/// clones of repositories.
+pub struct RepositoryCache {
+    /// Base directory for the cache.
+    cache_dir: PathBuf,
+    /// Base directory for worktrees.
+    worktrees_dir: PathBuf,
+}
+
+impl RepositoryCache {
+    /// Creates a new repository cache manager.
+    ///
+    /// # Arguments
+    /// * `data_dir` - The base data directory (e.g., `~/.delidev`)
+    pub fn new(data_dir: impl AsRef<Path>) -> Self {
+        let data_dir = data_dir.as_ref();
+        Self {
+            cache_dir: data_dir.join(CACHE_DIR_NAME),
+            worktrees_dir: data_dir.join(WORKTREES_DIR_NAME),
+        }
+    }
+
+    /// Creates a new repository cache manager with custom directories.
+    pub fn with_dirs(cache_dir: impl AsRef<Path>, worktrees_dir: impl AsRef<Path>) -> Self {
+        Self {
+            cache_dir: cache_dir.as_ref().to_path_buf(),
+            worktrees_dir: worktrees_dir.as_ref().to_path_buf(),
+        }
+    }
+
+    /// Returns the cache directory path.
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    /// Returns the worktrees directory path.
+    pub fn worktrees_dir(&self) -> &Path {
+        &self.worktrees_dir
+    }
+
+    /// Converts a remote URL to a cache directory name.
+    ///
+    /// Uses SHA256 hash of the normalized URL to guarantee uniqueness
+    /// and avoid collisions from different URLs mapping to the same name.
+    /// The URL is normalized by stripping any userinfo (credentials) and
+    /// the `.git` suffix.
+    fn url_to_cache_name(remote_url: &str) -> String {
+        // Normalize the URL by stripping credentials and .git suffix
+        let normalized = Self::strip_userinfo_from_url(remote_url)
+            .trim_end_matches(".git")
+            .trim_end_matches('/')
+            .to_string();
+
+        // Use SHA256 hash for unique, collision-free directory names
+        let mut hasher = Sha256::new();
+        hasher.update(normalized.as_bytes());
+        let hash = hasher.finalize();
+
+        // Use first 16 bytes (32 hex chars) for readable yet unique names
+        format!("{:x}", hash)[..32].to_string()
+    }
+
+    /// Strips userinfo (credentials) from a URL.
+    ///
+    /// Examples:
+    /// - `https://token@github.com/user/repo` -> `https://github.com/user/repo`
+    /// - `git@github.com:user/repo` -> `git@github.com:user/repo` (no change
+    ///   for SSH)
+    fn strip_userinfo_from_url(url: &str) -> String {
+        // Handle HTTPS/HTTP URLs with embedded credentials
+        if let Some(rest) = url.strip_prefix("https://") {
+            if let Some(at_pos) = rest.find('@') {
+                // Check if '@' appears before the first '/'
+                let slash_pos = rest.find('/').unwrap_or(rest.len());
+                if at_pos < slash_pos {
+                    return format!("https://{}", &rest[at_pos + 1..]);
+                }
+            }
+            return url.to_string();
+        }
+        if let Some(rest) = url.strip_prefix("http://") {
+            if let Some(at_pos) = rest.find('@') {
+                let slash_pos = rest.find('/').unwrap_or(rest.len());
+                if at_pos < slash_pos {
+                    return format!("http://{}", &rest[at_pos + 1..]);
+                }
+            }
+            return url.to_string();
+        }
+        // For git@ SSH URLs, keep as-is (the user part is not a credential)
+        url.to_string()
+    }
+
+    /// Extracts a redacted form of the URL safe for logging.
+    ///
+    /// Returns host and path without any credentials.
+    fn redact_url_for_logging(url: &str) -> String {
+        Self::strip_userinfo_from_url(url)
+    }
+
+    /// Returns the path to the cached repository for a given URL.
+    pub fn cached_repo_path(&self, remote_url: &str) -> PathBuf {
+        self.cache_dir.join(Self::url_to_cache_name(remote_url))
+    }
+
+    /// Ensures a repository is cached (clones if not present, fetches if
+    /// present).
+    ///
+    /// Uses a lockfile to prevent TOCTOU race conditions when multiple
+    /// concurrent tasks try to clone the same repository simultaneously.
+    ///
+    /// Returns the path to the cached bare repository.
+    pub fn ensure_cached(
+        &self,
+        remote_url: &str,
+        credentials: Option<GitCredentials>,
+    ) -> GitResult<PathBuf> {
+        let cache_path = self.cached_repo_path(remote_url);
+        let redacted_url = Self::redact_url_for_logging(remote_url);
+
+        // Ensure cache directory exists for lockfile
+        std::fs::create_dir_all(&self.cache_dir)?;
+
+        // Use a lockfile to prevent concurrent clones/fetches to the same repo
+        let lock_path = self
+            .cache_dir
+            .join(format!("{}.lock", Self::url_to_cache_name(remote_url)));
+        let mut lock = fslock::LockFile::open(&lock_path).map_err(|e| {
+            crate::GitError::Io(std::io::Error::other(format!(
+                "Failed to open lockfile: {}",
+                e
+            )))
+        })?;
+        lock.lock().map_err(|e| {
+            crate::GitError::Io(std::io::Error::other(format!(
+                "Failed to acquire lock: {}",
+                e
+            )))
+        })?;
+
+        // Re-check existence after acquiring lock (another process may have cloned)
+        if cache_path.exists() {
+            // Repository is cached, fetch latest changes
+            debug!("Fetching updates for cached repository: {}", redacted_url);
+            let repo = GitRepository::open(&cache_path)?;
+            repo.fetch(
+                "origin",
+                FetchOpts {
+                    credentials,
+                    prune: true,
+                },
+            )?;
+            info!("Updated cached repository: {}", redacted_url);
+        } else {
+            // Clone as bare repository
+            info!("Cloning repository to cache: {}", redacted_url);
+
+            GitRepository::clone(
+                remote_url,
+                &cache_path,
+                CloneOptions {
+                    bare: true,
+                    credentials,
+                    ..Default::default()
+                },
+            )?;
+            info!("Cached repository: {}", redacted_url);
+        }
+
+        // Lock is automatically released when `lock` goes out of scope
+        Ok(cache_path)
+    }
+
+    /// Creates a worktree from a cached repository for a specific task.
+    ///
+    /// # Arguments
+    /// * `remote_url` - The remote repository URL
+    /// * `branch_name` - The branch to checkout in the worktree
+    /// * `task_id` - Unique identifier for the task (used in worktree name)
+    /// * `credentials` - Optional git credentials for fetching
+    ///
+    /// # Returns
+    /// The path to the created worktree.
+    ///
+    /// # Concurrency
+    /// This function assumes task_id is unique per task. Concurrent calls with
+    /// the same task_id will race and may cause issues.
+    pub fn create_worktree_for_task(
+        &self,
+        remote_url: &str,
+        branch_name: &str,
+        task_id: &str,
+        credentials: Option<GitCredentials>,
+    ) -> GitResult<PathBuf> {
+        // Ensure repository is cached and up-to-date
+        let cache_path = self.ensure_cached(remote_url, credentials)?;
+
+        // Open the cached repository
+        let repo = GitRepository::open(&cache_path)?;
+        let git_repo = repo.inner();
+
+        // Create worktree directory
+        std::fs::create_dir_all(&self.worktrees_dir)?;
+
+        // Generate worktree name and path
+        let worktree_name = format!("{}-{}", task_id, Self::sanitize_branch_name(branch_name));
+        let worktree_path = self.worktrees_dir.join(&worktree_name);
+
+        // Remove existing worktree if it exists
+        if worktree_path.exists() {
+            debug!("Removing existing worktree at {:?}", worktree_path);
+            // Try to remove the worktree properly first
+            if let Err(e) = repo.remove_worktree(&worktree_name, true) {
+                debug!("Could not remove worktree via git: {}", e);
+            }
+            // Then remove the directory
+            std::fs::remove_dir_all(&worktree_path).map_err(|e| {
+                crate::GitError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "Failed to remove worktree directory {:?}: {}",
+                        worktree_path, e
+                    ),
+                ))
+            })?;
+        }
+
+        // Always base on the remote branch to ensure we have latest changes.
+        // If a local branch exists, delete it so we can recreate from origin.
+        let remote_branch = format!("origin/{}", branch_name);
+        let mut branch_exists = false;
+
+        if let Ok(mut branch) = git_repo.find_branch(branch_name, git2::BranchType::Local) {
+            // Try to delete the existing local branch to ensure we get fresh state
+            if let Err(e) = branch.delete() {
+                debug!(
+                    "Failed to delete existing local branch {}: {}",
+                    branch_name, e
+                );
+                // Branch deletion failed (might be checked out elsewhere),
+                // but we'll try to proceed anyway
+                branch_exists = true;
+            }
+            // If deletion succeeded, branch no longer exists
+        }
+
+        // Create the worktree with the branch based on origin
+        let options = WorktreeOptions {
+            branch: Some(branch_name.to_string()),
+            create_branch: !branch_exists,
+            base: Some(remote_branch),
+        };
+
+        repo.create_worktree(&worktree_name, &worktree_path, options)?;
+
+        info!(
+            "Created worktree for task {} at {:?}",
+            task_id, worktree_path
+        );
+
+        Ok(worktree_path)
+    }
+
+    /// Removes a worktree for a task.
+    pub fn remove_worktree_for_task(
+        &self,
+        remote_url: &str,
+        task_id: &str,
+        branch_name: &str,
+    ) -> GitResult<()> {
+        let cache_path = self.cached_repo_path(remote_url);
+        let worktree_name = format!("{}-{}", task_id, Self::sanitize_branch_name(branch_name));
+        let worktree_path = self.worktrees_dir.join(&worktree_name);
+
+        if cache_path.exists() {
+            let repo = GitRepository::open(&cache_path)?;
+            if let Err(e) = repo.remove_worktree(&worktree_name, true) {
+                debug!("Could not remove worktree via git: {}", e);
+            }
+        }
+
+        if worktree_path.exists() {
+            std::fs::remove_dir_all(&worktree_path)?;
+            info!("Removed worktree for task {}", task_id);
+        }
+
+        Ok(())
+    }
+
+    /// Lists all cached repositories.
+    pub fn list_cached(&self) -> GitResult<Vec<String>> {
+        if !self.cache_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut repos = Vec::new();
+        for entry in std::fs::read_dir(&self.cache_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    repos.push(name.to_string());
+                }
+            }
+        }
+        Ok(repos)
+    }
+
+    /// Removes a cached repository.
+    pub fn remove_cached(&self, remote_url: &str) -> GitResult<()> {
+        let cache_path = self.cached_repo_path(remote_url);
+        let redacted_url = Self::redact_url_for_logging(remote_url);
+        if cache_path.exists() {
+            std::fs::remove_dir_all(&cache_path)?;
+            info!("Removed cached repository: {}", redacted_url);
+        }
+        Ok(())
+    }
+
+    /// Clears all cached repositories.
+    pub fn clear_cache(&self) -> GitResult<()> {
+        if self.cache_dir.exists() {
+            std::fs::remove_dir_all(&self.cache_dir)?;
+            info!("Cleared repository cache");
+        }
+        Ok(())
+    }
+
+    /// Sanitizes a branch name for use in file paths.
+    ///
+    /// Replaces special characters with hyphens to ensure safe filesystem
+    /// paths.
+    pub fn sanitize_branch_name(branch: &str) -> String {
+        branch
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
+    }
+}
+
+/// Returns the path to a worktree for a task.
+///
+/// This is a convenience function that computes the worktree path
+/// without requiring a RepositoryCache instance.
+pub fn worktree_path_for_task_with_cache(
+    worktrees_dir: impl AsRef<Path>,
+    task_id: &str,
+    branch_name: &str,
+) -> PathBuf {
+    let sanitized_branch = RepositoryCache::sanitize_branch_name(branch_name);
+
+    worktrees_dir
+        .as_ref()
+        .join(format!("{}-{}", task_id, sanitized_branch))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_to_cache_name_is_deterministic() {
+        // Same URL should always produce the same hash
+        let hash1 = RepositoryCache::url_to_cache_name("https://github.com/user/repo.git");
+        let hash2 = RepositoryCache::url_to_cache_name("https://github.com/user/repo.git");
+        assert_eq!(hash1, hash2);
+        // Hash should be 32 characters (first 16 bytes of SHA256 in hex)
+        assert_eq!(hash1.len(), 32);
+    }
+
+    #[test]
+    fn test_url_to_cache_name_normalizes_git_suffix() {
+        // With and without .git suffix should produce same hash
+        let with_git = RepositoryCache::url_to_cache_name("https://github.com/user/repo.git");
+        let without_git = RepositoryCache::url_to_cache_name("https://github.com/user/repo");
+        assert_eq!(with_git, without_git);
+    }
+
+    #[test]
+    fn test_url_to_cache_name_different_urls_different_hashes() {
+        // Different URLs should produce different hashes
+        let hash1 = RepositoryCache::url_to_cache_name("https://github.com/user/repo1");
+        let hash2 = RepositoryCache::url_to_cache_name("https://github.com/user/repo2");
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_url_to_cache_name_strips_credentials() {
+        // URL with credentials should produce same hash as without
+        let with_creds = RepositoryCache::url_to_cache_name("https://token@github.com/user/repo");
+        let without_creds = RepositoryCache::url_to_cache_name("https://github.com/user/repo");
+        assert_eq!(with_creds, without_creds);
+    }
+
+    #[test]
+    fn test_strip_userinfo_from_url() {
+        assert_eq!(
+            RepositoryCache::strip_userinfo_from_url("https://token@github.com/user/repo"),
+            "https://github.com/user/repo"
+        );
+        assert_eq!(
+            RepositoryCache::strip_userinfo_from_url("https://user:pass@github.com/user/repo"),
+            "https://github.com/user/repo"
+        );
+        assert_eq!(
+            RepositoryCache::strip_userinfo_from_url("https://github.com/user/repo"),
+            "https://github.com/user/repo"
+        );
+        assert_eq!(
+            RepositoryCache::strip_userinfo_from_url("git@github.com:user/repo"),
+            "git@github.com:user/repo"
+        );
+    }
+
+    #[test]
+    fn test_cached_repo_path() {
+        let cache = RepositoryCache::new("/home/user/.delidev");
+        let path = cache.cached_repo_path("https://github.com/user/repo.git");
+        // Path should be in cache dir with a hash name
+        assert!(path.starts_with("/home/user/.delidev/repo-cache/"));
+        // The hash component should be 32 characters
+        let hash = path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_sanitize_branch_name() {
+        assert_eq!(
+            RepositoryCache::sanitize_branch_name("feature/add-login"),
+            "feature-add-login"
+        );
+        assert_eq!(RepositoryCache::sanitize_branch_name("main"), "main");
+        assert_eq!(
+            RepositoryCache::sanitize_branch_name("fix/bug#123"),
+            "fix-bug-123"
+        );
+    }
+}

@@ -217,9 +217,9 @@ CREATE TABLE agent_tasks (
 
 CREATE TABLE agent_task_base_remotes (
     agent_task_id UUID NOT NULL REFERENCES agent_tasks(id),
-    git_remote_dir_path TEXT NOT NULL,
+    git_remote_url TEXT NOT NULL,
     git_branch_name VARCHAR(255) NOT NULL,
-    PRIMARY KEY (agent_task_id, git_remote_dir_path)
+    PRIMARY KEY (agent_task_id, git_remote_url)
 );
 
 -- Unit Tasks

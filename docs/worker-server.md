@@ -62,39 +62,68 @@ The Worker Server executes AI coding agents in isolated Docker containers. It re
 
 ```
 1. Task Received from Main Server
+   - Contains git_remote_url (e.g., https://github.com/user/repo)
+   - Contains branch_name for the task
               ▼
-2. Create Git Worktree
-   - Clone from base branch
-   - Create task branch
+2. Ensure Repository is Cached
+   - Check if bare repo exists in ~/.delidev/repo-cache/
+   - If not cached: clone as bare repository
+   - If cached: fetch latest changes from remote
               ▼
-3. Get Secrets from Main Server
+3. Create Git Worktree from Cache
+   - Create worktree at ~/.delidev/worktrees/<task-id>-<branch>/
+   - Checkout the specified branch
+              ▼
+4. Get Secrets from Main Server
    - worker.getSecrets RPC call
               ▼
-4. Build Docker Image (if needed)
+5. Build Docker Image (if needed)
    - From .delidev/setup/Dockerfile
    - Or use default (node:20-slim)
               ▼
-5. Start Docker Container
+6. Start Docker Container
    - Mount worktree as /workspace/{repo}
    - Set HOME=/workspace
    - Inject secrets as env vars
               ▼
-6. Run AI Agent
+7. Run AI Agent
    - Execute agent command (claude, opencode, etc.)
    - Stream output to Main Server
    - Detect TTY input requests
               ▼
-7. Wait for Completion or User Input
+8. Wait for Completion or User Input
    - If TTY input needed: notify Main Server, wait for response
    - If completed: collect output
               ▼
-8. Report Result to Main Server
+9. Report Result to Main Server
    - worker.reportStatus RPC call
               ▼
-9. Cleanup
+10. Cleanup
    - Stop container
    - Keep worktree for review (or cleanup if rejected)
 ```
+
+### Repository Caching
+
+The Worker uses repository caching for improved performance:
+
+```
+~/.delidev/
+├── repo-cache/                    # Cached bare repositories keyed by URL hash
+│   ├── a1b2c3d4e5f67890.../       # SHA256 hash of normalized URL (32 chars)
+│   └── f9e8d7c6b5a43210.../       # Each hash uniquely identifies a repo URL
+└── worktrees/                     # Task worktrees
+    ├── task123-main/              # Worktree for task on main branch
+    └── task456-feature-auth/      # Worktree for task on feature branch
+```
+
+**Security Note**: The URL hash is computed after stripping any embedded credentials from the URL, ensuring that credentials are never leaked into filesystem paths or logs.
+
+**Benefits:**
+- Avoids repeated full clones for the same repository
+- Reduces disk space by using worktrees instead of full clones
+- Enables faster task startup by only fetching changes
+- Supports multiple concurrent tasks on the same repository
 
 ## Docker Sandboxing
 
