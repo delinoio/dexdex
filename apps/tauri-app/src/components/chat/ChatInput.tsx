@@ -32,7 +32,7 @@ export function ChatInput({ className }: ChatInputProps) {
     addMessage(MessageRole.User, trimmedValue);
     setInputValue("");
 
-    // TODO: Integrate with AI backend to get response
+    // TODO(#102): Integrate with AI backend to get response
     // For now, we just add the user message
   };
 

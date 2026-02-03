@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/Button";
 import { CloseIcon, ChatIcon } from "@/components/ui/Icons";
@@ -12,6 +13,16 @@ interface ChatWindowProps {
 export function ChatWindow({ className }: ChatWindowProps) {
   const { isOpen, setOpen, clearMessages, messages } = useChatStore();
 
+  // Handle backdrop click to close chat
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === e.currentTarget) {
+        setOpen(false);
+      }
+    },
+    [setOpen]
+  );
+
   if (!isOpen) {
     return null;
   }
@@ -22,12 +33,7 @@ export function ChatWindow({ className }: ChatWindowProps) {
         "fixed inset-0 z-50 bg-black/50 flex items-center justify-center",
         className
       )}
-      onClick={(e) => {
-        // Close when clicking backdrop
-        if (e.target === e.currentTarget) {
-          setOpen(false);
-        }
-      }}
+      onClick={handleBackdropClick}
     >
       <div className="bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-lg shadow-xl w-full max-w-md h-[600px] max-h-[80vh] flex flex-col">
         {/* Header */}

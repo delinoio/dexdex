@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, memo } from "react";
 import { useChatStore, MessageRole, type ChatMessage } from "@/stores/chatStore";
 import { cn } from "@/lib/utils";
 
@@ -6,7 +6,8 @@ interface MessageBubbleProps {
   message: ChatMessage;
 }
 
-function MessageBubble({ message }: MessageBubbleProps) {
+// Memoize MessageBubble to prevent re-renders when new messages are added
+const MessageBubble = memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === MessageRole.User;
 
   return (
@@ -28,7 +29,7 @@ function MessageBubble({ message }: MessageBubbleProps) {
       </div>
     </div>
   );
-}
+});
 
 interface MessageListProps {
   className?: string;
@@ -36,16 +37,16 @@ interface MessageListProps {
 
 export function MessageList({ className }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef(0);
   const { messages, isLoading } = useChatStore();
-  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
 
   // Auto-scroll to bottom only when new messages are added
   useEffect(() => {
-    if (messages.length > prevMessageCount) {
+    if (messages.length > prevMessageCountRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    setPrevMessageCount(messages.length);
-  }, [messages.length, prevMessageCount]);
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   return (
     <div className={cn("flex-1 overflow-y-auto p-4 space-y-3", className)}>

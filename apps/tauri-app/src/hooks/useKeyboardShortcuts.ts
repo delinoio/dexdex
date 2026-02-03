@@ -161,9 +161,10 @@ export function useKeyboardShortcuts() {
         const keyMatches =
           event.key.toLowerCase() === shortcut.key.toLowerCase();
         // mod: true means Cmd on Mac, Ctrl on Windows/Linux
-        const modMatches = shortcut.mod ? modKey : !modKey;
-        const altMatches = shortcut.alt ? event.altKey : !event.altKey;
-        const shiftMatches = shortcut.shift ? event.shiftKey : !event.shiftKey;
+        // When modifier is undefined, we don't care about its state
+        const modMatches = shortcut.mod === undefined ? true : (shortcut.mod ? modKey : !modKey);
+        const altMatches = shortcut.alt === undefined ? true : (shortcut.alt ? event.altKey : !event.altKey);
+        const shiftMatches = shortcut.shift === undefined ? true : (shortcut.shift ? event.shiftKey : !event.shiftKey);
 
         if (keyMatches && modMatches && altMatches && shiftMatches) {
           // Don't trigger shortcuts when typing in inputs

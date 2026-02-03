@@ -7,6 +7,19 @@ export enum MessageRole {
   Assistant = "assistant",
 }
 
+// Generate unique ID with fallback for older browsers
+function generateId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback: generate a pseudo-random UUID v4
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -47,7 +60,7 @@ export const useChatStore = create<ChatState>()((set) => ({
       messages: [
         ...state.messages,
         {
-          id: crypto.randomUUID(),
+          id: generateId(),
           role,
           content,
           timestamp: new Date(),
