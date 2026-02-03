@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 use crate::{
-    CloneOptions, FetchOpts, GitCredentials, GitError, GitRepository, GitResult, WorktreeExt,
+    CloneOptions, FetchOpts, GitCredentials, GitRepository, GitResult, WorktreeExt,
     WorktreeOptions,
 };
 
