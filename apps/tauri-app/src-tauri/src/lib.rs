@@ -55,7 +55,8 @@ fn init_tracing() {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_window_state::Builder::new().build());
 
     // Global shortcut plugin is only available on desktop
     #[cfg(desktop)]
