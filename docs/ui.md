@@ -643,6 +643,8 @@ The review interface is built from the following components:
 
 ## Multi-Tab Interface
 
+The tab bar appears above the main content area when there are multiple tabs open. It is hidden on mobile devices.
+
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │  [Dashboard]  [Task: Add auth ×]  [Task: Fix bug ×]                        │
@@ -653,12 +655,37 @@ The review interface is built from the following components:
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Implementation
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| `TabBar` | `components/layout/TabBar.tsx` | Horizontal tab bar UI with close buttons |
+| `useTabNavigation` | `hooks/useTabNavigation.ts` | Syncs router with tab state |
+| `useTabTitle` | `hooks/useTabNavigation.ts` | Updates active tab title |
+
+### Features
+
 | Feature | Description |
 |---------|-------------|
-| Ctrl/Cmd+Click | Open in new tab |
+| Ctrl/Cmd+Click | Open in new tab (via `handleLinkClick` from `useTabNavigation`) |
 | Middle Click | Close tab |
-| Tab Title | Auto-updated task title |
-| Close Button | Appears on hover |
+| Tab Title | Auto-updated based on route |
+| Close Button | Appears on hover for closable tabs |
+| Hidden on Single Tab | Tab bar hidden when only one tab exists |
+| Desktop Only | Tab bar hidden on mobile viewports |
+
+### State Management
+
+Tab state is managed in `stores/uiStore.ts`:
+
+| Function | Description |
+|----------|-------------|
+| `addTab` | Creates new tab, returns ID |
+| `removeTab` | Closes tab, handles active tab selection |
+| `setActiveTab` | Switches to specified tab |
+| `updateTabTitle` | Updates tab title |
+| `updateTabPath` | Updates tab path |
+| `updateTab` | Updates multiple tab properties |
 
 ---
 
