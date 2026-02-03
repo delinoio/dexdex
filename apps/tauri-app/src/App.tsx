@@ -14,6 +14,7 @@ import {
   UnitTaskDetail,
 } from "@/pages";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useNotificationPermission } from "@/hooks/useNotificationPermission";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,6 +28,8 @@ const queryClient = new QueryClient({
 function AppRoutes() {
   // Initialize keyboard shortcuts
   useKeyboardShortcuts();
+  // Request notification permission on startup
+  useNotificationPermission();
 
   return (
     <Routes>
