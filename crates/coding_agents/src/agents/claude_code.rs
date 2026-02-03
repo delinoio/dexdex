@@ -223,7 +223,8 @@ impl Agent for ClaudeCodeAgent {
 
     fn args(&self, config: &AgentConfig) -> Vec<String> {
         let mut args = vec![
-            "--print".to_string(), // Non-interactive mode (required for automation)
+            "--print".to_string(),        // Non-interactive mode (required for automation)
+            "--verbose".to_string(),      // Required for stream-json with --print
             "--output-format".to_string(),
             "stream-json".to_string(),
             "--dangerously-skip-permissions".to_string(), // Skip permission prompts
