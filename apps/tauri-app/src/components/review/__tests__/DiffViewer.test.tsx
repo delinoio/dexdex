@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DiffViewer, DiffFileList, DiffLineType, type DiffFile } from "../DiffViewer";
+import { DiffViewer, DiffFileList, DiffLineType, DiffFileStatus, type DiffFile } from "../DiffViewer";
 import type { ReviewComment } from "@/hooks/useReviewComments";
 
 const mockDiffFile: DiffFile = {
   filePath: "src/test.ts",
-  status: "modified",
+  status: DiffFileStatus.Modified,
   lines: [
     { type: DiffLineType.Header, content: "@@ -1,5 +1,6 @@" },
     { type: DiffLineType.Context, content: "const a = 1;", oldLineNumber: 1, newLineNumber: 1 },
@@ -147,7 +147,7 @@ describe("DiffViewer", () => {
       ...mockDiffFile,
       filePath: "src/newTest.ts",
       oldPath: "src/test.ts",
-      status: "renamed",
+      status: DiffFileStatus.Renamed,
     };
 
     render(
@@ -169,12 +169,12 @@ describe("DiffFileList", () => {
     { ...mockDiffFile },
     {
       filePath: "src/another.ts",
-      status: "added",
+      status: DiffFileStatus.Added,
       lines: [],
     },
     {
       filePath: "src/deleted.ts",
-      status: "deleted",
+      status: DiffFileStatus.Deleted,
       lines: [],
     },
   ];

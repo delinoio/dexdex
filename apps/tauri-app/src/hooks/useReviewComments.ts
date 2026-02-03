@@ -55,9 +55,6 @@ export function useReviewComments({
         updatedAt: now,
       };
       setComments((prev) => [...prev, newComment]);
-      // Log for debugging purposes
-      // eslint-disable-next-line no-console
-      console.log(`Added comment for task ${taskId}:`, newComment);
     },
     [taskId]
   );

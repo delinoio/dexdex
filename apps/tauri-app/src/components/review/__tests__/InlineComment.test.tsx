@@ -44,7 +44,21 @@ describe("InlineComment", () => {
     expect(screen.getByText("(edited)")).toBeInTheDocument();
   });
 
-  it("calls onDelete when delete button is clicked", () => {
+  it("shows confirmation dialog when delete button is clicked", () => {
+    render(
+      <InlineComment
+        comment={mockComment}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    expect(screen.getByText("Delete comment?")).toBeInTheDocument();
+    expect(screen.getByText(/This action cannot be undone/)).toBeInTheDocument();
+  });
+
+  it("calls onDelete when delete is confirmed", () => {
     const handleDelete = vi.fn();
     render(
       <InlineComment
@@ -55,7 +69,25 @@ describe("InlineComment", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    fireEvent.click(screen.getByTestId("confirm-delete-button"));
     expect(handleDelete).toHaveBeenCalledWith("comment-1");
+  });
+
+  it("does not call onDelete when delete is cancelled", () => {
+    const handleDelete = vi.fn();
+    render(
+      <InlineComment
+        comment={mockComment}
+        onEdit={vi.fn()}
+        onDelete={handleDelete}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    // Click the cancel button in the dialog
+    const cancelButtons = screen.getAllByRole("button", { name: /cancel/i });
+    fireEvent.click(cancelButtons[cancelButtons.length - 1]);
+    expect(handleDelete).not.toHaveBeenCalled();
   });
 
   it("enters edit mode when edit button is clicked", () => {

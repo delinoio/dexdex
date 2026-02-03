@@ -5,6 +5,14 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/Dialog";
 import { cn } from "@/lib/utils";
 import type { ReviewComment } from "@/hooks/useReviewComments";
 
@@ -23,6 +31,7 @@ export function InlineComment({
 }: InlineCommentProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleSubmitEdit = (e: FormEvent) => {
     e.preventDefault();
@@ -37,8 +46,17 @@ export function InlineComment({
     setIsEditing(false);
   };
 
-  const handleDelete = () => {
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
     onDelete(comment.id);
+    setShowDeleteConfirm(false);
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
   };
 
   return (
@@ -76,7 +94,7 @@ export function InlineComment({
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleDelete}
+              onClick={handleDeleteClick}
               className="h-6 px-2 text-xs text-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive))]"
             >
               Delete
@@ -84,6 +102,31 @@ export function InlineComment({
           </div>
         )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete comment?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. Are you sure you want to delete this comment?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={handleCancelDelete}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmDelete}
+              data-testid="confirm-delete-button"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isEditing ? (
         <form onSubmit={handleSubmitEdit} className="space-y-2">

@@ -21,10 +21,17 @@ export interface DiffLine {
   newLineNumber?: number;
 }
 
+export enum DiffFileStatus {
+  Added = "added",
+  Modified = "modified",
+  Deleted = "deleted",
+  Renamed = "renamed",
+}
+
 export interface DiffFile {
   filePath: string;
   oldPath?: string;
-  status: "added" | "modified" | "deleted" | "renamed";
+  status: DiffFileStatus;
   lines: DiffLine[];
 }
 
@@ -107,16 +114,28 @@ export function DiffViewer({
     setActiveCommentLine(null);
   };
 
+  // Precompute first occurrence of each line number to avoid O(n²) complexity
+  const firstOccurrenceMap = useMemo(() => {
+    const map = new Map<number, number>();
+    file.lines.forEach((line, index) => {
+      const lineNumber = line.newLineNumber ?? line.oldLineNumber ?? 0;
+      if (!map.has(lineNumber)) {
+        map.set(lineNumber, index);
+      }
+    });
+    return map;
+  }, [file.lines]);
+
   // Get status badge color
-  const getStatusColor = (status: DiffFile["status"]) => {
+  const getStatusColor = (status: DiffFileStatus) => {
     switch (status) {
-      case "added":
+      case DiffFileStatus.Added:
         return "text-green-500";
-      case "deleted":
+      case DiffFileStatus.Deleted:
         return "text-red-500";
-      case "modified":
+      case DiffFileStatus.Modified:
         return "text-yellow-500";
-      case "renamed":
+      case DiffFileStatus.Renamed:
         return "text-blue-500";
       default:
         return "text-[hsl(var(--muted-foreground))]";
@@ -321,9 +340,8 @@ export function DiffViewer({
 
           // Only show comment section for the first occurrence of each line number
           // to avoid duplicates when both old and new line numbers are the same
-          const isFirstOccurrence = file.lines.findIndex(
-            (l) => (l.newLineNumber ?? l.oldLineNumber ?? 0) === lineNumber
-          ) === index;
+          // Uses precomputed map for O(1) lookup instead of O(n) findIndex
+          const isFirstOccurrence = firstOccurrenceMap.get(lineNumber) === index;
 
           if (!showComments || !isFirstOccurrence || lineNumber === 0) return null;
 
@@ -379,27 +397,27 @@ export function DiffFileList({
   className,
 }: DiffFileListProps) {
   // Get status icon
-  const getStatusIcon = (status: DiffFile["status"]) => {
+  const getStatusIcon = (status: DiffFileStatus) => {
     switch (status) {
-      case "added":
+      case DiffFileStatus.Added:
         return (
           <span className="text-green-500" title="Added">
             +
           </span>
         );
-      case "deleted":
+      case DiffFileStatus.Deleted:
         return (
           <span className="text-red-500" title="Deleted">
             -
           </span>
         );
-      case "modified":
+      case DiffFileStatus.Modified:
         return (
           <span className="text-yellow-500" title="Modified">
             ~
           </span>
         );
-      case "renamed":
+      case DiffFileStatus.Renamed:
         return (
           <span className="text-blue-500" title="Renamed">
             R

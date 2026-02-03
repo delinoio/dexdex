@@ -25,7 +25,7 @@ describe("useReviewComments", () => {
     expect(result.current.commentCount).toBe(1);
   });
 
-  it("updates a comment", () => {
+  it("updates a comment", async () => {
     const { result } = renderHook(() => useReviewComments({ taskId: "task-1" }));
 
     act(() => {
@@ -33,15 +33,17 @@ describe("useReviewComments", () => {
     });
 
     const commentId = result.current.comments[0].id;
+    const originalCreatedAt = result.current.comments[0].createdAt;
+
+    // Wait to ensure different timestamp
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     act(() => {
       result.current.updateComment(commentId, "Updated comment");
     });
 
     expect(result.current.comments[0].content).toBe("Updated comment");
-    expect(result.current.comments[0].updatedAt).not.toBe(
-      result.current.comments[0].createdAt
-    );
+    expect(result.current.comments[0].updatedAt).not.toBe(originalCreatedAt);
   });
 
   it("deletes a comment", () => {
