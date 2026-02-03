@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AddRepositoryParams,
+  AgentTask,
   CompositeTask,
   CreateCompositeTaskParams,
   CreateRepositoryGroupParams,
@@ -55,6 +56,10 @@ export async function createCompositeTask(
 
 export async function getTask(taskId: string): Promise<TaskResponse> {
   return invoke<TaskResponse>("get_task", { taskId });
+}
+
+export async function getAgentTask(agentTaskId: string): Promise<AgentTask> {
+  return invoke<AgentTask>("get_agent_task", { agentTaskId });
 }
 
 export async function listTasks(params: ListTasksParams): Promise<ListTasksResult> {

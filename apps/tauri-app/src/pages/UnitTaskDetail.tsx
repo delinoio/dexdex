@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Textarea } from "@/components/ui/Textarea";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
+import { useTask, useAgentTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
 import { UnitTaskStatus } from "@/api/types";
+import type { AgentSession } from "@/api/types";
 import { useState } from "react";
 
 export function UnitTaskDetail() {
@@ -17,6 +18,10 @@ export function UnitTaskDetail() {
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
   const requestChangesMutation = useRequestChanges();
+
+  // Fetch agent task data for session logs
+  const agentTaskId = data?.unitTask?.agentTaskId ?? "";
+  const { data: agentTaskData, isLoading: isAgentTaskLoading } = useAgentTask(agentTaskId);
 
   if (isLoading) {
     return (
@@ -216,11 +221,11 @@ export function UnitTaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="max-h-96 overflow-y-auto rounded-md bg-[hsl(var(--muted))] p-4 font-mono text-xs">
-                <p className="text-[hsl(var(--muted-foreground))]">
-                  [Awaiting agent session logs...]
-                </p>
-              </div>
+              <AgentSessionLogs
+                sessions={agentTaskData?.agentSessions ?? []}
+                isLoading={isAgentTaskLoading}
+                taskStatus={task.status}
+              />
             </CardContent>
           </Card>
 
@@ -230,6 +235,62 @@ export function UnitTaskDetail() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface AgentSessionLogsProps {
+  sessions: AgentSession[];
+  isLoading: boolean;
+  taskStatus: UnitTaskStatus;
+}
+
+function AgentSessionLogs({ sessions, isLoading, taskStatus }: AgentSessionLogsProps) {
+  if (isLoading) {
+    return (
+      <div className="max-h-96 overflow-y-auto rounded-md bg-[hsl(var(--muted))] p-4 font-mono text-xs">
+        <p className="text-[hsl(var(--muted-foreground))]">
+          Loading agent session logs...
+        </p>
+      </div>
+    );
+  }
+
+  if (sessions.length === 0) {
+    const message = taskStatus === UnitTaskStatus.InProgress
+      ? "Agent is running... Waiting for session logs."
+      : "No agent sessions found.";
+    return (
+      <div className="max-h-96 overflow-y-auto rounded-md bg-[hsl(var(--muted))] p-4 font-mono text-xs">
+        <p className="text-[hsl(var(--muted-foreground))]">
+          {message}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {sessions.map((session, index) => (
+        <div key={session.id} className="rounded-md bg-[hsl(var(--muted))] p-4">
+          <div className="mb-2 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
+            <span>Session {index + 1} ({session.aiAgentType})</span>
+            <span>
+              {session.startedAt && `Started: ${new Date(session.startedAt).toLocaleString()}`}
+              {session.completedAt && ` | Completed: ${new Date(session.completedAt).toLocaleString()}`}
+            </span>
+          </div>
+          <div className="max-h-96 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
+            {session.outputLog ? (
+              <pre className="text-[hsl(var(--foreground))]">{session.outputLog}</pre>
+            ) : (
+              <p className="text-[hsl(var(--muted-foreground))]">
+                {session.completedAt ? "No output recorded." : "Session in progress..."}
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

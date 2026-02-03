@@ -4,6 +4,7 @@ import {
   approveTask,
   createCompositeTask,
   createUnitTask,
+  getAgentTask,
   getTask,
   listTasks,
   rejectTask,
@@ -22,6 +23,8 @@ export const taskKeys = {
   list: (params: ListTasksParams) => [...taskKeys.lists(), params] as const,
   details: () => [...taskKeys.all, "detail"] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
+  agentTasks: () => [...taskKeys.all, "agentTask"] as const,
+  agentTask: (id: string) => [...taskKeys.agentTasks(), id] as const,
 };
 
 // Query hooks
@@ -38,6 +41,14 @@ export function useTask(taskId: string) {
     queryKey: taskKeys.detail(taskId),
     queryFn: () => getTask(taskId),
     enabled: !!taskId,
+  });
+}
+
+export function useAgentTask(agentTaskId: string) {
+  return useQuery({
+    queryKey: taskKeys.agentTask(agentTaskId),
+    queryFn: () => getAgentTask(agentTaskId),
+    enabled: !!agentTaskId,
   });
 }
 
