@@ -634,6 +634,40 @@ impl TaskStore for SqliteTaskStore {
         if result.rows_affected() == 0 {
             return Err(TaskStoreError::not_found("Repository", id.to_string()));
         }
+
+        // Remove the deleted repository from all repository groups
+        let repo_id_str = id.to_string();
+        let rows = sqlx::query("SELECT id, repository_ids FROM repository_groups")
+            .fetch_all(&self.pool)
+            .await?;
+
+        for row in rows {
+            let group_id: String = row.get("id");
+            let repo_ids_str: String = row.get("repository_ids");
+            let mut repo_ids: Vec<Uuid> = Self::parse_uuid_vec(&repo_ids_str)?;
+
+            if repo_ids.contains(&id) {
+                repo_ids.retain(|&r| r != id);
+                let updated_repo_ids_json = Self::serialize_uuid_vec(&repo_ids)?;
+                let updated_at = chrono::Utc::now().to_rfc3339();
+
+                sqlx::query(
+                    "UPDATE repository_groups SET repository_ids = ?, updated_at = ? WHERE id = ?",
+                )
+                .bind(&updated_repo_ids_json)
+                .bind(&updated_at)
+                .bind(&group_id)
+                .execute(&self.pool)
+                .await?;
+
+                tracing::info!(
+                    "Removed repository {} from repository group {}",
+                    repo_id_str,
+                    group_id
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -1989,5 +2023,53 @@ mod tests {
         let mut query = String::from("SELECT * FROM tasks");
         SqliteTaskStore::append_pagination(&mut query, Some(100), None);
         assert_eq!(query, "SELECT * FROM tasks LIMIT 100");
+    }
+
+    #[tokio::test]
+    async fn test_delete_repository_removes_from_groups() {
+        let test = create_test_store().await;
+        let store = &test.store;
+
+        // Create workspace
+        let workspace = Workspace::new("Test Workspace");
+        let workspace = store.create_workspace(workspace).await.unwrap();
+
+        // Create repositories
+        let repo1 = Repository::new(
+            workspace.id,
+            "repo1",
+            "https://github.com/test/repo1",
+            VcsProviderType::Github,
+        );
+        let repo1 = store.create_repository(repo1).await.unwrap();
+
+        let repo2 = Repository::new(
+            workspace.id,
+            "repo2",
+            "https://github.com/test/repo2",
+            VcsProviderType::Github,
+        );
+        let repo2 = store.create_repository(repo2).await.unwrap();
+
+        // Create a repository group containing both repos
+        let mut group = RepositoryGroup::new(workspace.id);
+        group.add_repository(repo1.id);
+        group.add_repository(repo2.id);
+        let group = store.create_repository_group(group).await.unwrap();
+
+        // Verify both repos are in the group
+        let fetched_group = store.get_repository_group(group.id).await.unwrap().unwrap();
+        assert_eq!(fetched_group.repository_ids.len(), 2);
+        assert!(fetched_group.repository_ids.contains(&repo1.id));
+        assert!(fetched_group.repository_ids.contains(&repo2.id));
+
+        // Delete repo1
+        store.delete_repository(repo1.id).await.unwrap();
+
+        // Verify repo1 was removed from the group
+        let fetched_group = store.get_repository_group(group.id).await.unwrap().unwrap();
+        assert_eq!(fetched_group.repository_ids.len(), 1);
+        assert!(!fetched_group.repository_ids.contains(&repo1.id));
+        assert!(fetched_group.repository_ids.contains(&repo2.id));
     }
 }
