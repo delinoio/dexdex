@@ -89,14 +89,20 @@ export function useTaskLogs({
       unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
         if (event.payload.taskId === taskId) {
           // Create a new event entry for real-time events
-          // Use a string prefix "rt-" to avoid ID collision with polled events
+          // Use a string prefix "rt-" to ensure no collision with polled events (which use numeric IDs)
+          // The counter starts from lastEventId to avoid ID collisions when polling catches up
+          const baseId = lastEventId ?? 0;
           const newEntry: NormalizedEventEntry = {
-            id: `rt-${taskId}-${++eventIdCounter.current}`,
+            id: `rt-${taskId}-${baseId + ++eventIdCounter.current}`,
             timestamp: new Date().toISOString(),
             event: event.payload.event,
           };
 
-          setEvents((prev) => [...prev, newEntry]);
+          setEvents((prev) => {
+            // Check if this event might be a duplicate from polling
+            // Real-time events with "rt-" prefix are always unique
+            return [...prev, newEntry];
+          });
         }
       });
     };

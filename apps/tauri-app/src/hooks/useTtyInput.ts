@@ -54,6 +54,12 @@ export function useTtyInput({
       // Clear the pending request after successful response
       setPendingRequest(null);
     },
+    onError: (error) => {
+      // Clear the pending request on error to avoid stuck UI state
+      // The request either doesn't exist anymore or failed permanently
+      console.error("Failed to respond to TTY input:", error);
+      setPendingRequest(null);
+    },
   });
 
   // Listen for TTY input request events

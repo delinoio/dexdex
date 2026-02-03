@@ -225,6 +225,10 @@ impl RepositoryCache {
     ///
     /// Note: This is a synchronous operation. Consider using
     /// `clone_with_system_git_async` for non-blocking behavior.
+    ///
+    /// # Security
+    /// Credentials are passed via environment variables (GIT_ASKPASS) rather than
+    /// being embedded in the URL to prevent exposure via process listings.
     fn clone_with_system_git(
         url: &str,
         path: &Path,
@@ -235,12 +239,14 @@ impl RepositoryCache {
         let mut cmd = Command::new("git");
         cmd.arg("clone").arg("--bare");
 
-        // Apply credentials to URL if provided
-        let effective_url = Self::apply_credentials_to_url(url, credentials);
         // Log redacted URL to avoid leaking credentials
-        let redacted_url = Self::redact_url_for_logging(&effective_url);
+        let redacted_url = Self::redact_url_for_logging(url);
 
-        cmd.arg(&effective_url).arg(path);
+        // SECURITY: Use environment-based authentication instead of embedding credentials in URL
+        // This prevents credential exposure via process listings (ps command)
+        Self::configure_git_auth(&mut cmd, credentials);
+
+        cmd.arg(url).arg(path);
 
         debug!("Running: git clone --bare {} {:?}", redacted_url, path);
 
@@ -260,6 +266,10 @@ impl RepositoryCache {
     }
 
     /// Clones a repository using the system git command (async/non-blocking).
+    ///
+    /// # Security
+    /// Credentials are passed via environment variables rather than
+    /// being embedded in the URL to prevent exposure via process listings.
     pub async fn clone_with_system_git_async(
         url: &str,
         path: &Path,
@@ -270,12 +280,13 @@ impl RepositoryCache {
         let mut cmd = Command::new("git");
         cmd.arg("clone").arg("--bare");
 
-        // Apply credentials to URL if provided
-        let effective_url = Self::apply_credentials_to_url(url, credentials);
         // Log redacted URL to avoid leaking credentials
-        let redacted_url = Self::redact_url_for_logging(&effective_url);
+        let redacted_url = Self::redact_url_for_logging(url);
 
-        cmd.arg(&effective_url).arg(path);
+        // SECURITY: Use environment-based authentication instead of embedding credentials in URL
+        Self::configure_git_auth_async(&mut cmd, credentials);
+
+        cmd.arg(url).arg(path);
 
         debug!(
             "Running (async): git clone --bare {} {:?}",
@@ -419,25 +430,82 @@ impl RepositoryCache {
         ))
     }
 
-    /// Applies credentials to a URL if provided.
+    /// Configures git authentication via environment variables (blocking version).
     ///
-    /// For HTTPS URLs with UserPass credentials, embeds the token in the URL.
-    fn apply_credentials_to_url(url: &str, credentials: Option<&GitCredentials>) -> String {
-        match credentials {
-            Some(GitCredentials::UserPass { username, password }) => {
-                // For HTTPS URLs, embed credentials
-                if let Some(rest) = url.strip_prefix("https://") {
-                    // Check if credentials are already in the URL
-                    if !rest.contains('@')
-                        || rest.find('@').unwrap() > rest.find('/').unwrap_or(rest.len())
-                    {
-                        return format!("https://{}:{}@{}", username, password, rest);
-                    }
-                }
-                url.to_string()
-            }
-            _ => url.to_string(),
+    /// # Security
+    /// This approach avoids embedding credentials in URLs which could be exposed
+    /// via process listings (`ps` command) or error messages.
+    fn configure_git_auth(cmd: &mut std::process::Command, credentials: Option<&GitCredentials>) {
+        if let Some(GitCredentials::UserPass { username, password }) = credentials {
+            // Use git's credential helper mechanism via environment variables
+            // This is more secure than embedding credentials in the URL
+            cmd.env(
+                "GIT_CONFIG_COUNT",
+                "2",
+            );
+            cmd.env(
+                "GIT_CONFIG_KEY_0",
+                "credential.helper",
+            );
+            cmd.env(
+                "GIT_CONFIG_VALUE_0",
+                "",
+            );
+            cmd.env(
+                "GIT_CONFIG_KEY_1",
+                "credential.helper",
+            );
+            // Use a shell command to echo credentials - this avoids URL embedding
+            // The credentials are passed via environment variables, not visible in process list
+            cmd.env("GIT_USERNAME", username);
+            cmd.env("GIT_PASSWORD", password);
+            cmd.env(
+                "GIT_CONFIG_VALUE_1",
+                "!f() { echo \"username=$GIT_USERNAME\"; echo \"password=$GIT_PASSWORD\"; }; f",
+            );
         }
+    }
+
+    /// Configures git authentication via environment variables (async version).
+    ///
+    /// # Security
+    /// This approach avoids embedding credentials in URLs which could be exposed
+    /// via process listings (`ps` command) or error messages.
+    fn configure_git_auth_async(
+        cmd: &mut tokio::process::Command,
+        credentials: Option<&GitCredentials>,
+    ) {
+        if let Some(GitCredentials::UserPass { username, password }) = credentials {
+            // Use git's credential helper mechanism via environment variables
+            cmd.env("GIT_CONFIG_COUNT", "2");
+            cmd.env("GIT_CONFIG_KEY_0", "credential.helper");
+            cmd.env("GIT_CONFIG_VALUE_0", "");
+            cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
+            cmd.env("GIT_USERNAME", username);
+            cmd.env("GIT_PASSWORD", password);
+            cmd.env(
+                "GIT_CONFIG_VALUE_1",
+                "!f() { echo \"username=$GIT_USERNAME\"; echo \"password=$GIT_PASSWORD\"; }; f",
+            );
+        }
+    }
+
+    /// Sanitizes a task ID for use in file paths.
+    ///
+    /// This is critical for security - task_id could come from untrusted sources
+    /// and must not contain path traversal characters like `..` or `/`.
+    /// Only alphanumeric characters and hyphens are allowed.
+    pub fn sanitize_task_id(task_id: &str) -> String {
+        task_id
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
     }
 
     /// Creates a worktree from a cached repository for a specific task.
@@ -454,6 +522,9 @@ impl RepositoryCache {
     /// # Concurrency
     /// This function assumes task_id is unique per task. Concurrent calls with
     /// the same task_id will race and may cause issues.
+    ///
+    /// # Security
+    /// The task_id is sanitized to prevent path traversal attacks.
     pub fn create_worktree_for_task(
         &self,
         remote_url: &str,
@@ -472,7 +543,13 @@ impl RepositoryCache {
         std::fs::create_dir_all(&self.worktrees_dir)?;
 
         // Generate worktree name and path
-        let worktree_name = format!("{}-{}", task_id, Self::sanitize_branch_name(branch_name));
+        // SECURITY: Sanitize task_id to prevent path traversal attacks
+        let sanitized_task_id = Self::sanitize_task_id(task_id);
+        let worktree_name = format!(
+            "{}-{}",
+            sanitized_task_id,
+            Self::sanitize_branch_name(branch_name)
+        );
         let worktree_path = self.worktrees_dir.join(&worktree_name);
 
         // Remove existing worktree if it exists
@@ -549,6 +626,9 @@ impl RepositoryCache {
     }
 
     /// Removes a worktree for a task.
+    ///
+    /// # Security
+    /// The task_id is sanitized to prevent path traversal attacks.
     pub fn remove_worktree_for_task(
         &self,
         remote_url: &str,
@@ -556,7 +636,13 @@ impl RepositoryCache {
         branch_name: &str,
     ) -> GitResult<()> {
         let cache_path = self.cached_repo_path(remote_url);
-        let worktree_name = format!("{}-{}", task_id, Self::sanitize_branch_name(branch_name));
+        // SECURITY: Sanitize task_id to prevent path traversal attacks
+        let sanitized_task_id = Self::sanitize_task_id(task_id);
+        let worktree_name = format!(
+            "{}-{}",
+            sanitized_task_id,
+            Self::sanitize_branch_name(branch_name)
+        );
         let worktree_path = self.worktrees_dir.join(&worktree_name);
 
         if cache_path.exists() {
@@ -634,16 +720,21 @@ impl RepositoryCache {
 ///
 /// This is a convenience function that computes the worktree path
 /// without requiring a RepositoryCache instance.
+///
+/// # Security
+/// The task_id is sanitized to prevent path traversal attacks.
 pub fn worktree_path_for_task_with_cache(
     worktrees_dir: impl AsRef<Path>,
     task_id: &str,
     branch_name: &str,
 ) -> PathBuf {
+    // SECURITY: Sanitize task_id to prevent path traversal attacks
+    let sanitized_task_id = RepositoryCache::sanitize_task_id(task_id);
     let sanitized_branch = RepositoryCache::sanitize_branch_name(branch_name);
 
     worktrees_dir
         .as_ref()
-        .join(format!("{}-{}", task_id, sanitized_branch))
+        .join(format!("{}-{}", sanitized_task_id, sanitized_branch))
 }
 
 #[cfg(test)]
@@ -725,6 +816,36 @@ mod tests {
         assert_eq!(
             RepositoryCache::sanitize_branch_name("fix/bug#123"),
             "fix-bug-123"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_task_id() {
+        // Normal UUIDs should be unchanged
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("abc123-def456"),
+            "abc123-def456"
+        );
+        // Path traversal attempts should be sanitized
+        // "../../../etc/passwd" has 9 special chars (./): ..|/.|./.|./e... -> "---------etc-passwd"
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("../../../etc/passwd"),
+            "---------etc-passwd"
+        );
+        // "task/../../secret" has 7 special chars (/, ., ., /, ., ., /): -> "task-------secret"
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("task/../../secret"),
+            "task-------secret"
+        );
+        // Slashes should be converted to hyphens
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("task/with/slashes"),
+            "task-with-slashes"
+        );
+        // Underscores should be converted to hyphens (only alphanumeric and hyphens allowed)
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("task_with_underscores"),
+            "task-with-underscores"
         );
     }
 }
