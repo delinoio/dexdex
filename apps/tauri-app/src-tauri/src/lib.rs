@@ -57,6 +57,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init());
 
+    // Window state plugin is only available on desktop
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_window_state::Builder::new().build());
+
     // Global shortcut plugin is only available on desktop
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
