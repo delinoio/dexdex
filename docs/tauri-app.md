@@ -63,9 +63,20 @@ Desktop apps can run in single-process mode, embedding both Server and Worker:
 apps/tauri-app/src-tauri/src/single_process/
 ├── mod.rs              # SingleProcessRuntime orchestration
 ├── runtime.rs          # SingleProcessRuntime implementation (task store, executor)
-├── executor.rs         # LocalExecutor for running AI agents
-└── tty_handler.rs      # LocalTtyHandler for agent input requests
+├── executor.rs         # LocalExecutor wrapping TaskExecutor from coding_agents
+└── tty_handler.rs      # Re-exports TtyInputRequestManager from coding_agents
 ```
+
+The core execution logic is in `crates/coding_agents/src/executor/`:
+```
+crates/coding_agents/src/executor/
+├── mod.rs              # Module exports
+├── emitter.rs          # EventEmitter trait and event types
+├── task_executor.rs    # TaskExecutor with platform-agnostic execution
+└── tty_manager.rs      # TtyInputRequestManager and EventEmitterTtyHandler
+```
+
+The Tauri app implements `EventEmitter` via `TauriEventEmitter` to emit events through Tauri's event system.
 
 ### Task Execution Flow
 
