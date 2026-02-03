@@ -72,11 +72,12 @@ export function useKeyboardShortcuts() {
       mod: true,
       handler: () => {
         const tabId = addTab({
-          title: "New Tab",
+          title: "Dashboard",
           path: "/",
           closable: true,
         });
         setActiveTab(tabId);
+        navigate("/");
       },
       description: "New Tab",
     },
