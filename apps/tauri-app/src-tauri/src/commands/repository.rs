@@ -602,10 +602,12 @@ mod tests {
     fn test_validate_repository_url_invalid_format() {
         let result = validate_repository_url("not-a-valid-url");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid repository URL format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid repository URL format")
+        );
     }
 
     #[test]

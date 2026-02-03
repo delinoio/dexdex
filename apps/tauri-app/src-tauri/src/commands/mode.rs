@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::{
-    config::{save_config, settings_to_config, AppMode},
+    config::{AppMode, save_config, settings_to_config},
     error::AppResult,
     mobile::platform::supports_local_mode,
     state::AppState,

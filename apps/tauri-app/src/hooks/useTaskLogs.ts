@@ -1,5 +1,5 @@
 // React hooks for task log streaming
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useQuery } from "@tanstack/react-query";
 import { getTaskLogs } from "@/api/client";

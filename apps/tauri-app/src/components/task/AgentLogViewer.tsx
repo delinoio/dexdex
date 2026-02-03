@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { useTaskLogs, getEventSummary } from "@/hooks/useTaskLogs";
+import { useTaskLogs } from "@/hooks/useTaskLogs";
 import { useTtyInput } from "@/hooks/useTtyInput";
 import type { NormalizedEvent, NormalizedEventEntry, UnitTaskStatus } from "@/api/types";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Loader2, Terminal, FileCode, Play, AlertCircle, MessageSquare, Brain } from "lucide-react";
+} from "@/components/ui/Card";
+import {
+  LoaderIcon,
+  TerminalIcon,
+  FileCodeIcon,
+  PlayIcon,
+  AlertCircleIcon,
+  MessageSquareIcon,
+  BrainIcon,
+} from "@/components/ui/Icons";
 
 interface AgentLogViewerProps {
   taskId: string;
@@ -57,7 +65,7 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
   if (error) {
     return (
       <div className={cn("flex items-center gap-2 text-destructive p-4", className)}>
-        <AlertCircle className="h-4 w-4" />
+        <AlertCircleIcon size={16} />
         <span>Failed to load logs: {error.message}</span>
       </div>
     );
@@ -70,10 +78,10 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Terminal className="h-4 w-4" />
+          <TerminalIcon size={16} />
           <span>Agent Session Log</span>
           {isTaskRunning && !isComplete && (
-            <Loader2 className="h-3 w-3 animate-spin ml-2" />
+            <LoaderIcon size={12} className="animate-spin ml-2" />
           )}
         </div>
         {events.length > 0 && (
@@ -101,7 +109,7 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
       >
         {isLoading && events.length === 0 ? (
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <LoaderIcon size={16} className="animate-spin" />
             <span>Loading logs...</span>
           </div>
         ) : events.length === 0 ? (
@@ -161,27 +169,27 @@ function LogEntry({ entry }: LogEntryProps) {
 }
 
 function EventIcon({ event }: { event: NormalizedEvent }) {
-  const iconClass = "h-4 w-4 flex-shrink-0 mt-0.5";
+  const iconClass = "flex-shrink-0 mt-0.5";
 
   switch (event.type) {
     case "text_output":
-      return <Terminal className={cn(iconClass, "text-foreground")} />;
+      return <TerminalIcon size={16} className={cn(iconClass, "text-foreground")} />;
     case "error_output":
-      return <AlertCircle className={cn(iconClass, "text-destructive")} />;
+      return <AlertCircleIcon size={16} className={cn(iconClass, "text-destructive")} />;
     case "tool_use":
     case "tool_result":
-      return <Play className={cn(iconClass, "text-blue-500")} />;
+      return <PlayIcon size={16} className={cn(iconClass, "text-blue-500")} />;
     case "file_change":
-      return <FileCode className={cn(iconClass, "text-green-500")} />;
+      return <FileCodeIcon size={16} className={cn(iconClass, "text-green-500")} />;
     case "command_execution":
-      return <Terminal className={cn(iconClass, "text-yellow-500")} />;
+      return <TerminalIcon size={16} className={cn(iconClass, "text-yellow-500")} />;
     case "ask_user_question":
     case "user_response":
-      return <MessageSquare className={cn(iconClass, "text-purple-500")} />;
+      return <MessageSquareIcon size={16} className={cn(iconClass, "text-purple-500")} />;
     case "thinking":
-      return <Brain className={cn(iconClass, "text-cyan-500")} />;
+      return <BrainIcon size={16} className={cn(iconClass, "text-cyan-500")} />;
     default:
-      return <Terminal className={cn(iconClass, "text-muted-foreground")} />;
+      return <TerminalIcon size={16} className={cn(iconClass, "text-muted-foreground")} />;
   }
 }
 
@@ -333,7 +341,7 @@ function TtyInputDialog({ question, options, onRespond, isResponding }: TtyInput
     <Card className="mb-4 border-purple-500/50 bg-purple-500/5">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-purple-500" />
+          <MessageSquareIcon size={16} className="text-purple-500" />
           Agent Question
         </CardTitle>
         <CardDescription>{question}</CardDescription>
@@ -349,7 +357,7 @@ function TtyInputDialog({ question, options, onRespond, isResponding }: TtyInput
                 disabled={isResponding}
                 onClick={() => handleOptionClick(option)}
               >
-                {isResponding ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+                {isResponding ? <LoaderIcon size={12} className="animate-spin mr-2" /> : null}
                 {option}
               </Button>
             ))}
@@ -364,7 +372,7 @@ function TtyInputDialog({ question, options, onRespond, isResponding }: TtyInput
               autoFocus
             />
             <Button type="submit" disabled={isResponding || !inputValue.trim()}>
-              {isResponding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
+              {isResponding ? <LoaderIcon size={16} className="animate-spin" /> : "Send"}
             </Button>
           </form>
         )}

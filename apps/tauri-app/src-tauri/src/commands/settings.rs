@@ -8,7 +8,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    config::{save_config, settings_to_config, GlobalSettings, RepositorySettings},
+    config::{GlobalSettings, RepositorySettings, save_config, settings_to_config},
     error::{AppError, AppResult},
     state::AppState,
 };

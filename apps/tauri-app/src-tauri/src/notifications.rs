@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
-use crate::events::{event_names, NotificationShownEvent, TaskType};
+use crate::events::{NotificationShownEvent, TaskType, event_names};
 
 /// Notification trigger types.
 #[derive(Debug, Clone, Copy)]
