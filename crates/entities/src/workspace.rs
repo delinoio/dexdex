@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 /// A workspace groups repositories and tasks together.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Workspace {
     /// Unique identifier.
     pub id: Uuid,
