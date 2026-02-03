@@ -225,7 +225,7 @@ impl Agent for ClaudeCodeAgent {
         let mut args = vec![
             "--output-format".to_string(),
             "stream-json".to_string(),
-            "--yes".to_string(),
+            "--dangerously-skip-permissions".to_string(),
         ];
 
         // Add model if specified
