@@ -23,15 +23,15 @@ export function UnitTaskDetail() {
   const task = data?.unitTask;
 
   // Keyboard shortcut handlers
-  const handleShortcutApprove = useCallback(() => {
+  const handleShortcutApprove = useCallback(async () => {
     if (task?.status === UnitTaskStatus.InReview && !approveMutation.isPending) {
-      approveMutation.mutateAsync(task.id);
+      await approveMutation.mutateAsync(task.id);
     }
   }, [task, approveMutation]);
 
-  const handleShortcutDeny = useCallback(() => {
+  const handleShortcutDeny = useCallback(async () => {
     if (task?.status === UnitTaskStatus.InReview && !rejectMutation.isPending) {
-      rejectMutation.mutateAsync({ taskId: task.id, reason: feedback || undefined });
+      await rejectMutation.mutateAsync({ taskId: task.id, reason: feedback || undefined });
     }
   }, [task, rejectMutation, feedback]);
 
@@ -40,7 +40,8 @@ export function UnitTaskDetail() {
   }, []);
 
   const handleStop = useCallback(() => {
-    // Stop execution - will be implemented when stop API is available
+    // TODO(#99): Implement stop execution when stop API is available
+    // eslint-disable-next-line no-console
     console.log("Stop execution requested for task:", task?.id);
   }, [task?.id]);
 
