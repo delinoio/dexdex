@@ -6,12 +6,38 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
 import { UnitTaskStatus } from "@/api/types";
 import { useState } from "react";
+import { ReviewInterface, type ChangedFile, type DiffLine } from "@/components/review";
+
+// Mock diff data for demonstration - in production, this would come from the backend
+const generateMockDiff = (taskId: string): ChangedFile[] => {
+  const mockDiffLines: DiffLine[] = [
+    { lineNumber: 1, type: "header", content: "@@ -1,5 +1,8 @@", oldLineNumber: 1, newLineNumber: 1 },
+    { lineNumber: 2, type: "unchanged", content: "import { useState } from 'react';", oldLineNumber: 1, newLineNumber: 1 },
+    { lineNumber: 3, type: "added", content: "import { useEffect } from 'react';", newLineNumber: 2 },
+    { lineNumber: 4, type: "unchanged", content: "", oldLineNumber: 2, newLineNumber: 3 },
+    { lineNumber: 5, type: "removed", content: "function oldFunction() {", oldLineNumber: 3 },
+    { lineNumber: 6, type: "added", content: "function newFunction() {", newLineNumber: 4 },
+    { lineNumber: 7, type: "unchanged", content: "  // Implementation", oldLineNumber: 4, newLineNumber: 5 },
+    { lineNumber: 8, type: "unchanged", content: "}", oldLineNumber: 5, newLineNumber: 6 },
+  ];
+
+  return [
+    {
+      path: `src/features/${taskId.slice(0, 8)}/index.ts`,
+      status: "modified" as const,
+      additions: 2,
+      deletions: 1,
+      diff: mockDiffLines,
+    },
+  ];
+};
 
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showDiffViewer, setShowDiffViewer] = useState(false);
 
   const { data, isLoading, error } = useTask(id ?? "");
   const approveMutation = useApproveTask();
@@ -227,10 +253,43 @@ export function UnitTaskDetail() {
           {task.status !== UnitTaskStatus.InProgress &&
             task.status !== UnitTaskStatus.Unspecified && (
               <div className="flex gap-2">
-                <Button variant="outline">View Diff</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDiffViewer(!showDiffViewer)}
+                >
+                  {showDiffViewer ? "Hide Diff" : "View Diff"}
+                </Button>
                 <Button variant="outline">Open in Editor</Button>
               </div>
             )}
+
+          {showDiffViewer && task.status !== UnitTaskStatus.InProgress && (
+            <Card>
+              <CardContent className="p-0">
+                <ReviewInterface
+                  taskId={task.id}
+                  taskTitle={task.title}
+                  branchName={task.branchName}
+                  changedFiles={generateMockDiff(task.id)}
+                  onApprove={task.status === UnitTaskStatus.InReview ? handleApprove : undefined}
+                  onRequestChanges={
+                    task.status === UnitTaskStatus.InReview
+                      ? async (reviewFeedback) => {
+                          await requestChangesMutation.mutateAsync({
+                            taskId: task.id,
+                            feedback: reviewFeedback,
+                          });
+                        }
+                      : undefined
+                  }
+                  onReject={task.status === UnitTaskStatus.InReview ? handleReject : undefined}
+                  isApproving={approveMutation.isPending}
+                  isRejecting={rejectMutation.isPending}
+                  isRequestingChanges={requestChangesMutation.isPending}
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
