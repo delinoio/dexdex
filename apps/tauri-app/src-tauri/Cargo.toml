@@ -30,7 +30,6 @@ rpc_protocol = { path = "../../../crates/rpc_protocol" }
 task_store = { path = "../../../crates/task_store" }
 auth = { path = "../../../crates/auth" }
 secrets = { path = "../../../crates/secrets" }
-git_ops = { path = "../../../crates/git_ops" }
 config = { path = "../../../crates/config" }
 coding_agents = { path = "../../../crates/coding_agents" }
 
@@ -67,6 +66,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # requires libgit2-sys, which has linking issues on iOS (missing zlib/iconv)
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 worker_impl = { path = "../../../crates/worker_impl" }
+git_ops = { path = "../../../crates/git_ops" }
 
 
 [dev-dependencies]
