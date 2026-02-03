@@ -13,16 +13,16 @@ use git_ops::RepositoryCache;
 use task_store::{SqliteTaskStore, TaskStore};
 use tauri::{AppHandle, Emitter};
 use tokio::{
-    sync::{RwLock, mpsc},
+    sync::{mpsc, RwLock},
     task::JoinHandle,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use super::tty_handler::{LocalTtyHandler, TtyInputRequestManager};
 use crate::{
     config::data_dir,
-    events::{AgentOutputEvent, TaskStatusChangedEvent, TaskType, event_names},
+    events::{event_names, AgentOutputEvent, TaskStatusChangedEvent, TaskType},
 };
 
 /// Result of a task execution.
@@ -257,8 +257,8 @@ impl LocalExecutor {
         // Create an event channel
         let (event_tx, mut event_rx) = mpsc::channel::<NormalizedEvent>(1024);
 
-        // Collect output log
-        let mut output_log = Vec::new();
+        // Collect output log (used for fallback if event_handler fails)
+        let output_log = Vec::new();
 
         // Run the agent
         let agent = coding_agents::create_agent(agent_type);
@@ -288,10 +288,18 @@ impl LocalExecutor {
         });
 
         // Run the agent
-        debug!("Starting agent execution for task {}", task_id);
+        info!(
+            "Starting agent execution for task {}, agent_type={:?}",
+            task_id, agent_type
+        );
         let run_result = agent
             .run(config, event_tx, Some(Box::new(tty_handler)))
             .await;
+        info!(
+            "Agent execution completed for task {}, result={:?}",
+            task_id,
+            run_result.as_ref().map(|_| "Ok").unwrap_or_else(|e| "Err")
+        );
 
         // Wait for event handler to finish and collect logs
         let logs = match event_handler.await {

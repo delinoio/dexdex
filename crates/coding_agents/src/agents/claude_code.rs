@@ -223,8 +223,8 @@ impl Agent for ClaudeCodeAgent {
 
     fn args(&self, config: &AgentConfig) -> Vec<String> {
         let mut args = vec![
-            "--print".to_string(),        // Non-interactive mode (required for automation)
-            "--verbose".to_string(),      // Required for stream-json with --print
+            "--print".to_string(),   // Non-interactive mode (required for automation)
+            "--verbose".to_string(), // Required for stream-json with --print
             "--output-format".to_string(),
             "stream-json".to_string(),
             "--dangerously-skip-permissions".to_string(), // Skip permission prompts
@@ -253,7 +253,12 @@ impl Agent for ClaudeCodeAgent {
         tty_handler: Option<Box<dyn TtyInputHandler>>,
     ) -> AgentResult<()> {
         let args = self.args(&config);
-        debug!("Running Claude Code with args: {:?}", args);
+        tracing::info!(
+            "Running Claude Code agent: command='{}', working_dir='{}', args={:?}",
+            self.command(),
+            config.working_dir,
+            args
+        );
 
         let mut cmd = Command::new(self.command());
         cmd.args(&args)
@@ -268,7 +273,12 @@ impl Agent for ClaudeCodeAgent {
         }
 
         // Spawn the process
+        tracing::info!("Spawning Claude Code process...");
         let mut child = cmd.spawn()?;
+        tracing::info!(
+            "Claude Code process spawned successfully, pid={:?}",
+            child.id()
+        );
 
         let stdout = child
             .stdout
@@ -284,12 +294,14 @@ impl Agent for ClaudeCodeAgent {
             .ok_or_else(|| AgentError::Config("Failed to capture stdin".into()))?;
 
         // Send session start event
+        tracing::info!("Sending session_start event...");
         let _ = event_tx
             .send(NormalizedEvent::session_start(
                 "claude_code",
                 config.model.clone(),
             ))
             .await;
+        tracing::info!("Session start event sent, now processing stdout/stderr");
 
         // Process stdout
         let event_tx_clone = event_tx.clone();
@@ -300,8 +312,12 @@ impl Agent for ClaudeCodeAgent {
             let stdin = stdin.clone();
             let tty_handler = tty_handler_arc.clone();
             async move {
+                tracing::info!("Starting stdout reader task");
                 let mut reader = BufReader::new(stdout).lines();
+                let mut line_count = 0u64;
                 while let Ok(Some(line)) = reader.next_line().await {
+                    line_count += 1;
+                    tracing::info!("Received stdout line {}: {} bytes", line_count, line.len());
                     let events = ClaudeCodeAgent::new().parse_stream_json(&line);
                     for event in events {
                         // Check for TTY input request
@@ -346,20 +362,30 @@ impl Agent for ClaudeCodeAgent {
                         }
                     }
                 }
+                tracing::info!("Stdout reader task finished after {} lines", line_count);
             }
         });
 
         // Process stderr
         let event_tx_stderr = event_tx.clone();
         let stderr_handle = tokio::spawn(async move {
+            tracing::info!("Starting stderr reader task");
             let mut reader = BufReader::new(stderr).lines();
+            let mut line_count = 0u64;
             while let Ok(Some(line)) = reader.next_line().await {
+                line_count += 1;
+                tracing::info!(
+                    "Received stderr line {}: {}",
+                    line_count,
+                    &line[..line.len().min(100)]
+                );
                 if !line.trim().is_empty()
                     && let Err(e) = event_tx_stderr.send(NormalizedEvent::error(&line)).await
                 {
                     warn!("Failed to send stderr event: {}", e);
                 }
             }
+            tracing::info!("Stderr reader task finished after {} lines", line_count);
         });
 
         // Wait for process with optional timeout
@@ -394,10 +420,13 @@ impl Agent for ClaudeCodeAgent {
         };
 
         let status = wait_result?;
+        tracing::info!("Claude Code process completed with status: {:?}", status);
 
         // Wait for output processing to complete
+        tracing::info!("Waiting for stdout/stderr handlers to complete...");
         let _ = stdout_handle.await;
         let _ = stderr_handle.await;
+        tracing::info!("Output handlers completed");
 
         // Send session end event
         let success = status.success();
