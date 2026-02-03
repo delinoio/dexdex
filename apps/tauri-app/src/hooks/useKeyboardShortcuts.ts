@@ -2,6 +2,7 @@
 import { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUiStore } from "@/stores/uiStore";
+import { useChatStore } from "@/stores/chatStore";
 
 interface ShortcutHandler {
   key: string;
@@ -27,6 +28,7 @@ export function useKeyboardShortcuts() {
     removeTab,
     setActiveTab,
   } = useUiStore();
+  const { toggleChat, setOpen: setChatOpen } = useChatStore();
 
   // Memoize shortcuts array to prevent recreation on every render
   const shortcuts = useMemo<ShortcutHandler[]>(() => [
@@ -116,12 +118,23 @@ export function useKeyboardShortcuts() {
       description: `Switch to Tab ${i + 1}`,
     })),
 
+    // Chat toggle (Option+Z / Alt+Z)
+    {
+      key: "z",
+      alt: true,
+      handler: () => {
+        toggleChat();
+      },
+      description: "Open Chat",
+    },
+
     // Dialog close
     {
       key: "Escape",
       handler: () => {
         setTaskCreationOpen(false);
         setSettingsOpen(false);
+        setChatOpen(false);
       },
       description: "Close Dialog",
     },
@@ -130,6 +143,8 @@ export function useKeyboardShortcuts() {
     setTaskCreationOpen,
     setSettingsOpen,
     toggleCommandPalette,
+    toggleChat,
+    setChatOpen,
     tabs,
     activeTabId,
     addTab,
@@ -184,6 +199,7 @@ export function useKeyboardShortcuts() {
 // Export shortcut definitions for display in UI
 export const KEYBOARD_SHORTCUTS = {
   global: [
+    { keys: ["⌥/Alt", "Z"], description: "Open Chat" },
     { keys: ["⌘/Ctrl", "N"], description: "New Task" },
     { keys: ["⌘/Ctrl", ","], description: "Settings" },
     { keys: ["⌘/Ctrl", "K"], description: "Command Palette" },
