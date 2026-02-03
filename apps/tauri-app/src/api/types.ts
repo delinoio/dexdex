@@ -76,7 +76,7 @@ export enum TodoItemStatus {
 // Entities
 
 export interface BaseRemote {
-  gitRemoteDirPath: string;
+  gitRemoteUrl: string;
   gitBranchName: string;
 }
 

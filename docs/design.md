@@ -140,7 +140,7 @@ For desktop usage, all components can run in a single process for a seamless loc
 | `coding_agents` | AI agent abstraction, output normalization, Docker sandboxing |
 | `task_store` | Task storage (SQLite, PostgreSQL, in-memory) |
 | `rpc_protocol` | Connect RPC protocol definitions (Protobuf) |
-| `git_ops` | Git operations & worktree management |
+| `git_ops` | Git operations, worktree management & repository caching |
 | `auth` | JWT authentication & RBAC |
 | `secrets` | Cross-platform keychain access |
 
@@ -571,9 +571,18 @@ Secrets are stored in the native system keychain and transported to workers when
 ### UnitTask Execution Flow
 
 ```
-User creates UnitTask
+User creates UnitTask (with git_remote_url)
         ▼
-Create git worktree
+Check if repository is cached
+        ▼
+┌──────────────────────────────────────┐
+│ Not cached        │ Cached           │
+│ Clone as bare     │ Fetch updates    │
+│ repo to cache     │ from remote      │
+└────────┬──────────┴────────┬─────────┘
+         └────────┬──────────┘
+                  ▼
+Create git worktree from cached repo
         ▼
 Start Docker container (on Worker)
         ▼
@@ -586,6 +595,20 @@ Human review ──┬──► Commit to repo (done)
                ├──► Request changes (back to in_progress)
                └──► Reject (rejected)
 ```
+
+### Repository Caching
+
+For better performance, DeliDev caches repositories locally:
+
+1. **Cache Location**: `~/.delidev/repo-cache/<url-hash>/`
+2. **Storage Format**: Bare git repositories (no working directory)
+3. **Worktree Location**: `~/.delidev/worktrees/<task-id>-<branch>/`
+
+This approach:
+- Avoids repeated full clones for the same repository
+- Reduces disk space by using worktrees instead of full clones
+- Enables faster task startup by only fetching changes
+- Supports multiple concurrent tasks on the same repository
 
 ### CompositeTask Execution Flow
 
