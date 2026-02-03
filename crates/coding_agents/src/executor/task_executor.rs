@@ -6,10 +6,9 @@
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use entities::AiAgentType;
 use git_ops::RepositoryCache;
-use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{RwLock, mpsc},
     task::JoinHandle,
@@ -21,19 +20,7 @@ use super::{
     AgentOutputEvent, EventEmitter, EventEmitterTtyHandler, TaskCompletedEvent,
     TaskStatusChangedEvent, TaskType, TtyInputRequestManager,
 };
-use crate::{AgentConfig, NormalizedEvent, create_agent};
-
-/// A timestamped event for storage in logs.
-///
-/// This wrapper adds a timestamp to normalized events so that historical
-/// events can be displayed with their actual occurrence time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimestampedEvent {
-    /// The timestamp when the event occurred.
-    pub timestamp: DateTime<Utc>,
-    /// The normalized event.
-    pub event: NormalizedEvent,
-}
+use crate::{AgentConfig, NormalizedEvent, TimestampedEvent, create_agent};
 
 /// Result of a task execution.
 #[derive(Debug, Clone)]

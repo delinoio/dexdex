@@ -693,6 +693,7 @@ dependencies = [
  "futures 0.3.31",
  "git_ops",
  "regex",
+ "rpc_protocol",
  "serde",
  "serde_json",
  "tempfile",

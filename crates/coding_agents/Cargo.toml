@@ -9,6 +9,7 @@ description = "AI coding agent abstraction and output normalization for DeliDev"
 # Core
 entities = { path = "../entities" }
 git_ops = { path = "../git_ops" }
+rpc_protocol = { path = "../rpc_protocol" }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 futures = "0.3"
