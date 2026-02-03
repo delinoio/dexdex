@@ -15,7 +15,7 @@ pub mod state;
 use std::sync::Arc;
 
 use state::AppState;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing::info;
 
 /// Initializes the Tauri application.
@@ -40,7 +40,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize tracing for logging.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tauri=warn"));
@@ -85,10 +85,12 @@ pub fn run() {
                 if let Err(e) =
                     app.global_shortcut()
                         .on_shortcut(shortcut, move |_app, _shortcut, _event| {
-                            info!("Global hotkey pressed");
+                            info!("Global hotkey pressed - toggling chat");
                             if let Some(window) = app_handle.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
+                                // Emit event to toggle chat window
+                                let _ = window.emit("toggle-chat", ());
                             }
                         })
                 {

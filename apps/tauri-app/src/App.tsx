@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ChatWindow } from "@/components/chat";
 import {
   CompositeTaskDetail,
   Dashboard,
@@ -15,6 +16,7 @@ import {
 } from "@/pages";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
+import { useChatHotkey } from "@/hooks/useChatHotkey";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,9 +32,14 @@ function AppRoutes() {
   useKeyboardShortcuts();
   // Request notification permission on startup
   useNotificationPermission();
+  // Listen for global chat hotkey
+  useChatHotkey();
 
   return (
-    <Routes>
+    <>
+      {/* Chat window - rendered outside routes so it's accessible from any page */}
+      <ChatWindow />
+      <Routes>
       {/* Standalone pages (no sidebar) */}
       <Route path="/mode-select" element={<ModeSelection />} />
       <Route path="/onboarding" element={<Onboarding />} />
@@ -48,6 +55,7 @@ function AppRoutes() {
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
+    </>
   );
 }
 

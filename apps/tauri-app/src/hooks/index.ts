@@ -1,4 +1,5 @@
 // Re-export all hooks
+export * from "./useChatHotkey";
 export * from "./useKeyboardShortcuts";
 export * from "./useMode";
 export * from "./useNotificationPermission";
