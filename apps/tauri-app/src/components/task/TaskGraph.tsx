@@ -143,11 +143,18 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
     // Use a simple layout algorithm
     // Group nodes by their dependency level
     const levels = new Map<string, number>();
-    const visited = new Set<string>();
 
-    function calculateLevel(nodeId: string): number {
+    function calculateLevel(nodeId: string, visiting: Set<string>): number {
       if (levels.has(nodeId)) {
         return levels.get(nodeId)!;
+      }
+
+      // Detect circular dependency - if we're already visiting this node, we have a cycle
+      if (visiting.has(nodeId)) {
+        console.warn(`Circular dependency detected involving node: ${nodeId}`);
+        // Return 0 to break the cycle and prevent infinite recursion
+        levels.set(nodeId, 0);
+        return 0;
       }
 
       const node = nodeMap.get(nodeId);
@@ -156,12 +163,18 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
         return 0;
       }
 
+      // Mark this node as being visited
+      visiting.add(nodeId);
+
       let maxParentLevel = -1;
       for (const depId of node.node.dependsOnIds) {
         if (nodeMap.has(depId)) {
-          maxParentLevel = Math.max(maxParentLevel, calculateLevel(depId));
+          maxParentLevel = Math.max(maxParentLevel, calculateLevel(depId, visiting));
         }
       }
+
+      // Remove from visiting set after processing
+      visiting.delete(nodeId);
 
       const level = maxParentLevel + 1;
       levels.set(nodeId, level);
@@ -169,7 +182,7 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
     }
 
     // Calculate levels for all nodes
-    taskNodes.forEach((n) => calculateLevel(n.node.id));
+    taskNodes.forEach((n) => calculateLevel(n.node.id, new Set()));
 
     // Group nodes by level
     const nodesByLevel = new Map<number, CompositeTaskNodeWithUnitTask[]>();

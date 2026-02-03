@@ -122,6 +122,7 @@ export function CompositeTaskDetail() {
         return "outline";
       case UnitTaskStatus.Rejected:
         return "destructive";
+      case UnitTaskStatus.Unspecified:
       default:
         return "secondary";
     }
@@ -141,6 +142,7 @@ export function CompositeTaskDetail() {
         return "Done";
       case UnitTaskStatus.Rejected:
         return "Rejected";
+      case UnitTaskStatus.Unspecified:
       default:
         return "Pending";
     }

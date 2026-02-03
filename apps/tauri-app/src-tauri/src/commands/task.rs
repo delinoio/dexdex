@@ -457,6 +457,12 @@ pub async fn get_composite_task_nodes(
             .await?
         {
             result.push(CompositeTaskNodeWithUnitTask { node, unit_task });
+        } else {
+            tracing::warn!(
+                "CompositeTaskNode {} references missing UnitTask {}",
+                node.id,
+                node.unit_task_id
+            );
         }
     }
 
