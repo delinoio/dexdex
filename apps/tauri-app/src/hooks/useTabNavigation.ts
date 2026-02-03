@@ -24,7 +24,15 @@ export function useTabNavigation() {
   useEffect(() => {
     const currentPath = location.pathname;
 
-    // Find if there's already a tab with this path
+    // First, check if the active tab already matches the current path
+    // This prevents switching to a different tab when multiple tabs have the same path
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (activeTab && activeTab.path === currentPath) {
+      // Active tab already matches the path, no action needed
+      return;
+    }
+
+    // Find if there's already a tab with this path (when active tab doesn't match)
     const existingTab = tabs.find((t) => t.path === currentPath);
 
     if (existingTab) {
@@ -33,9 +41,6 @@ export function useTabNavigation() {
         setActiveTab(existingTab.id);
       }
     } else {
-      // Check if the active tab should be updated instead of creating a new one
-      const activeTab = tabs.find((t) => t.id === activeTabId);
-
       // Only update the active tab path if it's a closable tab navigating to a new location
       // This handles normal navigation within the app
       if (activeTab && activeTab.closable) {
