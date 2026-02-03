@@ -31,7 +31,6 @@ task_store = { path = "../../../crates/task_store" }
 auth = { path = "../../../crates/auth" }
 secrets = { path = "../../../crates/secrets" }
 config = { path = "../../../crates/config" }
-coding_agents = { path = "../../../crates/coding_agents" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -65,6 +64,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Note: This is only included on desktop because it depends on git_ops which
 # requires libgit2-sys, which has linking issues on iOS (missing zlib/iconv)
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+coding_agents = { path = "../../../crates/coding_agents" }
 worker_impl = { path = "../../../crates/worker_impl" }
 git_ops = { path = "../../../crates/git_ops" }
 
