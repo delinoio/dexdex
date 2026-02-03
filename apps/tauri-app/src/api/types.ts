@@ -124,6 +124,15 @@ export interface CompositeTaskNode {
   createdAt: string;
 }
 
+export interface CompositeTaskNodeWithUnitTask {
+  node: CompositeTaskNode;
+  unitTask: UnitTask;
+}
+
+export interface CompositeTaskNodesResult {
+  nodes: CompositeTaskNodeWithUnitTask[];
+}
+
 export interface CompositeTask {
   id: string;
   repositoryGroupId: string;

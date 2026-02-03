@@ -402,15 +402,28 @@ Type `@` to reference files:
 
 ### Task Graph Visualization
 
-Rendered using `@xyflow/react`:
+Rendered using `@xyflow/react` in `TaskGraph.tsx`:
 
 | Feature | Description |
 |---------|-------------|
-| Nodes | Task with ID, prompt preview, status |
+| Nodes | Custom nodes with title, prompt preview, and status |
 | Edges | Animated arrows showing dependencies |
-| Status Colors | Color-coded by task status |
+| Status Colors | Color-coded by task status (see below) |
 | Zoom Controls | Zoom in/out, fit view |
-| MiniMap | Overview for larger graphs |
+| MiniMap | Overview for larger graphs with status-colored nodes |
+| Auto Layout | Automatic node positioning based on dependency levels |
+
+**Node Status Colors:**
+
+| Status | Color | Description |
+|--------|-------|-------------|
+| Pending | Gray | Task not yet started |
+| In Progress | Blue | AI is working on the task |
+| In Review | Blue | Task awaiting human review |
+| Done | Green | Task completed successfully |
+| Approved | Green | Task approved |
+| PR Open | Green | Pull request created |
+| Rejected | Red | Task rejected |
 
 ---
 

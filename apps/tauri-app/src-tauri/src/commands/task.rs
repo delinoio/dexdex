@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use entities::{
-    AgentTask, AiAgentType, CompositeTask, CompositeTaskStatus, UnitTask, UnitTaskStatus,
+    AgentTask, AiAgentType, CompositeTask, CompositeTaskNode, CompositeTaskStatus, UnitTask,
+    UnitTaskStatus,
 };
 use serde::{Deserialize, Serialize};
 use task_store::{TaskFilter, TaskStore};
@@ -69,6 +70,21 @@ pub struct ListTasksResult {
     pub unit_tasks: Vec<UnitTask>,
     pub composite_tasks: Vec<CompositeTask>,
     pub total_count: i32,
+}
+
+/// A composite task node with its associated unit task.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompositeTaskNodeWithUnitTask {
+    pub node: CompositeTaskNode,
+    pub unit_task: UnitTask,
+}
+
+/// Response for get_composite_task_nodes command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompositeTaskNodesResult {
+    pub nodes: Vec<CompositeTaskNodeWithUnitTask>,
 }
 
 /// Creates a new unit task.
@@ -406,6 +422,47 @@ pub async fn request_changes(
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
 }
 
+/// Gets all nodes for a composite task with their associated unit tasks.
+#[tauri::command]
+pub async fn get_composite_task_nodes(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    composite_task_id: String,
+) -> AppResult<CompositeTaskNodesResult> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&composite_task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid composite task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let nodes = runtime
+        .task_store_arc()
+        .list_composite_task_nodes(id)
+        .await?;
+
+    let mut result = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        if let Some(unit_task) = runtime
+            .task_store_arc()
+            .get_unit_task(node.unit_task_id)
+            .await?
+        {
+            result.push(CompositeTaskNodeWithUnitTask { node, unit_task });
+        }
+    }
+
+    Ok(CompositeTaskNodesResult { nodes: result })
+}
+
 // Helper functions
 
 fn parse_agent_type(s: &str) -> AppResult<AiAgentType> {
@@ -498,10 +555,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -552,10 +611,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -602,9 +663,11 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
     }
 }
