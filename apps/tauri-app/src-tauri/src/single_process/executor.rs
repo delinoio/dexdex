@@ -117,11 +117,20 @@ pub struct LocalExecutor {
 
 impl LocalExecutor {
     /// Creates a new local executor.
+    ///
+    /// # Panics
+    /// This function will not panic. If the data directory cannot be determined,
+    /// it falls back to a reasonable default.
     pub fn new(task_store: Arc<SqliteTaskStore>, app_handle: AppHandle) -> Self {
         // Initialize the repository cache using the data directory
+        // Use data_dir() first, then fall back to home directory, then to /tmp
         let data_dir = data_dir().unwrap_or_else(|_| {
-            let home = dirs::home_dir().expect("Could not find home directory");
-            home.join(".delidev")
+            dirs::home_dir()
+                .map(|home| home.join(".delidev"))
+                .unwrap_or_else(|| {
+                    warn!("Could not find home directory, falling back to /tmp/.delidev");
+                    std::path::PathBuf::from("/tmp/.delidev")
+                })
         });
 
         let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
@@ -233,9 +242,20 @@ impl LocalExecutor {
         tokio::spawn(async move {
             let result = executor.execute_and_wait(config).await;
 
+            // Persist logs to the database before updating task status
+            let logs = result.logs();
+            if !logs.is_empty() {
+                let output_log = logs.join("\n");
+                if let Err(e) =
+                    Self::persist_session_logs(&task_store, session_id, &output_log).await
+                {
+                    error!("Failed to persist session logs: {}", e);
+                }
+            }
+
             // Update task status based on result
             match &result {
-                ExecutionResult::Success => {
+                ExecutionResult::Success { .. } => {
                     info!("Task {} completed successfully", task_id);
                     if let Err(e) = Self::update_task_status(
                         &task_store,
@@ -249,7 +269,7 @@ impl LocalExecutor {
                         error!("Failed to update task status: {}", e);
                     }
                 }
-                ExecutionResult::Failed(error) => {
+                ExecutionResult::Failed { error, .. } => {
                     error!("Task {} failed: {}", task_id, error);
                     // Update task status to Failed
                     if let Err(e) = Self::update_task_status(
@@ -319,6 +339,25 @@ impl LocalExecutor {
         Ok(())
     }
 
+    /// Persists the output logs to the agent session in the database.
+    async fn persist_session_logs(
+        task_store: &Arc<SqliteTaskStore>,
+        session_id: Uuid,
+        output_log: &str,
+    ) -> Result<(), String> {
+        if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+            session.output_log = Some(output_log.to_string());
+            task_store
+                .update_agent_session(session)
+                .await
+                .map_err(|e| format!("Failed to update agent session with logs: {}", e))?;
+            info!("Persisted {} bytes of logs for session {}", output_log.len(), session_id);
+        } else {
+            warn!("Could not find session {} to persist logs", session_id);
+        }
+        Ok(())
+    }
+
     /// Checks if a task is currently being executed.
     pub async fn is_executing(&self, task_id: Uuid) -> bool {
         self.executor.is_executing(task_id).await
@@ -336,10 +375,13 @@ mod tests {
 
     #[test]
     fn test_execution_result_debug() {
-        let success = ExecutionResult::Success;
+        let success = ExecutionResult::Success { logs: vec![] };
         assert!(format!("{:?}", success).contains("Success"));
 
-        let failed = ExecutionResult::Failed("test error".to_string());
+        let failed = ExecutionResult::Failed {
+            error: "test error".to_string(),
+            logs: vec![],
+        };
         assert!(format!("{:?}", failed).contains("Failed"));
         assert!(format!("{:?}", failed).contains("test error"));
 

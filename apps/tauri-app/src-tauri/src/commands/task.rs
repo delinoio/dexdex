@@ -525,8 +525,10 @@ pub async fn get_task_logs(
         });
     }
 
-    // Get the latest session's output log
-    let session = sessions.last().unwrap();
+    // Get the latest session's output log (safe because we checked is_empty() above)
+    let session = sessions.last().ok_or_else(|| {
+        AppError::Internal("Sessions list became empty unexpectedly".to_string())
+    })?;
 
     // Determine completion based on the latest agent session when available,
     // falling back to the unit task status otherwise.

@@ -25,11 +25,35 @@ use crate::{AgentConfig, NormalizedEvent, create_agent};
 #[derive(Debug, Clone)]
 pub enum ExecutionResult {
     /// Task completed successfully.
-    Success,
+    Success {
+        /// Collected log entries (JSON-serialized NormalizedEvents).
+        logs: Vec<String>,
+    },
     /// Task failed with an error.
-    Failed(String),
+    Failed {
+        /// Error message.
+        error: String,
+        /// Collected log entries (JSON-serialized NormalizedEvents).
+        logs: Vec<String>,
+    },
     /// Task was cancelled.
     Cancelled,
+}
+
+impl ExecutionResult {
+    /// Returns the collected logs, if any.
+    pub fn logs(&self) -> &[String] {
+        match self {
+            ExecutionResult::Success { logs } => logs,
+            ExecutionResult::Failed { logs, .. } => logs,
+            ExecutionResult::Cancelled => &[],
+        }
+    }
+
+    /// Returns true if the execution was successful.
+    pub fn is_success(&self) -> bool {
+        matches!(self, ExecutionResult::Success { .. })
+    }
 }
 
 /// Configuration for executing a task.
@@ -148,9 +172,10 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         let cache_parent = match self.repo_cache.cache_dir().parent() {
             Some(parent) => parent,
             None => {
-                return ExecutionResult::Failed(
-                    "Invalid cache directory path: no parent directory".to_string(),
-                );
+                return ExecutionResult::Failed {
+                    error: "Invalid cache directory path: no parent directory".to_string(),
+                    logs: Vec::new(),
+                };
             }
         };
         let repo_cache = RepositoryCache::new(cache_parent);
@@ -192,7 +217,10 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             }
             Err(e) => {
                 error!("Failed to create worktree: {}", e);
-                return ExecutionResult::Failed(format!("Failed to create worktree: {}", e));
+                return ExecutionResult::Failed {
+                    error: format!("Failed to create worktree: {}", e),
+                    logs: Vec::new(),
+                };
             }
         };
 
@@ -267,8 +295,11 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         debug!("Collected {} log entries for task {}", logs.len(), task_id);
 
         match run_result {
-            Ok(()) => ExecutionResult::Success,
-            Err(e) => ExecutionResult::Failed(e.to_string()),
+            Ok(()) => ExecutionResult::Success { logs },
+            Err(e) => ExecutionResult::Failed {
+                error: e.to_string(),
+                logs,
+            },
         }
     }
 
@@ -343,15 +374,37 @@ mod tests {
 
     #[test]
     fn test_execution_result_debug() {
-        let success = ExecutionResult::Success;
+        let success = ExecutionResult::Success { logs: vec![] };
         assert!(format!("{:?}", success).contains("Success"));
 
-        let failed = ExecutionResult::Failed("test error".to_string());
+        let failed = ExecutionResult::Failed {
+            error: "test error".to_string(),
+            logs: vec![],
+        };
         assert!(format!("{:?}", failed).contains("Failed"));
         assert!(format!("{:?}", failed).contains("test error"));
 
         let cancelled = ExecutionResult::Cancelled;
         assert!(format!("{:?}", cancelled).contains("Cancelled"));
+    }
+
+    #[test]
+    fn test_execution_result_logs() {
+        let logs = vec!["log1".to_string(), "log2".to_string()];
+        let success = ExecutionResult::Success { logs: logs.clone() };
+        assert_eq!(success.logs(), &logs);
+        assert!(success.is_success());
+
+        let failed = ExecutionResult::Failed {
+            error: "error".to_string(),
+            logs: logs.clone(),
+        };
+        assert_eq!(failed.logs(), &logs);
+        assert!(!failed.is_success());
+
+        let cancelled = ExecutionResult::Cancelled;
+        assert!(cancelled.logs().is_empty());
+        assert!(!cancelled.is_success());
     }
 
     #[test]

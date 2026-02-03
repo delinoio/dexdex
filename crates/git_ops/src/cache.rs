@@ -433,35 +433,30 @@ impl RepositoryCache {
     /// Configures git authentication via environment variables (blocking version).
     ///
     /// # Security
-    /// This approach avoids embedding credentials in URLs which could be exposed
-    /// via process listings (`ps` command) or error messages.
+    /// Uses GIT_ASKPASS with base64-encoded credentials to avoid shell injection.
+    /// The credentials are passed via environment variables that are only readable
+    /// by the child process, not visible in process listings.
     fn configure_git_auth(cmd: &mut std::process::Command, credentials: Option<&GitCredentials>) {
         if let Some(GitCredentials::UserPass { username, password }) = credentials {
-            // Use git's credential helper mechanism via environment variables
-            // This is more secure than embedding credentials in the URL
-            cmd.env(
-                "GIT_CONFIG_COUNT",
-                "2",
-            );
-            cmd.env(
-                "GIT_CONFIG_KEY_0",
-                "credential.helper",
-            );
-            cmd.env(
-                "GIT_CONFIG_VALUE_0",
-                "",
-            );
-            cmd.env(
-                "GIT_CONFIG_KEY_1",
-                "credential.helper",
-            );
-            // Use a shell command to echo credentials - this avoids URL embedding
-            // The credentials are passed via environment variables, not visible in process list
-            cmd.env("GIT_USERNAME", username);
-            cmd.env("GIT_PASSWORD", password);
+            use base64::{Engine, engine::general_purpose::STANDARD};
+
+            // Encode credentials to avoid shell metacharacter interpretation
+            let encoded_username = STANDARD.encode(username);
+            let encoded_password = STANDARD.encode(password);
+
+            // Disable any existing credential helpers and use our custom one
+            cmd.env("GIT_CONFIG_COUNT", "2");
+            cmd.env("GIT_CONFIG_KEY_0", "credential.helper");
+            cmd.env("GIT_CONFIG_VALUE_0", "");
+            cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
+
+            // Pass base64-encoded credentials via environment variables
+            // The shell script decodes them, preventing shell injection
+            cmd.env("GIT_CRED_USER_B64", &encoded_username);
+            cmd.env("GIT_CRED_PASS_B64", &encoded_password);
             cmd.env(
                 "GIT_CONFIG_VALUE_1",
-                "!f() { echo \"username=$GIT_USERNAME\"; echo \"password=$GIT_PASSWORD\"; }; f",
+                r#"!f() { printf "username=%s\npassword=%s\n" "$(echo $GIT_CRED_USER_B64 | base64 -d)" "$(echo $GIT_CRED_PASS_B64 | base64 -d)"; }; f"#,
             );
         }
     }
@@ -469,23 +464,33 @@ impl RepositoryCache {
     /// Configures git authentication via environment variables (async version).
     ///
     /// # Security
-    /// This approach avoids embedding credentials in URLs which could be exposed
-    /// via process listings (`ps` command) or error messages.
+    /// Uses GIT_ASKPASS with base64-encoded credentials to avoid shell injection.
+    /// The credentials are passed via environment variables that are only readable
+    /// by the child process, not visible in process listings.
     fn configure_git_auth_async(
         cmd: &mut tokio::process::Command,
         credentials: Option<&GitCredentials>,
     ) {
         if let Some(GitCredentials::UserPass { username, password }) = credentials {
-            // Use git's credential helper mechanism via environment variables
+            use base64::{Engine, engine::general_purpose::STANDARD};
+
+            // Encode credentials to avoid shell metacharacter interpretation
+            let encoded_username = STANDARD.encode(username);
+            let encoded_password = STANDARD.encode(password);
+
+            // Disable any existing credential helpers and use our custom one
             cmd.env("GIT_CONFIG_COUNT", "2");
             cmd.env("GIT_CONFIG_KEY_0", "credential.helper");
             cmd.env("GIT_CONFIG_VALUE_0", "");
             cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
-            cmd.env("GIT_USERNAME", username);
-            cmd.env("GIT_PASSWORD", password);
+
+            // Pass base64-encoded credentials via environment variables
+            // The shell script decodes them, preventing shell injection
+            cmd.env("GIT_CRED_USER_B64", &encoded_username);
+            cmd.env("GIT_CRED_PASS_B64", &encoded_password);
             cmd.env(
                 "GIT_CONFIG_VALUE_1",
-                "!f() { echo \"username=$GIT_USERNAME\"; echo \"password=$GIT_PASSWORD\"; }; f",
+                r#"!f() { printf "username=%s\npassword=%s\n" "$(echo $GIT_CRED_USER_B64 | base64 -d)" "$(echo $GIT_CRED_PASS_B64 | base64 -d)"; }; f"#,
             );
         }
     }

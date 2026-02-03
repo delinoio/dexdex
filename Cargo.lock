@@ -1793,6 +1793,7 @@ dependencies = [
 name = "git_ops"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "entities",
  "fslock",
  "git2",
