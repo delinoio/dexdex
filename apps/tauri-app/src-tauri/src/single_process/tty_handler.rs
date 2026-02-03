@@ -8,11 +8,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coding_agents::{AgentError, AgentResult, TtyInputHandler};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::{oneshot, RwLock};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::events::{TtyInputRequestEvent, event_names};
+use crate::events::{event_names, TtyInputRequestEvent};
 
 /// A pending TTY input request waiting for a response.
 struct PendingRequest {

@@ -8,7 +8,7 @@ use tracing::info;
 
 use crate::{
     config::{
-        AppMode, GlobalSettings, config_to_settings, load_config, save_config, settings_to_config,
+        config_to_settings, load_config, save_config, settings_to_config, AppMode, GlobalSettings,
     },
     error::{AppError, AppResult},
     mobile::platform::supports_local_mode,
