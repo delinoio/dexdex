@@ -3,6 +3,7 @@
 //! This module defines the events that can be emitted from the Rust backend
 //! to the frontend.
 
+use rpc_protocol::NormalizedEvent;
 use serde::{Deserialize, Serialize};
 
 /// Event emitted when a task status changes.
@@ -49,11 +50,32 @@ pub struct NotificationShownEvent {
     pub task_id: String,
 }
 
+/// Event emitted when an agent produces output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentOutputEvent {
+    pub task_id: String,
+    pub session_id: String,
+    pub event: NormalizedEvent,
+}
+
+/// Event emitted when a task execution completes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskCompletedEvent {
+    pub task_id: String,
+    pub task_type: TaskType,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
 /// Event names as constants.
 pub mod event_names {
     pub const TASK_STATUS_CHANGED: &str = "task-status-changed";
     pub const TTY_INPUT_REQUEST: &str = "tty-input-request";
     pub const NOTIFICATION_SHOWN: &str = "notification-shown";
+    pub const AGENT_OUTPUT: &str = "agent-output";
+    pub const TASK_COMPLETED: &str = "task-completed";
 }
 
 #[cfg(test)]
@@ -143,5 +165,50 @@ mod tests {
         assert_eq!(event_names::TASK_STATUS_CHANGED, "task-status-changed");
         assert_eq!(event_names::TTY_INPUT_REQUEST, "tty-input-request");
         assert_eq!(event_names::NOTIFICATION_SHOWN, "notification-shown");
+        assert_eq!(event_names::AGENT_OUTPUT, "agent-output");
+        assert_eq!(event_names::TASK_COMPLETED, "task-completed");
+    }
+
+    #[test]
+    fn test_agent_output_event_serialization() {
+        let event = AgentOutputEvent {
+            task_id: "task-123".to_string(),
+            session_id: "session-456".to_string(),
+            event: NormalizedEvent::text("Hello, world!", false),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"taskId\":\"task-123\""));
+        assert!(json.contains("\"sessionId\":\"session-456\""));
+        assert!(json.contains("\"content\":\"Hello, world!\""));
+    }
+
+    #[test]
+    fn test_task_completed_event_serialization() {
+        let event = TaskCompletedEvent {
+            task_id: "task-123".to_string(),
+            task_type: TaskType::UnitTask,
+            success: true,
+            error: None,
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"taskId\":\"task-123\""));
+        assert!(json.contains("\"success\":true"));
+        assert!(json.contains("\"error\":null"));
+    }
+
+    #[test]
+    fn test_task_completed_event_with_error() {
+        let event = TaskCompletedEvent {
+            task_id: "task-123".to_string(),
+            task_type: TaskType::UnitTask,
+            success: false,
+            error: Some("Something went wrong".to_string()),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"success\":false"));
+        assert!(json.contains("\"error\":\"Something went wrong\""));
     }
 }

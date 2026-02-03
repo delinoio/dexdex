@@ -688,16 +688,21 @@ name = "coding_agents"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "entities",
  "futures 0.3.31",
+ "git_ops",
  "regex",
+ "rpc_protocol",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tokio-process",
  "tokio-test",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1789,6 +1794,7 @@ dependencies = [
 name = "git_ops"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "entities",
  "fslock",
  "git2",
@@ -1796,6 +1802,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.17",
+ "tokio",
  "tracing",
  "url",
 ]
@@ -5380,8 +5387,10 @@ name = "tauri-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "auth",
  "chrono",
+ "coding_agents",
  "config",
  "dirs 5.0.1",
  "entities",
@@ -5405,6 +5414,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "worker_impl",
 ]
 
 [[package]]
@@ -7289,6 +7299,26 @@ dependencies = [
  "tower-http 0.6.8",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "worker_impl"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "coding_agents",
+ "config",
+ "dirs 5.0.1",
+ "entities",
+ "serde",
+ "serde_json",
+ "task_store",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-test",
+ "tracing",
  "uuid",
 ]
 

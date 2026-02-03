@@ -113,36 +113,39 @@ pub async fn create_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        // Validate and sanitize input
+        let sanitized_name = validate_and_sanitize_name(&params.name)?;
+        let sanitized_description = match params.description {
+            Some(ref desc) => Some(validate_and_sanitize_description(desc)?),
+            None => None,
+        };
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let workspace = Workspace {
+            id: Uuid::new_v4(),
+            user_id: None,
+            name: sanitized_name,
+            description: sanitized_description,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let created = runtime.task_store_arc().create_workspace(workspace).await?;
+        info!("Created workspace: {} ({})", created.name, created.id);
+        return Ok(created);
     }
 
-    // Validate and sanitize input
-    let sanitized_name = validate_and_sanitize_name(&params.name)?;
-    let sanitized_description = match params.description {
-        Some(ref desc) => Some(validate_and_sanitize_description(desc)?),
-        None => None,
-    };
+    let _ = &params;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    let workspace = Workspace {
-        id: Uuid::new_v4(),
-        user_id: None,
-        name: sanitized_name,
-        description: sanitized_description,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
-
-    let created = runtime.task_store_arc().create_workspace(workspace).await?;
-    info!("Created workspace: {} ({})", created.name, created.id);
-    Ok(created)
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Lists workspaces.
@@ -153,29 +156,32 @@ pub async fn list_workspaces(
 ) -> AppResult<ListWorkspacesResult> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let filter = WorkspaceFilter {
+            user_id: None,
+            limit: params.limit.map(|l| l as u32),
+            offset: params.offset.map(|o| o as u32),
+        };
+
+        let (workspaces, total) = runtime.task_store_arc().list_workspaces(filter).await?;
+
+        return Ok(ListWorkspacesResult {
+            workspaces,
+            total_count: total as i32,
+        });
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    let _ = &params;
 
-    let filter = WorkspaceFilter {
-        user_id: None,
-        limit: params.limit.map(|l| l as u32),
-        offset: params.offset.map(|o| o as u32),
-    };
-
-    let (workspaces, total) = runtime.task_store_arc().list_workspaces(filter).await?;
-
-    Ok(ListWorkspacesResult {
-        workspaces,
-        total_count: total as i32,
-    })
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Gets a workspace by ID.
@@ -186,27 +192,30 @@ pub async fn get_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&workspace_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let workspace = runtime
+            .task_store_arc()
+            .get_workspace(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
+
+        return Ok(workspace);
     }
 
-    let id = Uuid::parse_str(&workspace_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+    let _ = &workspace_id;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    let workspace = runtime
-        .task_store_arc()
-        .get_workspace(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
-
-    Ok(workspace)
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Updates a workspace.
@@ -218,37 +227,40 @@ pub async fn update_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&workspace_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let mut workspace = runtime
+            .task_store_arc()
+            .get_workspace(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
+
+        if let Some(ref name) = params.name {
+            workspace.name = validate_and_sanitize_name(name)?;
+        }
+        if let Some(ref description) = params.description {
+            workspace.description = Some(validate_and_sanitize_description(description)?);
+        }
+        workspace.updated_at = chrono::Utc::now();
+
+        let updated = runtime.task_store_arc().update_workspace(workspace).await?;
+        info!("Updated workspace: {} ({})", updated.name, updated.id);
+        return Ok(updated);
     }
 
-    let id = Uuid::parse_str(&workspace_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+    let _ = (&workspace_id, &params);
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    let mut workspace = runtime
-        .task_store_arc()
-        .get_workspace(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
-
-    if let Some(ref name) = params.name {
-        workspace.name = validate_and_sanitize_name(name)?;
-    }
-    if let Some(ref description) = params.description {
-        workspace.description = Some(validate_and_sanitize_description(description)?);
-    }
-    workspace.updated_at = chrono::Utc::now();
-
-    let updated = runtime.task_store_arc().update_workspace(workspace).await?;
-    info!("Updated workspace: {} ({})", updated.name, updated.id);
-    Ok(updated)
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Deletes a workspace.
@@ -259,23 +271,26 @@ pub async fn delete_workspace(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let id = Uuid::parse_str(&workspace_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        runtime.task_store_arc().delete_workspace(id).await?;
+        info!("Deleted workspace: {}", id);
+        return Ok(());
     }
 
-    let id = Uuid::parse_str(&workspace_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+    let _ = &workspace_id;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    runtime.task_store_arc().delete_workspace(id).await?;
-    info!("Deleted workspace: {}", id);
-    Ok(())
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }
 
 /// Gets the default workspace ID.
@@ -285,16 +300,17 @@ pub async fn get_default_workspace_id(
 ) -> AppResult<String> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        return Ok(runtime.default_workspace_id().to_string());
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    Ok(runtime.default_workspace_id().to_string())
+    Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ))
 }

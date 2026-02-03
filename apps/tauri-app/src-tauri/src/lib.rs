@@ -9,6 +9,7 @@ pub mod error;
 pub mod events;
 pub mod mobile;
 pub mod notifications;
+#[cfg(desktop)]
 pub mod single_process;
 pub mod state;
 
@@ -28,10 +29,25 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Create application state
     let rt = tokio::runtime::Runtime::new()?;
     let state = rt.block_on(async { AppState::new().await })?;
-    app.manage(Arc::new(tokio::sync::RwLock::new(state)));
+    let state = Arc::new(tokio::sync::RwLock::new(state));
+    app.manage(state.clone());
 
     // Store the runtime handle
     app.manage(rt);
+
+    // Initialize the executor with the app handle (desktop only)
+    #[cfg(desktop)]
+    {
+        let app_handle = app.handle().clone();
+        let state_clone = state.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = state_clone.read().await;
+            if let Some(runtime) = &state.local_runtime {
+                let emitter = single_process::TauriEventEmitter::new_arc(app_handle);
+                runtime.init_executor(emitter).await;
+            }
+        });
+    }
 
     info!("DeliDev Tauri app initialized");
 
@@ -133,6 +149,8 @@ pub fn run() {
             commands::task::approve_task,
             commands::task::reject_task,
             commands::task::request_changes,
+            commands::task::get_task_logs,
+            commands::task::respond_tty_input,
             commands::task::get_composite_task_nodes,
             // Repository commands
             commands::repository::add_repository,

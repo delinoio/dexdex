@@ -231,3 +231,44 @@ export const ChatIcon = createIcon(
   </>,
   "ChatIcon"
 );
+
+// Terminal icon
+export const TerminalIcon = createIcon(
+  <>
+    <polyline points="4 17 10 11 4 5" />
+    <line x1="12" x2="20" y1="19" y2="19" />
+  </>,
+  "TerminalIcon"
+);
+
+// File code icon
+export const FileCodeIcon = createIcon(
+  <>
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+    <polyline points="14 2 14 8 20 8" />
+    <path d="m10 13-2 2 2 2" />
+    <path d="m14 17 2-2-2-2" />
+  </>,
+  "FileCodeIcon"
+);
+
+// Play icon
+export const PlayIcon = createIcon(
+  <polygon points="5 3 19 12 5 21 5 3" />,
+  "PlayIcon"
+);
+
+// Message square icon
+export const MessageSquareIcon = createIcon(
+  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  "MessageSquareIcon"
+);
+
+// Brain icon
+export const BrainIcon = createIcon(
+  <>
+    <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.54" />
+    <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.54" />
+  </>,
+  "BrainIcon"
+);

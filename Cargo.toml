@@ -13,6 +13,7 @@ members = [
     "crates/coding_agents",
     "crates/config",
     "crates/plan_parser",
+    "crates/worker_impl",
 ]
 
 # Release profile optimizations

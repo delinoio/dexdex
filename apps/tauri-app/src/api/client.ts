@@ -20,6 +20,8 @@ import type {
   Repository,
   RepositoryGroup,
   RepositorySettings,
+  RespondTtyInputParams,
+  TaskLogsResponse,
   TaskResponse,
   UnitTask,
   UpdateRepositoryGroupParams,
@@ -86,6 +88,17 @@ export async function getCompositeTaskNodes(
   return invoke<CompositeTaskNodesResult>("get_composite_task_nodes", {
     compositeTaskId,
   });
+}
+
+export async function getTaskLogs(
+  taskId: string,
+  afterEventId?: number
+): Promise<TaskLogsResponse> {
+  return invoke<TaskLogsResponse>("get_task_logs", { taskId, afterEventId });
+}
+
+export async function respondTtyInput(params: RespondTtyInputParams): Promise<void> {
+  return invoke<void>("respond_tty_input", { params });
 }
 
 // Repository commands

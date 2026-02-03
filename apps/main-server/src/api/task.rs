@@ -27,6 +27,7 @@ fn to_entity_unit_status(status: UnitTaskStatus) -> EntityUnitTaskStatus {
         UnitTaskStatus::PrOpen => EntityUnitTaskStatus::PrOpen,
         UnitTaskStatus::Done => EntityUnitTaskStatus::Done,
         UnitTaskStatus::Rejected => EntityUnitTaskStatus::Rejected,
+        UnitTaskStatus::Failed => EntityUnitTaskStatus::Failed,
     }
 }
 
@@ -39,6 +40,7 @@ fn to_rpc_unit_status(status: EntityUnitTaskStatus) -> UnitTaskStatus {
         EntityUnitTaskStatus::PrOpen => UnitTaskStatus::PrOpen,
         EntityUnitTaskStatus::Done => UnitTaskStatus::Done,
         EntityUnitTaskStatus::Rejected => UnitTaskStatus::Rejected,
+        EntityUnitTaskStatus::Failed => UnitTaskStatus::Failed,
     }
 }
 

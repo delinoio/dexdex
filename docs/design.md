@@ -137,12 +137,13 @@ For desktop usage, all components can run in a single process for a seamless loc
 
 | Crate | Purpose |
 |-------|---------|
-| `coding_agents` | AI agent abstraction, output normalization, Docker sandboxing |
+| `coding_agents` | AI agent abstraction, output normalization, Docker sandboxing, task execution |
 | `task_store` | Task storage (SQLite, PostgreSQL, in-memory) |
 | `rpc_protocol` | Connect RPC protocol definitions (Protobuf) |
 | `git_ops` | Git operations, worktree management & repository caching |
 | `auth` | JWT authentication & RBAC |
 | `secrets` | Cross-platform keychain access |
+| `worker_impl` | Local worker implementation for single-process mode task execution |
 
 ### Frontend (React + TypeScript)
 
@@ -188,6 +189,42 @@ The `coding_agents` crate normalizes output from all AI coding agents:
 - Frontend uses only normalized types
 - Easy to add new AI agents by implementing a parser
 - Consistent UI rendering regardless of agent type
+
+### Task Execution
+
+The `coding_agents` crate also provides platform-agnostic task execution:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    coding_agents::executor                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                     TaskExecutor                         │   │
+│  │  - Creates git worktrees via RepositoryCache            │   │
+│  │  - Runs AI agents with proper configuration             │   │
+│  │  - Streams events via EventEmitter trait                │   │
+│  │  - Handles TTY input via TtyInputRequestManager         │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─────────────────────┐  ┌─────────────────────┐              │
+│  │   EventEmitter      │  │ TtyInputRequest     │              │
+│  │   (trait)           │  │ Manager             │              │
+│  │                     │  │                     │              │
+│  │ Platform-agnostic   │  │ Pending request     │              │
+│  │ event emission      │  │ tracking & response │              │
+│  └─────────────────────┘  └─────────────────────┘              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Components:**
+- `TaskExecutor<E>`: Generic executor parameterized by event emitter
+- `EventEmitter` trait: Platform-specific event emission (Tauri, CLI, etc.)
+- `TtyInputRequestManager`: Manages pending TTY input requests
+- `TaskExecutionConfig`: Configuration for executing a task
+
+This design allows the same execution logic to be reused across different platforms (desktop app, CLI, server) by implementing the `EventEmitter` trait.
 
 ---
 
@@ -272,6 +309,7 @@ enum UnitTaskStatus {
   pr_open       // PR created
   done          // PR merged
   rejected      // Rejected and discarded
+  failed        // Task failed with error
 }
 ```
 

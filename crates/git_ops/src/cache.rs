@@ -6,10 +6,10 @@
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
-    CloneOptions, FetchOpts, GitCredentials, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
+    FetchOpts, GitCredentials, GitError, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
 };
 
 /// Default cache directory name within the data directory.
@@ -23,6 +23,7 @@ const WORKTREES_DIR_NAME: &str = "worktrees";
 /// Manages a cache of bare git repositories and creates worktrees from them
 /// for task execution. This improves performance by avoiding repeated full
 /// clones of repositories.
+#[derive(Clone)]
 pub struct RepositoryCache {
     /// Base directory for the cache.
     cache_dir: PathBuf,
@@ -132,6 +133,10 @@ impl RepositoryCache {
     /// Uses a lockfile to prevent TOCTOU race conditions when multiple
     /// concurrent tasks try to clone the same repository simultaneously.
     ///
+    /// For HTTPS URLs, uses the system `git` command because git2 is compiled
+    /// without TLS support (to avoid OpenSSL dependency for iOS
+    /// cross-compilation).
+    ///
     /// Returns the path to the cached bare repository.
     pub fn ensure_cached(
         &self,
@@ -161,37 +166,379 @@ impl RepositoryCache {
             )))
         })?;
 
+        // Determine if we need to use system git (for HTTPS URLs)
+        let use_system_git = Self::needs_system_git(remote_url);
+
         // Re-check existence after acquiring lock (another process may have cloned)
         if cache_path.exists() {
             // Repository is cached, fetch latest changes
             debug!("Fetching updates for cached repository: {}", redacted_url);
-            let repo = GitRepository::open(&cache_path)?;
-            repo.fetch(
-                "origin",
-                FetchOpts {
-                    credentials,
-                    prune: true,
-                },
-            )?;
+
+            if use_system_git {
+                Self::fetch_with_system_git(&cache_path, credentials.as_ref())?;
+            } else {
+                let repo = GitRepository::open(&cache_path)?;
+                repo.fetch(
+                    "origin",
+                    FetchOpts {
+                        credentials,
+                        prune: true,
+                    },
+                )?;
+            }
             info!("Updated cached repository: {}", redacted_url);
         } else {
             // Clone as bare repository
             info!("Cloning repository to cache: {}", redacted_url);
 
-            GitRepository::clone(
-                remote_url,
-                &cache_path,
-                CloneOptions {
-                    bare: true,
-                    credentials,
-                    ..Default::default()
-                },
-            )?;
+            if use_system_git {
+                Self::clone_with_system_git(remote_url, &cache_path, credentials.as_ref())?;
+            } else {
+                // For non-HTTPS URLs, try system git first as fallback
+                if let Err(e) =
+                    Self::clone_with_system_git(remote_url, &cache_path, credentials.as_ref())
+                {
+                    warn!(
+                        "System git clone failed ({}), this may indicate git is not installed",
+                        e
+                    );
+                    return Err(GitError::CloneFailed(format!(
+                        "Clone failed: {}. Please ensure git is installed and accessible.",
+                        e
+                    )));
+                }
+            }
             info!("Cached repository: {}", redacted_url);
         }
 
         // Lock is automatically released when `lock` goes out of scope
         Ok(cache_path)
+    }
+
+    /// Checks if the URL requires system git (HTTPS URLs need TLS which git2
+    /// doesn't have).
+    fn needs_system_git(url: &str) -> bool {
+        url.starts_with("https://") || url.starts_with("http://")
+    }
+
+    /// Clones a repository using the system git command (blocking).
+    ///
+    /// Note: This is a synchronous operation. Consider using
+    /// `clone_with_system_git_async` for non-blocking behavior.
+    ///
+    /// # Security
+    /// Credentials are passed via environment variables (GIT_ASKPASS) rather
+    /// than being embedded in the URL to prevent exposure via process
+    /// listings.
+    fn clone_with_system_git(
+        url: &str,
+        path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        use std::process::Command;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("clone").arg("--bare");
+
+        // Log redacted URL to avoid leaking credentials
+        let redacted_url = Self::redact_url_for_logging(url);
+
+        // SECURITY: Use environment-based authentication instead of embedding
+        // credentials in URL This prevents credential exposure via process
+        // listings (ps command)
+        Self::configure_git_auth(&mut cmd, credentials);
+
+        cmd.arg(url).arg(path);
+
+        debug!("Running: git clone --bare {} {:?}", redacted_url, path);
+
+        let output = cmd
+            .output()
+            .map_err(|e| GitError::CloneFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::CloneFailed(format!(
+                "git clone failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Clones a repository using the system git command (async/non-blocking).
+    ///
+    /// # Security
+    /// Credentials are passed via environment variables rather than
+    /// being embedded in the URL to prevent exposure via process listings.
+    pub async fn clone_with_system_git_async(
+        url: &str,
+        path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        use tokio::process::Command;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("clone").arg("--bare");
+
+        // Log redacted URL to avoid leaking credentials
+        let redacted_url = Self::redact_url_for_logging(url);
+
+        // SECURITY: Use environment-based authentication instead of embedding
+        // credentials in URL
+        Self::configure_git_auth_async(&mut cmd, credentials);
+
+        cmd.arg(url).arg(path);
+
+        debug!(
+            "Running (async): git clone --bare {} {:?}",
+            redacted_url, path
+        );
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| GitError::CloneFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::CloneFailed(format!(
+                "git clone failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Fetches from origin using the system git command (blocking).
+    ///
+    /// Note: This is a synchronous operation. Consider using
+    /// `fetch_with_system_git_async` for non-blocking behavior.
+    fn fetch_with_system_git(
+        repo_path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        use std::process::Command;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("-C")
+            .arg(repo_path)
+            .arg("fetch")
+            .arg("--prune")
+            .arg("origin");
+
+        // Note: For fetch, credentials in URL are already configured in the
+        // repo's remote config from the initial clone. If we need to update
+        // credentials, we'd need to modify the remote URL.
+
+        // If credentials are provided, we might need to set them via
+        // environment or credential helper. For now, we rely on the system's
+        // git credential configuration.
+        if credentials.is_some() {
+            debug!("Note: Fetch credentials are handled by system git credential helpers");
+        }
+
+        debug!("Running: git -C {:?} fetch --prune origin", repo_path);
+
+        let output = cmd
+            .output()
+            .map_err(|e| GitError::FetchFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::FetchFailed(format!(
+                "git fetch failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Fetches from origin using the system git command (async/non-blocking).
+    pub async fn fetch_with_system_git_async(
+        repo_path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        use tokio::process::Command;
+
+        let mut cmd = Command::new("git");
+        cmd.arg("-C")
+            .arg(repo_path)
+            .arg("fetch")
+            .arg("--prune")
+            .arg("origin");
+
+        if credentials.is_some() {
+            debug!("Note: Fetch credentials are handled by system git credential helpers");
+        }
+
+        debug!(
+            "Running (async): git -C {:?} fetch --prune origin",
+            repo_path
+        );
+
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| GitError::FetchFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::FetchFailed(format!(
+                "git fetch failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Finds the default branch (main or master) from the repository.
+    ///
+    /// For bare repositories (used in cache), branches are in refs/heads/*
+    /// rather than refs/remotes/origin/*.
+    fn find_default_branch(repo: &git2::Repository) -> GitResult<String> {
+        // Try to find HEAD which points to the default branch
+        if let Ok(head) = repo.find_reference("HEAD") {
+            if let Ok(resolved) = head.resolve() {
+                if let Some(name) = resolved.name() {
+                    // For bare repos, HEAD points to refs/heads/main or similar
+                    debug!("HEAD points to: {}", name);
+                    return Ok(name.to_string());
+                }
+            }
+        }
+
+        // Fallback: try common default branch names (bare repo format)
+        for branch in &["refs/heads/main", "refs/heads/master"] {
+            if repo.find_reference(branch).is_ok() {
+                debug!("Found default branch: {}", branch);
+                return Ok(branch.to_string());
+            }
+        }
+
+        // Also try the short names with revparse
+        for branch in &["main", "master"] {
+            if repo.revparse_single(branch).is_ok() {
+                debug!("Found default branch via revparse: {}", branch);
+                return Ok(format!("refs/heads/{}", branch));
+            }
+        }
+
+        Err(GitError::Other(
+            "Could not determine default branch. Neither main nor master found.".to_string(),
+        ))
+    }
+
+    /// Configures git authentication via environment variables (blocking
+    /// version).
+    ///
+    /// # Security
+    /// Uses a credential helper that reads raw credentials from environment
+    /// variables. The credentials are passed as arguments to printf using
+    /// shell variable expansion within double quotes, which prevents word
+    /// splitting and glob expansion but safely passes the value. Since
+    /// printf treats its arguments as literal strings (not commands), shell
+    /// metacharacters like $() or `` in the credential values
+    /// are NOT executed - they're just output as literal text.
+    /// The credentials are only readable by the child process, not visible in
+    /// process listings.
+    fn configure_git_auth(cmd: &mut std::process::Command, credentials: Option<&GitCredentials>) {
+        if let Some(GitCredentials::UserPass { username, password }) = credentials {
+            // Pass raw credentials via environment variables.
+            // These are NOT visible in process listings (ps aux) - only to the child
+            // process.
+            cmd.env("GIT_CRED_USERNAME", username);
+            cmd.env("GIT_CRED_PASSWORD", password);
+
+            // Disable terminal prompts
+            cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+            // Disable any existing credential helpers and use our custom one
+            cmd.env("GIT_CONFIG_COUNT", "2");
+            cmd.env("GIT_CONFIG_KEY_0", "credential.helper");
+            cmd.env("GIT_CONFIG_VALUE_0", "");
+            cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
+
+            // Use a credential helper that reads from env vars.
+            // SECURITY: printf '%s\n' treats its arguments as literal data, NOT as
+            // commands. Even if GIT_CRED_USERNAME contains "$(malicious
+            // command)", the shell expands the variable first (within the
+            // double quotes), then printf outputs it literally. The key is that
+            // variable expansion happens BEFORE printf sees the value,
+            // and printf never interprets its arguments as shell commands.
+            cmd.env(
+                "GIT_CONFIG_VALUE_1",
+                r#"!f() { printf 'username=%s\n' "$GIT_CRED_USERNAME"; printf 'password=%s\n' "$GIT_CRED_PASSWORD"; }; f"#,
+            );
+        }
+    }
+
+    /// Configures git authentication via environment variables (async version).
+    ///
+    /// # Security
+    /// Uses a credential helper that reads raw credentials from environment
+    /// variables. The credentials are passed as arguments to printf using
+    /// shell variable expansion within double quotes, which prevents word
+    /// splitting and glob expansion but safely passes the value. Since
+    /// printf treats its arguments as literal strings (not commands), shell
+    /// metacharacters like $() or `` in the credential values
+    /// are NOT executed - they're just output as literal text.
+    /// The credentials are only readable by the child process, not visible in
+    /// process listings.
+    fn configure_git_auth_async(
+        cmd: &mut tokio::process::Command,
+        credentials: Option<&GitCredentials>,
+    ) {
+        if let Some(GitCredentials::UserPass { username, password }) = credentials {
+            // Pass raw credentials via environment variables.
+            // These are NOT visible in process listings (ps aux) - only to the child
+            // process.
+            cmd.env("GIT_CRED_USERNAME", username);
+            cmd.env("GIT_CRED_PASSWORD", password);
+
+            // Disable terminal prompts
+            cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+            // Disable any existing credential helpers and use our custom one
+            cmd.env("GIT_CONFIG_COUNT", "2");
+            cmd.env("GIT_CONFIG_KEY_0", "credential.helper");
+            cmd.env("GIT_CONFIG_VALUE_0", "");
+            cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
+
+            // Use a credential helper that reads from env vars.
+            // SECURITY: printf '%s\n' treats its arguments as literal data, NOT as
+            // commands. Even if GIT_CRED_USERNAME contains "$(malicious
+            // command)", the shell expands the variable first (within the
+            // double quotes), then printf outputs it literally. The key is that
+            // variable expansion happens BEFORE printf sees the value,
+            // and printf never interprets its arguments as shell commands.
+            cmd.env(
+                "GIT_CONFIG_VALUE_1",
+                r#"!f() { printf 'username=%s\n' "$GIT_CRED_USERNAME"; printf 'password=%s\n' "$GIT_CRED_PASSWORD"; }; f"#,
+            );
+        }
+    }
+
+    /// Sanitizes a task ID for use in file paths.
+    ///
+    /// This is critical for security - task_id could come from untrusted
+    /// sources and must not contain path traversal characters like `..` or
+    /// `/`. Only alphanumeric characters and hyphens are allowed.
+    pub fn sanitize_task_id(task_id: &str) -> String {
+        task_id
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect()
     }
 
     /// Creates a worktree from a cached repository for a specific task.
@@ -208,6 +555,9 @@ impl RepositoryCache {
     /// # Concurrency
     /// This function assumes task_id is unique per task. Concurrent calls with
     /// the same task_id will race and may cause issues.
+    ///
+    /// # Security
+    /// The task_id is sanitized to prevent path traversal attacks.
     pub fn create_worktree_for_task(
         &self,
         remote_url: &str,
@@ -226,7 +576,13 @@ impl RepositoryCache {
         std::fs::create_dir_all(&self.worktrees_dir)?;
 
         // Generate worktree name and path
-        let worktree_name = format!("{}-{}", task_id, Self::sanitize_branch_name(branch_name));
+        // SECURITY: Sanitize task_id to prevent path traversal attacks
+        let sanitized_task_id = Self::sanitize_task_id(task_id);
+        let worktree_name = format!(
+            "{}-{}",
+            sanitized_task_id,
+            Self::sanitize_branch_name(branch_name)
+        );
         let worktree_path = self.worktrees_dir.join(&worktree_name);
 
         // Remove existing worktree if it exists
@@ -248,11 +604,8 @@ impl RepositoryCache {
             })?;
         }
 
-        // Always base on the remote branch to ensure we have latest changes.
-        // If a local branch exists, delete it so we can recreate from origin.
-        let remote_branch = format!("origin/{}", branch_name);
+        // Check if the branch already exists locally
         let mut branch_exists = false;
-
         if let Ok(mut branch) = git_repo.find_branch(branch_name, git2::BranchType::Local) {
             // Try to delete the existing local branch to ensure we get fresh state
             if let Err(e) = branch.delete() {
@@ -267,11 +620,32 @@ impl RepositoryCache {
             // If deletion succeeded, branch no longer exists
         }
 
-        // Create the worktree with the branch based on origin
+        // Determine the base branch:
+        // 1. If the branch already exists in the repo, use it (continuing work)
+        // 2. Otherwise, use the default branch (creating a new feature branch)
+        //
+        // Note: In bare repos (used for cache), branches are in refs/heads/*
+        // not refs/remotes/origin/*
+        let branch_ref = format!("refs/heads/{}", branch_name);
+        let base_branch = if git_repo.find_reference(&branch_ref).is_ok() {
+            // Branch exists in the bare repo, use it as base
+            debug!("Using existing branch {} as base", branch_ref);
+            branch_ref
+        } else {
+            // Branch doesn't exist, find the default branch
+            let default_branch = Self::find_default_branch(git_repo)?;
+            debug!(
+                "Branch {} not found, using default branch {} as base",
+                branch_ref, default_branch
+            );
+            default_branch
+        };
+
+        // Create the worktree with the branch based on the determined base
         let options = WorktreeOptions {
             branch: Some(branch_name.to_string()),
             create_branch: !branch_exists,
-            base: Some(remote_branch),
+            base: Some(base_branch),
         };
 
         repo.create_worktree(&worktree_name, &worktree_path, options)?;
@@ -285,6 +659,9 @@ impl RepositoryCache {
     }
 
     /// Removes a worktree for a task.
+    ///
+    /// # Security
+    /// The task_id is sanitized to prevent path traversal attacks.
     pub fn remove_worktree_for_task(
         &self,
         remote_url: &str,
@@ -292,7 +669,13 @@ impl RepositoryCache {
         branch_name: &str,
     ) -> GitResult<()> {
         let cache_path = self.cached_repo_path(remote_url);
-        let worktree_name = format!("{}-{}", task_id, Self::sanitize_branch_name(branch_name));
+        // SECURITY: Sanitize task_id to prevent path traversal attacks
+        let sanitized_task_id = Self::sanitize_task_id(task_id);
+        let worktree_name = format!(
+            "{}-{}",
+            sanitized_task_id,
+            Self::sanitize_branch_name(branch_name)
+        );
         let worktree_path = self.worktrees_dir.join(&worktree_name);
 
         if cache_path.exists() {
@@ -370,16 +753,21 @@ impl RepositoryCache {
 ///
 /// This is a convenience function that computes the worktree path
 /// without requiring a RepositoryCache instance.
+///
+/// # Security
+/// The task_id is sanitized to prevent path traversal attacks.
 pub fn worktree_path_for_task_with_cache(
     worktrees_dir: impl AsRef<Path>,
     task_id: &str,
     branch_name: &str,
 ) -> PathBuf {
+    // SECURITY: Sanitize task_id to prevent path traversal attacks
+    let sanitized_task_id = RepositoryCache::sanitize_task_id(task_id);
     let sanitized_branch = RepositoryCache::sanitize_branch_name(branch_name);
 
     worktrees_dir
         .as_ref()
-        .join(format!("{}-{}", task_id, sanitized_branch))
+        .join(format!("{}-{}", sanitized_task_id, sanitized_branch))
 }
 
 #[cfg(test)]
@@ -461,6 +849,39 @@ mod tests {
         assert_eq!(
             RepositoryCache::sanitize_branch_name("fix/bug#123"),
             "fix-bug-123"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_task_id() {
+        // Normal UUIDs should be unchanged
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("abc123-def456"),
+            "abc123-def456"
+        );
+        // Path traversal attempts should be sanitized
+        // "../../../etc/passwd" has 9 special chars (./): ..|/.|./.|./e... ->
+        // "---------etc-passwd"
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("../../../etc/passwd"),
+            "---------etc-passwd"
+        );
+        // "task/../../secret" has 7 special chars (/, ., ., /, ., ., /): ->
+        // "task-------secret"
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("task/../../secret"),
+            "task-------secret"
+        );
+        // Slashes should be converted to hyphens
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("task/with/slashes"),
+            "task-with-slashes"
+        );
+        // Underscores should be converted to hyphens (only alphanumeric and hyphens
+        // allowed)
+        assert_eq!(
+            RepositoryCache::sanitize_task_id("task_with_underscores"),
+            "task-with-underscores"
         );
     }
 }

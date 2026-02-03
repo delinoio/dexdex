@@ -36,6 +36,10 @@ pub enum AgentError {
     /// Configuration error.
     #[error("Configuration error: {0}")]
     Config(String),
+
+    /// Other error.
+    #[error("{0}")]
+    Other(String),
 }
 
 /// Result type for agent operations.

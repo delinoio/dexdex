@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
+import { AgentLogViewer } from "@/components/task/AgentLogViewer";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
@@ -269,11 +270,11 @@ export function UnitTaskDetail() {
             </CardHeader>
             {showLog && (
               <CardContent>
-                <div className="max-h-96 overflow-y-auto rounded-md bg-[hsl(var(--muted))] p-4 font-mono text-xs">
-                  <p className="text-[hsl(var(--muted-foreground))]">
-                    [Awaiting agent session logs...]
-                  </p>
-                </div>
+                <AgentLogViewer
+                  taskId={task.id}
+                  taskStatus={task.status}
+                  className="min-h-64 max-h-[500px]"
+                />
               </CardContent>
             )}
           </Card>

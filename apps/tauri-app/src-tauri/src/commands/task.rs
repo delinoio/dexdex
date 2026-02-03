@@ -2,11 +2,14 @@
 
 use std::sync::Arc;
 
+#[cfg(desktop)]
+use coding_agents::{NormalizedEvent, TimestampedEvent};
 use entities::{
     AgentTask, AiAgentType, CompositeTask, CompositeTaskNode, CompositeTaskStatus, UnitTask,
     UnitTaskStatus,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(desktop)]
 use task_store::{TaskFilter, TaskStore};
 use tauri::State;
 use tokio::sync::RwLock;
@@ -87,7 +90,46 @@ pub struct CompositeTaskNodesResult {
     pub nodes: Vec<CompositeTaskNodeWithUnitTask>,
 }
 
+/// A normalized event entry with metadata.
+#[cfg(desktop)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NormalizedEventEntry {
+    pub id: i64,
+    pub timestamp: String,
+    pub event: NormalizedEvent,
+}
+
+/// Response for get_task_logs command.
+#[cfg(desktop)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskLogsResponse {
+    pub events: Vec<NormalizedEventEntry>,
+    pub is_complete: bool,
+    pub last_event_id: Option<i64>,
+}
+
+/// Response for get_task_logs command (mobile stub).
+#[cfg(not(desktop))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskLogsResponse {
+    pub events: Vec<serde_json::Value>,
+    pub is_complete: bool,
+    pub last_event_id: Option<i64>,
+}
+
+/// Parameters for responding to a TTY input request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RespondTtyInputParams {
+    pub request_id: String,
+    pub response: String,
+}
+
 /// Creates a new unit task.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn create_unit_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -136,10 +178,47 @@ pub async fn create_unit_task(
 
     let created = runtime.task_store_arc().create_unit_task(task).await?;
     info!("Created unit task: {}", created.id);
+
+    // Trigger task execution if executor is initialized
+    if let Some(executor) = runtime.executor().await {
+        let task_id = created.id;
+        tokio::spawn(async move {
+            if let Err(e) = executor.execute_unit_task(task_id).await {
+                tracing::error!("Failed to start task execution for {}: {}", task_id, e);
+            }
+        });
+    } else {
+        tracing::warn!(
+            "Executor not initialized, task {} will not be executed",
+            created.id
+        );
+    }
+
     Ok(created)
 }
 
+/// Creates a new unit task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn create_unit_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _params: CreateUnitTaskParams,
+) -> AppResult<UnitTask> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Creates a new composite task.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn create_composite_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -196,7 +275,28 @@ pub async fn create_composite_task(
     Ok(created)
 }
 
+/// Creates a new composite task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn create_composite_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _params: CreateCompositeTaskParams,
+) -> AppResult<CompositeTask> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Gets a task by ID.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -237,7 +337,28 @@ pub async fn get_task(
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
 }
 
+/// Gets a task by ID (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn get_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<TaskResponse> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Lists tasks with optional filters.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn list_tasks(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -289,7 +410,28 @@ pub async fn list_tasks(
     })
 }
 
+/// Lists tasks with optional filters (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn list_tasks(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _params: ListTasksParams,
+) -> AppResult<ListTasksResult> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Approves a task.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn approve_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -336,11 +478,32 @@ pub async fn approve_task(
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
 }
 
+/// Approves a task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn approve_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Rejects a task.
 ///
 /// Note: The `reason` parameter is accepted for API completeness but is not
 /// currently persisted. This will be implemented when the entity schema
 /// supports rejection reasons.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn reject_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -384,7 +547,29 @@ pub async fn reject_task(
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
 }
 
+/// Rejects a task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn reject_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+    _reason: Option<String>,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Requests changes for a task.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn request_changes(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -422,6 +607,229 @@ pub async fn request_changes(
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
 }
 
+/// Requests changes for a task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn request_changes(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+    _feedback: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
+/// Gets logs for a task.
+///
+/// Returns normalized events from the agent session output.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn get_task_logs(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+    after_event_id: Option<i64>,
+) -> AppResult<TaskLogsResponse> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the unit task
+    let task = runtime
+        .task_store_arc()
+        .get_unit_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+
+    // Get the agent task (verifies it exists)
+    let _agent_task = runtime
+        .task_store_arc()
+        .get_agent_task(task.agent_task_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Agent task not found: {}", task.agent_task_id))
+        })?;
+
+    // Get the sessions
+    let mut sessions = runtime
+        .task_store_arc()
+        .list_agent_sessions(task.agent_task_id)
+        .await?;
+
+    // Sort sessions by created_at to ensure we get the latest one
+    sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    // If no sessions, return empty
+    if sessions.is_empty() {
+        let is_complete = task.status != UnitTaskStatus::InProgress;
+        return Ok(TaskLogsResponse {
+            events: Vec::new(),
+            is_complete,
+            last_event_id: None,
+        });
+    }
+
+    // Get the latest session's output log (safe because we checked is_empty()
+    // above)
+    let session = sessions
+        .last()
+        .ok_or_else(|| AppError::Internal("Sessions list became empty unexpectedly".to_string()))?;
+
+    // Determine completion based on the latest agent session when available,
+    // falling back to the unit task status otherwise.
+    let is_complete = if session.completed_at.is_some() {
+        true
+    } else {
+        task.status != UnitTaskStatus::InProgress
+    };
+    let mut events = Vec::new();
+    let mut last_event_id: Option<i64> = None;
+
+    if let Some(output_log) = &session.output_log {
+        // Parse the output log (each line is a JSON timestamped event)
+        for (idx, line) in output_log.lines().enumerate() {
+            let event_id = idx as i64;
+
+            // Skip events before after_event_id
+            if let Some(after_id) = after_event_id {
+                if event_id <= after_id {
+                    continue;
+                }
+            }
+
+            // Try to parse as TimestampedEvent first (new format with timestamps)
+            if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
+                events.push(NormalizedEventEntry {
+                    id: event_id,
+                    timestamp: timestamped.timestamp.to_rfc3339(),
+                    event: timestamped.event,
+                });
+                last_event_id = Some(event_id);
+            } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+                // Fallback: parse as NormalizedEvent for backwards compatibility
+                // with logs created before timestamps were added
+                events.push(NormalizedEventEntry {
+                    id: event_id,
+                    timestamp: session.created_at.to_rfc3339(),
+                    event,
+                });
+                last_event_id = Some(event_id);
+            }
+        }
+    }
+
+    Ok(TaskLogsResponse {
+        events,
+        is_complete,
+        last_event_id,
+    })
+}
+
+/// Gets logs for a task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn get_task_logs(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+    _after_event_id: Option<i64>,
+) -> AppResult<TaskLogsResponse> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
+/// Responds to a TTY input request from an agent.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn respond_tty_input(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    params: RespondTtyInputParams,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let request_id = Uuid::parse_str(&params.request_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid request ID: {}", e)))?;
+
+    // Get the TTY request manager
+    let tty_manager = runtime
+        .tty_request_manager()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+    // Respond to the request
+    let delivered = tty_manager.respond(request_id, params.response).await;
+
+    if !delivered {
+        return Err(AppError::NotFound(format!(
+            "TTY request not found or already responded: {}",
+            params.request_id
+        )));
+    }
+
+    info!("Responded to TTY input request: {}", params.request_id);
+    Ok(())
+}
+
+/// Responds to a TTY input request from an agent (mobile stub - local mode not
+/// supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn respond_tty_input(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _params: RespondTtyInputParams,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Gets all nodes for a composite task with their associated unit tasks.
 ///
 /// # Note
@@ -430,6 +838,7 @@ pub async fn request_changes(
 /// is tracked in: https://github.com/delinoio/delidev/issues/96#issuecomment-remote-mode
 /// TODO(remote-mode): Implement remote API call when server supports this
 /// endpoint.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn get_composite_task_nodes(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -483,6 +892,27 @@ pub async fn get_composite_task_nodes(
     Ok(CompositeTaskNodesResult { nodes: result })
 }
 
+/// Gets all nodes for a composite task (mobile stub - local mode not
+/// supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn get_composite_task_nodes(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _composite_task_id: String,
+) -> AppResult<CompositeTaskNodesResult> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented for task graph visualization".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 // Helper functions
 
 fn parse_agent_type(s: &str) -> AppResult<AiAgentType> {
@@ -508,6 +938,7 @@ fn parse_unit_status(s: &str) -> AppResult<UnitTaskStatus> {
         "pr_open" => Ok(UnitTaskStatus::PrOpen),
         "done" => Ok(UnitTaskStatus::Done),
         "rejected" => Ok(UnitTaskStatus::Rejected),
+        "failed" => Ok(UnitTaskStatus::Failed),
         _ => Err(AppError::InvalidRequest(format!(
             "Unknown unit task status: {}",
             s

@@ -3,16 +3,18 @@
 use std::sync::Arc;
 
 use secrets::{Keychain, NativeKeychain};
+#[cfg(desktop)]
 use task_store::TaskStore;
 use tracing::info;
 
+#[cfg(desktop)]
+use crate::single_process::SingleProcessRuntime;
 use crate::{
     config::{
         config_to_settings, load_config, save_config, settings_to_config, AppMode, GlobalSettings,
     },
     error::{AppError, AppResult},
     mobile::platform::supports_local_mode,
-    single_process::SingleProcessRuntime,
 };
 
 /// Shared application state.
@@ -23,7 +25,8 @@ pub struct AppState {
     pub settings: GlobalSettings,
     /// Keychain for secrets.
     pub keychain: Box<dyn Keychain>,
-    /// Single process runtime (only used in local mode).
+    /// Single process runtime (only used in local mode on desktop).
+    #[cfg(desktop)]
     pub local_runtime: Option<SingleProcessRuntime>,
     /// Remote server URL (only used in remote mode).
     pub remote_server_url: Option<String>,
@@ -52,6 +55,7 @@ impl AppState {
         let keychain: Box<dyn Keychain> = Box::new(NativeKeychain::new());
 
         // Create local runtime if in local mode (desktop only)
+        #[cfg(desktop)]
         let local_runtime = if settings.mode == AppMode::Local && supports_local_mode() {
             Some(SingleProcessRuntime::new().await?)
         } else {
@@ -64,13 +68,15 @@ impl AppState {
             mode: settings.mode,
             settings,
             keychain,
+            #[cfg(desktop)]
             local_runtime,
             remote_server_url,
             http_client: reqwest::Client::new(),
         })
     }
 
-    /// Gets the task store (for local mode).
+    /// Gets the task store (for local mode, desktop only).
+    #[cfg(desktop)]
     pub fn task_store(&self) -> AppResult<&dyn TaskStore> {
         self.local_runtime
             .as_ref()
@@ -87,7 +93,8 @@ impl AppState {
         self.settings.mode = mode;
         self.settings.server_url = server_url;
 
-        // Create or destroy local runtime based on mode
+        // Create or destroy local runtime based on mode (desktop only)
+        #[cfg(desktop)]
         match mode {
             AppMode::Local => {
                 if self.local_runtime.is_none() {

@@ -23,6 +23,8 @@ pub enum UnitTaskStatus {
     Done,
     /// Rejected and discarded.
     Rejected,
+    /// Task execution failed.
+    Failed,
 }
 
 /// A single task unit visible to users.

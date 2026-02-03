@@ -1,18 +1,20 @@
 [package]
-name = "coding_agents"
+name = "worker_impl"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "AI coding agent abstraction and output normalization for DeliDev"
+description = "Local worker implementation for task execution"
 
 [dependencies]
 # Core
 entities = { path = "../entities" }
-git_ops = { path = "../git_ops" }
-rpc_protocol = { path = "../rpc_protocol" }
+coding_agents = { path = "../coding_agents" }
+task_store = { path = "../task_store" }
+config = { path = "../config" }
+
+# Async runtime
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
-futures = "0.3"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -24,18 +26,14 @@ thiserror = "2"
 # Logging
 tracing = "0.1"
 
-# Process management
-tokio-process = "0.2"
-
-# Regex for parsing
-regex = "1"
-
 # UUID
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
+# Directories
+dirs = "5"
+
 [dev-dependencies]
 tokio-test = "0.4"
-tempfile = "3"
