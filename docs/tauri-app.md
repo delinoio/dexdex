@@ -107,10 +107,11 @@ apps/tauri-app/src/
 │   ├── ui/                 # shadcn/ui components
 │   ├── dashboard/          # Dashboard components
 │   ├── task/               # Task-related components
-│   ├── review/             # Review interface
+│   ├── review/             # Review interface (InlineComment, DiffViewer)
 │   └── settings/           # Settings components
 ├── hooks/
 │   ├── useNotificationClickHandler.ts
+│   ├── useReviewComments.ts # Inline comment state management
 │   ├── useTasks.ts
 │   └── ...
 ├── pages/
