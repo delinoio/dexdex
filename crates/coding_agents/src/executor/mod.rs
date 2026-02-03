@@ -2,7 +2,8 @@
 //!
 //! This module provides the core execution logic for running AI coding agents.
 //! It uses traits to abstract platform-specific concerns like event emission,
-//! allowing the executor to be used in different environments (Tauri, CLI, server, etc.).
+//! allowing the executor to be used in different environments (Tauri, CLI,
+//! server, etc.).
 
 mod emitter;
 mod task_executor;

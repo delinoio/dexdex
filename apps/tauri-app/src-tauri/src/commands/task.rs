@@ -497,8 +497,8 @@ pub async fn get_task_logs(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
 
-    // Get the agent task
-    let agent_task = runtime
+    // Get the agent task (verifies it exists)
+    let _agent_task = runtime
         .task_store_arc()
         .get_agent_task(task.agent_task_id)
         .await?

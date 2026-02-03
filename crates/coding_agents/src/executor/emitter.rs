@@ -68,7 +68,8 @@ pub struct TaskCompletedEvent {
 /// Trait for emitting events during task execution.
 ///
 /// This trait abstracts the platform-specific event emission mechanism,
-/// allowing the executor to be used in different environments (Tauri, CLI, etc.).
+/// allowing the executor to be used in different environments (Tauri, CLI,
+/// etc.).
 #[async_trait]
 pub trait EventEmitter: Send + Sync {
     /// Emits a task status changed event.
@@ -129,22 +130,26 @@ mod tests {
     fn test_noop_emitter() {
         let emitter = NoOpEventEmitter::new();
 
-        assert!(emitter
-            .emit_task_status_changed(TaskStatusChangedEvent {
-                task_id: "test".to_string(),
-                task_type: TaskType::UnitTask,
-                old_status: "pending".to_string(),
-                new_status: "running".to_string(),
-            })
-            .is_ok());
+        assert!(
+            emitter
+                .emit_task_status_changed(TaskStatusChangedEvent {
+                    task_id: "test".to_string(),
+                    task_type: TaskType::UnitTask,
+                    old_status: "pending".to_string(),
+                    new_status: "running".to_string(),
+                })
+                .is_ok()
+        );
 
-        assert!(emitter
-            .emit_task_completed(TaskCompletedEvent {
-                task_id: "test".to_string(),
-                task_type: TaskType::UnitTask,
-                success: true,
-                error: None,
-            })
-            .is_ok());
+        assert!(
+            emitter
+                .emit_task_completed(TaskCompletedEvent {
+                    task_id: "test".to_string(),
+                    task_type: TaskType::UnitTask,
+                    success: true,
+                    error: None,
+                })
+                .is_ok()
+        );
     }
 }

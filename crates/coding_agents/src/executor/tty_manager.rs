@@ -1,16 +1,14 @@
 //! TTY input request manager for handling interactive prompts.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::{RwLock, oneshot};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::{AgentError, AgentResult, TtyInputHandler};
-
 use super::{EventEmitter, TtyInputRequestEvent};
+use crate::{AgentError, AgentResult, TtyInputHandler};
 
 /// A pending TTY input request waiting for a response.
 struct PendingRequest {
@@ -49,11 +47,11 @@ impl TtyInputRequestManager {
     /// was not found.
     pub async fn respond(&self, request_id: Uuid, response: String) -> bool {
         let mut pending = self.pending.write().await;
-        if let Some(request) = pending.remove(&request_id) {
-            if request.response_tx.send(response).is_ok() {
-                info!("Delivered TTY response for request {}", request_id);
-                return true;
-            }
+        if let Some(request) = pending.remove(&request_id)
+            && request.response_tx.send(response).is_ok()
+        {
+            info!("Delivered TTY response for request {}", request_id);
+            return true;
         }
         false
     }
@@ -76,7 +74,8 @@ impl Default for TtyInputRequestManager {
     }
 }
 
-/// TTY input handler that uses an event emitter to communicate with the frontend.
+/// TTY input handler that uses an event emitter to communicate with the
+/// frontend.
 ///
 /// This handler emits TTY input request events via the provided event emitter
 /// and waits for responses to be delivered via the request manager.

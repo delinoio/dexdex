@@ -6,14 +6,16 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use coding_agents::executor::{
-    AgentOutputEvent as CoreAgentOutputEvent, EventEmitter, TaskCompletedEvent as CoreTaskCompletedEvent,
-    TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent as CoreTaskStatusChangedEvent,
-    TaskType as CoreTaskType, TtyInputRequestEvent as CoreTtyInputRequestEvent,
-    TtyInputRequestManager,
-};
 pub use coding_agents::executor::ExecutionResult;
-use coding_agents::AgentResult;
+use coding_agents::{
+    executor::{
+        AgentOutputEvent as CoreAgentOutputEvent, EventEmitter,
+        TaskCompletedEvent as CoreTaskCompletedEvent, TaskExecutionConfig, TaskExecutor,
+        TaskStatusChangedEvent as CoreTaskStatusChangedEvent, TaskType as CoreTaskType,
+        TtyInputRequestEvent as CoreTtyInputRequestEvent, TtyInputRequestManager,
+    },
+    AgentResult,
+};
 use entities::{AgentSession, AiAgentType, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
 use tauri::{AppHandle, Emitter};
@@ -23,8 +25,8 @@ use uuid::Uuid;
 use crate::{
     config::data_dir,
     events::{
-        event_names, AgentOutputEvent, TaskCompletedEvent, TaskStatusChangedEvent,
-        TaskType, TtyInputRequestEvent,
+        event_names, AgentOutputEvent, TaskCompletedEvent, TaskStatusChangedEvent, TaskType,
+        TtyInputRequestEvent,
     },
 };
 

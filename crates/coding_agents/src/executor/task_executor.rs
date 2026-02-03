@@ -4,23 +4,22 @@
 //! It manages git worktrees, runs agents, and streams output events through
 //! an event emitter.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use entities::AiAgentType;
 use git_ops::RepositoryCache;
-use tokio::sync::{mpsc, RwLock};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{RwLock, mpsc},
+    task::JoinHandle,
+};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-
-use crate::{create_agent, AgentConfig, NormalizedEvent};
 
 use super::{
     AgentOutputEvent, EventEmitter, EventEmitterTtyHandler, TaskCompletedEvent,
     TaskStatusChangedEvent, TaskType, TtyInputRequestManager,
 };
+use crate::{AgentConfig, NormalizedEvent, create_agent};
 
 /// Result of a task execution.
 #[derive(Debug, Clone)]
@@ -177,15 +176,19 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         };
 
         // Create the agent configuration
-        let mut agent_config =
-            AgentConfig::new(config.agent_type, worktree_path.to_string_lossy(), &config.prompt);
+        let mut agent_config = AgentConfig::new(
+            config.agent_type,
+            worktree_path.to_string_lossy(),
+            &config.prompt,
+        );
 
         if let Some(model) = config.agent_model {
             agent_config = agent_config.with_model(model);
         }
 
         // Create the TTY handler
-        let tty_handler = EventEmitterTtyHandler::new(emitter.clone(), task_id, session_id, tty_manager);
+        let tty_handler =
+            EventEmitterTtyHandler::new(emitter.clone(), task_id, session_id, tty_manager);
 
         // Create an event channel
         let (event_tx, mut event_rx) = mpsc::channel::<NormalizedEvent>(1024);
@@ -240,11 +243,7 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             }
         };
 
-        debug!(
-            "Collected {} log entries for task {}",
-            logs.len(),
-            task_id
-        );
+        debug!("Collected {} log entries for task {}", logs.len(), task_id);
 
         match run_result {
             Ok(()) => ExecutionResult::Success,
@@ -316,9 +315,10 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
     use crate::executor::NoOpEventEmitter;
-    use tempfile::TempDir;
 
     #[test]
     fn test_execution_result_debug() {
