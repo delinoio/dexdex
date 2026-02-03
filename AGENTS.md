@@ -1,6 +1,7 @@
 ### Instructions
 
 - Use the `@docs/` directory as the source of truth. You should list the files in the docs directory before starting any task, and update the documents as required. The `@docs/` directory should always be up-to-date.
+- After completing each task, update the relevant documentation in `@docs/` to reflect any changes made. In particular, `@docs/design.md` must accurately reflect the current state of the codebase (entities, architecture, workflows, etc.).
 - Write all comments in English.
 - Prefer enum types over strings when all variants are known at the moment of writing the code.
 - If you modified Rust code, run `cargo test` from the root directory before finishing your task.
