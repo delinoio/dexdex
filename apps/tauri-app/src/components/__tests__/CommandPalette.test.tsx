@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CommandPalette } from "../CommandPalette";
 import { useUiStore } from "@/stores/uiStore";
+import { useChatStore } from "@/stores/chatStore";
 
 // Mock react-router-dom
 const mockNavigate = vi.fn();
@@ -9,9 +10,16 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
 }));
 
-// Mock zustand store
+// Mock zustand stores
 vi.mock("@/stores/uiStore", () => ({
   useUiStore: vi.fn(),
+}));
+
+const mockSetChatOpen = vi.fn();
+vi.mock("@/stores/chatStore", () => ({
+  useChatStore: vi.fn(() => ({
+    setOpen: mockSetChatOpen,
+  })),
 }));
 
 describe("CommandPalette", () => {
@@ -22,6 +30,9 @@ describe("CommandPalette", () => {
     (useUiStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       isCommandPaletteOpen: true,
       setCommandPaletteOpen: mockSetCommandPaletteOpen,
+    });
+    (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      setOpen: mockSetChatOpen,
     });
   });
 
@@ -47,6 +58,7 @@ describe("CommandPalette", () => {
       expect(screen.getByText("Settings")).toBeInTheDocument();
       expect(screen.getByText("Repositories")).toBeInTheDocument();
       expect(screen.getByText("Repository Groups")).toBeInTheDocument();
+      expect(screen.getByText("Open Chat")).toBeInTheDocument();
     });
 
     it("renders search input with placeholder", () => {
@@ -94,7 +106,7 @@ describe("CommandPalette", () => {
     it("command options have proper option role and aria-selected", () => {
       render(<CommandPalette />);
       const options = screen.getAllByRole("option");
-      expect(options.length).toBe(5);
+      expect(options.length).toBe(6);
       expect(options[0]).toHaveAttribute("aria-selected", "true");
       expect(options[1]).toHaveAttribute("aria-selected", "false");
     });
@@ -119,6 +131,16 @@ describe("CommandPalette", () => {
       fireEvent.change(input, { target: { value: "git" } });
 
       expect(screen.getByText("Repositories")).toBeInTheDocument();
+      expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    });
+
+    it("filters chat command by keyword", () => {
+      render(<CommandPalette />);
+
+      const input = screen.getByRole("combobox");
+      fireEvent.change(input, { target: { value: "chat" } });
+
+      expect(screen.getByText("Open Chat")).toBeInTheDocument();
       expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     });
 
@@ -185,7 +207,7 @@ describe("CommandPalette", () => {
       }
 
       const options = screen.getAllByRole("option");
-      expect(options[4]).toHaveAttribute("aria-selected", "true");
+      expect(options[5]).toHaveAttribute("aria-selected", "true");
     });
 
     it("selects command with Enter", () => {
@@ -251,11 +273,24 @@ describe("CommandPalette", () => {
           isCommandPaletteOpen: true,
           setCommandPaletteOpen: mockSetCommandPaletteOpen,
         });
+        (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+          setOpen: mockSetChatOpen,
+        });
         const { unmount } = render(<CommandPalette />);
         fireEvent.click(screen.getByText(label));
         expect(mockNavigate).toHaveBeenCalledWith(path);
         unmount();
       }
+    });
+
+    it("opens chat when Open Chat command is clicked", () => {
+      render(<CommandPalette />);
+
+      fireEvent.click(screen.getByText("Open Chat"));
+
+      expect(mockSetChatOpen).toHaveBeenCalledWith(true);
+      expect(mockSetCommandPaletteOpen).toHaveBeenCalledWith(false);
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
   });
 

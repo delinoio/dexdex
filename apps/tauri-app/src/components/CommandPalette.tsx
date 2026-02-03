@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUiStore } from "@/stores/uiStore";
+import { useChatStore } from "@/stores/chatStore";
 import { cn } from "@/lib/utils";
 import {
   HomeIcon,
@@ -9,6 +10,7 @@ import {
   FolderIcon,
   CompositeTaskIcon,
   SearchIcon,
+  ChatIcon,
 } from "@/components/ui/Icons";
 
 enum CommandId {
@@ -17,57 +19,70 @@ enum CommandId {
   Settings = "settings",
   Repositories = "repositories",
   RepositoryGroups = "repository-groups",
+  OpenChat = "open-chat",
 }
 
 interface Command {
   id: CommandId;
   label: string;
   icon: React.ReactNode;
-  path: string;
+  path?: string;
+  action?: () => void;
   keywords: string[];
 }
-
-const COMMANDS: Command[] = [
-  {
-    id: CommandId.NewTask,
-    label: "New Task",
-    icon: <PlusIcon size={16} />,
-    path: "/tasks/new",
-    keywords: ["create", "add", "task", "new"],
-  },
-  {
-    id: CommandId.Dashboard,
-    label: "Dashboard",
-    icon: <HomeIcon size={16} />,
-    path: "/",
-    keywords: ["home", "main", "overview", "kanban"],
-  },
-  {
-    id: CommandId.Settings,
-    label: "Settings",
-    icon: <SettingsIcon size={16} />,
-    path: "/settings",
-    keywords: ["preferences", "config", "configuration", "options"],
-  },
-  {
-    id: CommandId.Repositories,
-    label: "Repositories",
-    icon: <FolderIcon size={16} />,
-    path: "/repositories",
-    keywords: ["repos", "git", "code", "projects"],
-  },
-  {
-    id: CommandId.RepositoryGroups,
-    label: "Repository Groups",
-    icon: <CompositeTaskIcon size={16} />,
-    path: "/repository-groups",
-    keywords: ["groups", "collections", "multi-repo"],
-  },
-];
 
 export function CommandPalette() {
   const navigate = useNavigate();
   const { isCommandPaletteOpen, setCommandPaletteOpen } = useUiStore();
+  const { setOpen: setChatOpen } = useChatStore();
+
+  const commands: Command[] = useMemo(
+    () => [
+      {
+        id: CommandId.NewTask,
+        label: "New Task",
+        icon: <PlusIcon size={16} />,
+        path: "/tasks/new",
+        keywords: ["create", "add", "task", "new"],
+      },
+      {
+        id: CommandId.Dashboard,
+        label: "Dashboard",
+        icon: <HomeIcon size={16} />,
+        path: "/",
+        keywords: ["home", "main", "overview", "kanban"],
+      },
+      {
+        id: CommandId.Settings,
+        label: "Settings",
+        icon: <SettingsIcon size={16} />,
+        path: "/settings",
+        keywords: ["preferences", "config", "configuration", "options"],
+      },
+      {
+        id: CommandId.Repositories,
+        label: "Repositories",
+        icon: <FolderIcon size={16} />,
+        path: "/repositories",
+        keywords: ["repos", "git", "code", "projects"],
+      },
+      {
+        id: CommandId.RepositoryGroups,
+        label: "Repository Groups",
+        icon: <CompositeTaskIcon size={16} />,
+        path: "/repository-groups",
+        keywords: ["groups", "collections", "multi-repo"],
+      },
+      {
+        id: CommandId.OpenChat,
+        label: "Open Chat",
+        icon: <ChatIcon size={16} />,
+        action: () => setChatOpen(true),
+        keywords: ["chat", "message", "ai", "assistant", "talk"],
+      },
+    ],
+    [setChatOpen]
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -77,18 +92,18 @@ export function CommandPalette() {
 
   const filteredCommands = useMemo(() => {
     if (!searchQuery.trim()) {
-      return COMMANDS;
+      return commands;
     }
 
     const query = searchQuery.toLowerCase();
-    return COMMANDS.filter((command) => {
+    return commands.filter((command) => {
       const labelMatch = command.label.toLowerCase().includes(query);
       const keywordMatch = command.keywords.some((keyword) =>
         keyword.includes(query)
       );
       return labelMatch || keywordMatch;
     });
-  }, [searchQuery]);
+  }, [searchQuery, commands]);
 
   // Reset state when opening, manage focus trap
   useEffect(() => {
@@ -130,7 +145,11 @@ export function CommandPalette() {
     (command: Command) => {
       setSearchQuery("");
       setCommandPaletteOpen(false);
-      navigate(command.path);
+      if (command.action) {
+        command.action();
+      } else if (command.path) {
+        navigate(command.path);
+      }
     },
     [navigate, setCommandPaletteOpen]
   );
