@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -8,21 +8,36 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useRepositoryGroups, useCreateRepositoryGroup } from "@/hooks/useRepositoryGroups";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useCreateUnitTask, useCreateCompositeTask } from "@/hooks/useTasks";
+import { useTaskCreationStore } from "@/stores";
 import { AiAgentType, RepositoryGroup, Repository } from "@/api/types";
 
 // Prefix to identify individual repository selections (treated as implicit groups)
 const REPO_PREFIX = "__repo__";
 
 export function TaskCreation() {
+  // Get persisted preferences from store
+  const {
+    lastSelection,
+    lastAgentType,
+    lastPlanningAgentType,
+    lastExecutionAgentType,
+    lastIsComposite,
+    setLastSelection,
+    setLastAgentType,
+    setLastPlanningAgentType,
+    setLastExecutionAgentType,
+    setLastIsComposite,
+  } = useTaskCreationStore();
+
   // Selection can be either a group ID or a repository ID prefixed with REPO_PREFIX
   const [selection, setSelection] = useState("");
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
   const [branchName, setBranchName] = useState("");
-  const [agentType, setAgentType] = useState<AiAgentType>(AiAgentType.ClaudeCode);
-  const [planningAgentType, setPlanningAgentType] = useState<AiAgentType>(AiAgentType.ClaudeCode);
-  const [executionAgentType, setExecutionAgentType] = useState<AiAgentType>(AiAgentType.ClaudeCode);
-  const [isComposite, setIsComposite] = useState(false);
+  const [agentType, setAgentType] = useState<AiAgentType>(lastAgentType);
+  const [planningAgentType, setPlanningAgentType] = useState<AiAgentType>(lastPlanningAgentType);
+  const [executionAgentType, setExecutionAgentType] = useState<AiAgentType>(lastExecutionAgentType);
+  const [isComposite, setIsComposite] = useState(lastIsComposite);
   const navigate = useNavigate();
 
   const { data: groupsData } = useRepositoryGroups({});
@@ -33,6 +48,26 @@ export function TaskCreation() {
 
   const groups = groupsData?.groups ?? [];
   const repositories = repositoriesData?.repositories ?? [];
+
+  // Restore last selection when data is loaded
+  useEffect(() => {
+    if (lastSelection && !selection) {
+      // Check if the last selection is still valid
+      const isRepoSelection = lastSelection.startsWith(REPO_PREFIX);
+      if (isRepoSelection) {
+        const repoId = lastSelection.slice(REPO_PREFIX.length);
+        const repoExists = repositories.some((r) => r.id === repoId);
+        if (repoExists) {
+          setSelection(lastSelection);
+        }
+      } else {
+        const groupExists = groups.some((g) => g.id === lastSelection);
+        if (groupExists) {
+          setSelection(lastSelection);
+        }
+      }
+    }
+  }, [lastSelection, selection, repositories, groups]);
 
   // Helper function to get display name for a group (name or list of repo names)
   const getGroupDisplayName = useCallback(
@@ -65,6 +100,49 @@ export function TaskCreation() {
     : selectedGroup
       ? repositories.filter((repo) => (selectedGroup.repositoryIds ?? []).includes(repo.id))
       : [];
+
+  // Handlers that update local state and persist to store
+  const handleSelectionChange = useCallback(
+    (value: string) => {
+      setSelection(value);
+      if (value) {
+        setLastSelection(value);
+      }
+    },
+    [setLastSelection]
+  );
+
+  const handleAgentTypeChange = useCallback(
+    (value: AiAgentType) => {
+      setAgentType(value);
+      setLastAgentType(value);
+    },
+    [setLastAgentType]
+  );
+
+  const handlePlanningAgentTypeChange = useCallback(
+    (value: AiAgentType) => {
+      setPlanningAgentType(value);
+      setLastPlanningAgentType(value);
+    },
+    [setLastPlanningAgentType]
+  );
+
+  const handleExecutionAgentTypeChange = useCallback(
+    (value: AiAgentType) => {
+      setExecutionAgentType(value);
+      setLastExecutionAgentType(value);
+    },
+    [setLastExecutionAgentType]
+  );
+
+  const handleCompositeChange = useCallback(
+    (value: boolean) => {
+      setIsComposite(value);
+      setLastIsComposite(value);
+    },
+    [setLastIsComposite]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,7 +205,7 @@ export function TaskCreation() {
             <CardContent className="space-y-3">
               <Select
                 value={selection}
-                onChange={(e) => setSelection(e.target.value)}
+                onChange={(e) => handleSelectionChange(e.target.value)}
                 required
               >
                 <option value="">Select a repository...</option>
@@ -278,7 +356,7 @@ export function TaskCreation() {
                   type="checkbox"
                   id="composite"
                   checked={isComposite}
-                  onChange={(e) => setIsComposite(e.target.checked)}
+                  onChange={(e) => handleCompositeChange(e.target.checked)}
                   className="h-4 w-4 rounded border-[hsl(var(--input))]"
                 />
                 <label htmlFor="composite" className="text-sm font-medium">
@@ -297,7 +375,7 @@ export function TaskCreation() {
                     <label className="text-sm font-medium">Planning Agent</label>
                     <Select
                       value={planningAgentType}
-                      onChange={(e) => setPlanningAgentType(e.target.value as AiAgentType)}
+                      onChange={(e) => handlePlanningAgentTypeChange(e.target.value as AiAgentType)}
                     >
                       <option value={AiAgentType.ClaudeCode}>Claude Code</option>
                       <option value={AiAgentType.OpenCode}>OpenCode</option>
@@ -314,7 +392,7 @@ export function TaskCreation() {
                     <label className="text-sm font-medium">Execution Agent</label>
                     <Select
                       value={executionAgentType}
-                      onChange={(e) => setExecutionAgentType(e.target.value as AiAgentType)}
+                      onChange={(e) => handleExecutionAgentTypeChange(e.target.value as AiAgentType)}
                     >
                       <option value={AiAgentType.ClaudeCode}>Claude Code</option>
                       <option value={AiAgentType.OpenCode}>OpenCode</option>
@@ -333,7 +411,7 @@ export function TaskCreation() {
                   <label className="text-sm font-medium">Agent Type</label>
                   <Select
                     value={agentType}
-                    onChange={(e) => setAgentType(e.target.value as AiAgentType)}
+                    onChange={(e) => handleAgentTypeChange(e.target.value as AiAgentType)}
                   >
                     <option value={AiAgentType.ClaudeCode}>Claude Code</option>
                     <option value={AiAgentType.OpenCode}>OpenCode</option>
