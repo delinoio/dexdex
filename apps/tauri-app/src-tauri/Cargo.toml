@@ -36,6 +36,9 @@ coding_agents = { path = "../../../crates/coding_agents" }
 
 # Worker implementation (only used on desktop builds for local mode)
 # This enables code reuse between desktop and future remote worker implementations
+# Note: This is only included on desktop because it depends on git_ops which
+# requires libgit2-sys, which has linking issues on iOS (missing zlib/iconv)
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 worker_impl = { path = "../../../crates/worker_impl" }
 
 # Async runtime

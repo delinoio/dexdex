@@ -9,6 +9,7 @@ pub mod error;
 pub mod events;
 pub mod mobile;
 pub mod notifications;
+#[cfg(desktop)]
 pub mod single_process;
 pub mod state;
 
@@ -34,16 +35,19 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Store the runtime handle
     app.manage(rt);
 
-    // Initialize the executor with the app handle
-    let app_handle = app.handle().clone();
-    let state_clone = state.clone();
-    tauri::async_runtime::spawn(async move {
-        let state = state_clone.read().await;
-        if let Some(runtime) = &state.local_runtime {
-            let emitter = single_process::TauriEventEmitter::new_arc(app_handle);
-            runtime.init_executor(emitter).await;
-        }
-    });
+    // Initialize the executor with the app handle (desktop only)
+    #[cfg(desktop)]
+    {
+        let app_handle = app.handle().clone();
+        let state_clone = state.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = state_clone.read().await;
+            if let Some(runtime) = &state.local_runtime {
+                let emitter = single_process::TauriEventEmitter::new_arc(app_handle);
+                runtime.init_executor(emitter).await;
+            }
+        });
+    }
 
     info!("DeliDev Tauri app initialized");
 
@@ -52,7 +56,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize tracing for logging.
 fn init_tracing() {
-    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tauri=warn"));

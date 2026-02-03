@@ -16,8 +16,8 @@ use worker_impl::{
 };
 
 use crate::events::{
-    AgentOutputEvent, TaskCompletedEvent, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent,
-    event_names,
+    event_names, AgentOutputEvent, TaskCompletedEvent, TaskStatusChangedEvent, TaskType,
+    TtyInputRequestEvent,
 };
 
 /// Tauri-specific event emitter that emits events via the Tauri app handle.
