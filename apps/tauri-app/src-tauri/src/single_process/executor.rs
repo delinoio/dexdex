@@ -3,8 +3,7 @@
 //! This module executes AI coding agents directly without Docker,
 //! suitable for local desktop execution.
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -13,14 +12,16 @@ use entities::{AgentSession, AiAgentType, UnitTaskStatus};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use task_store::{SqliteTaskStore, TaskFilter, TaskStore};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
 /// Default timeout for TTY input responses (5 minutes).
-const TTY_RESPONSE_TIMEOUT_SECS: u64 = 300;
+/// This constant is intended for future TTY timeout implementation.
+#[allow(dead_code)]
+const _TTY_RESPONSE_TIMEOUT_SECS: u64 = 300;
 
 /// Maximum output size to store (10 MB).
 const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024;
@@ -31,9 +32,8 @@ const MAX_RETRY_ATTEMPTS: usize = 3;
 /// Regex for validating branch names (Git reference name rules).
 /// Allows alphanumeric, slashes, hyphens, underscores, and dots.
 /// Must not start or end with slash, dot, or contain consecutive slashes/dots.
-static BRANCH_NAME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9/_.-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$").unwrap()
-});
+static BRANCH_NAME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9/_.-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$").unwrap());
 
 /// Status of the embedded executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +47,11 @@ pub enum ExecutorStatus {
 }
 
 /// State for a running task.
+///
+/// These fields are stored for potential future use (e.g., task status queries,
+/// output streaming) but may not be actively read in the current
+/// implementation.
+#[allow(dead_code)]
 pub struct RunningTask {
     /// Task ID.
     pub task_id: Uuid,
@@ -56,6 +61,29 @@ pub struct RunningTask {
     pub output: Arc<RwLock<String>>,
     /// Cancellation sender.
     pub cancel_tx: mpsc::Sender<()>,
+}
+
+/// Parameters for task execution.
+struct TaskExecutionParams<'a> {
+    task_id: Uuid,
+    agent_task_id: Uuid,
+    agent_type: AiAgentType,
+    agent_model: Option<String>,
+    repository_url: &'a str,
+    branch_name: &'a str,
+    prompt: &'a str,
+}
+
+/// Parameters for inner task execution.
+struct TaskExecutionInnerParams<'a> {
+    task_id: Uuid,
+    session_id: Uuid,
+    agent_type: AiAgentType,
+    agent_model: Option<String>,
+    repository_url: &'a str,
+    branch_name: &'a str,
+    prompt: &'a str,
+    output: Arc<RwLock<String>>,
 }
 
 /// Embedded task executor for single-process mode.
@@ -135,7 +163,9 @@ impl EmbeddedExecutor {
     fn validate_branch_name(branch_name: &str) -> AppResult<()> {
         // Check for empty branch name
         if branch_name.is_empty() {
-            return Err(AppError::Validation("Branch name cannot be empty".to_string()));
+            return Err(AppError::Validation(
+                "Branch name cannot be empty".to_string(),
+            ));
         }
 
         // Check length (Git has practical limits)
@@ -144,7 +174,10 @@ impl EmbeddedExecutor {
         }
 
         // Check for dangerous characters that could be used for command injection
-        let dangerous_chars = ['$', '`', '!', '|', '&', ';', '<', '>', '(', ')', '{', '}', '[', ']', '\'', '"', '\\', '\n', '\r', '\0'];
+        let dangerous_chars = [
+            '$', '`', '!', '|', '&', ';', '<', '>', '(', ')', '{', '}', '[', ']', '\'', '"', '\\',
+            '\n', '\r', '\0',
+        ];
         if branch_name.chars().any(|c| dangerous_chars.contains(&c)) {
             return Err(AppError::Validation(
                 "Branch name contains invalid characters".to_string(),
@@ -172,7 +205,9 @@ impl EmbeddedExecutor {
     fn validate_repository_url(url: &str) -> AppResult<()> {
         // Check for empty URL
         if url.is_empty() {
-            return Err(AppError::Validation("Repository URL cannot be empty".to_string()));
+            return Err(AppError::Validation(
+                "Repository URL cannot be empty".to_string(),
+            ));
         }
 
         // Must be a valid Git URL format (HTTPS or SSH)
@@ -186,7 +221,10 @@ impl EmbeddedExecutor {
         }
 
         // Check for dangerous characters
-        let dangerous_chars = ['|', '&', ';', '<', '>', '`', '$', '(', ')', '{', '}', '\'', '"', '\\', '\n', '\r', '\0'];
+        let dangerous_chars = [
+            '|', '&', ';', '<', '>', '`', '$', '(', ')', '{', '}', '\'', '"', '\\', '\n', '\r',
+            '\0',
+        ];
         if url.chars().any(|c| dangerous_chars.contains(&c)) {
             return Err(AppError::Validation(
                 "Repository URL contains invalid characters".to_string(),
@@ -270,9 +308,10 @@ impl EmbeddedExecutor {
             }
 
             // Check if there's already a running session
-            let has_running_session = agent_task.agent_sessions.iter().any(|s| {
-                s.started_at.is_some() && s.completed_at.is_none()
-            });
+            let has_running_session = agent_task
+                .agent_sessions
+                .iter()
+                .any(|s| s.started_at.is_some() && s.completed_at.is_none());
 
             if has_running_session {
                 continue;
@@ -313,7 +352,10 @@ impl EmbeddedExecutor {
             };
 
             // Validate inputs before execution
-            let branch_name = task.branch_name.clone().unwrap_or_else(|| repository.default_branch.clone());
+            let branch_name = task
+                .branch_name
+                .clone()
+                .unwrap_or_else(|| repository.default_branch.clone());
             if let Err(e) = Self::validate_branch_name(&branch_name) {
                 warn!("Invalid branch name for task {}: {}", task.id, e);
                 continue;
@@ -325,9 +367,7 @@ impl EmbeddedExecutor {
             }
 
             // Determine agent type
-            let agent_type = agent_task
-                .ai_agent_type
-                .unwrap_or(AiAgentType::ClaudeCode);
+            let agent_type = agent_task.ai_agent_type.unwrap_or(AiAgentType::ClaudeCode);
 
             // Log retry information if this is a retry
             if failed_sessions > 0 {
@@ -344,15 +384,15 @@ impl EmbeddedExecutor {
                 );
             }
 
-            self.execute_task(
-                task.id,
-                task.agent_task_id,
+            self.execute_task(TaskExecutionParams {
+                task_id: task.id,
+                agent_task_id: task.agent_task_id,
                 agent_type,
-                agent_task.ai_agent_model.clone(),
-                &repository.remote_url,
-                &branch_name,
-                &task.prompt,
-            )
+                agent_model: agent_task.ai_agent_model.clone(),
+                repository_url: &repository.remote_url,
+                branch_name: &branch_name,
+                prompt: &task.prompt,
+            })
             .await?;
 
             return Ok(true);
@@ -362,16 +402,17 @@ impl EmbeddedExecutor {
     }
 
     /// Executes a task.
-    async fn execute_task(
-        &self,
-        task_id: Uuid,
-        agent_task_id: Uuid,
-        agent_type: AiAgentType,
-        agent_model: Option<String>,
-        repository_url: &str,
-        branch_name: &str,
-        prompt: &str,
-    ) -> AppResult<()> {
+    async fn execute_task(&self, params: TaskExecutionParams<'_>) -> AppResult<()> {
+        let TaskExecutionParams {
+            task_id,
+            agent_task_id,
+            agent_type,
+            agent_model,
+            repository_url,
+            branch_name,
+            prompt,
+        } = params;
+
         info!("Starting execution of task {}", task_id);
 
         // Status is already set to Busy by poll_and_execute
@@ -403,7 +444,7 @@ impl EmbeddedExecutor {
 
         // Execute the task with cancellation support
         let result = tokio::select! {
-            result = self.execute_task_inner(
+            result = self.execute_task_inner(TaskExecutionInnerParams {
                 task_id,
                 session_id,
                 agent_type,
@@ -411,8 +452,8 @@ impl EmbeddedExecutor {
                 repository_url,
                 branch_name,
                 prompt,
-                output.clone(),
-            ) => result,
+                output: output.clone(),
+            }) => result,
             _ = cancel_rx.recv() => {
                 warn!("Task {} was cancelled", task_id);
                 Err(AppError::Cancelled)
@@ -467,15 +508,18 @@ impl EmbeddedExecutor {
     /// Inner task execution logic.
     async fn execute_task_inner(
         &self,
-        task_id: Uuid,
-        session_id: Uuid,
-        agent_type: AiAgentType,
-        agent_model: Option<String>,
-        repository_url: &str,
-        branch_name: &str,
-        prompt: &str,
-        output: Arc<RwLock<String>>,
+        params: TaskExecutionInnerParams<'_>,
     ) -> AppResult<Option<String>> {
+        let TaskExecutionInnerParams {
+            task_id,
+            session_id,
+            agent_type,
+            agent_model,
+            repository_url,
+            branch_name,
+            prompt,
+            output,
+        } = params;
         // 1. Create working directory
         let worktree_path = self.prepare_worktree(repository_url, branch_name).await?;
         info!("Prepared worktree at {:?}", worktree_path);
@@ -494,19 +538,15 @@ impl EmbeddedExecutor {
         }
 
         // 4. Run the agent
-        info!(
-            "Executing agent {:?} in {:?}",
-            agent_type, worktree_path
-        );
+        info!("Executing agent {:?} in {:?}", agent_type, worktree_path);
 
         let agent = coding_agents::create_agent(agent_type);
         let (event_tx, mut event_rx) = mpsc::channel(1024);
 
         // Spawn agent execution in background
         let agent_config = config.clone();
-        let agent_handle = tokio::spawn(async move {
-            agent.run(agent_config, event_tx, Some(tty_handler)).await
-        });
+        let agent_handle =
+            tokio::spawn(async move { agent.run(agent_config, event_tx, Some(tty_handler)).await });
 
         // Batch buffer for output writes to reduce lock contention
         let mut event_batch = Vec::with_capacity(64);
@@ -536,7 +576,10 @@ impl EmbeddedExecutor {
                         if remaining > 0 {
                             out.push_str(&event_str[..remaining]);
                         }
-                        warn!("Output buffer limit reached ({} bytes), truncating", MAX_OUTPUT_SIZE);
+                        warn!(
+                            "Output buffer limit reached ({} bytes), truncating",
+                            MAX_OUTPUT_SIZE
+                        );
                         break;
                     }
                 }
@@ -554,7 +597,8 @@ impl EmbeddedExecutor {
         }
 
         // Wait for agent to complete
-        let agent_result = agent_handle.await
+        let agent_result = agent_handle
+            .await
             .map_err(|e| AppError::Internal(format!("Agent task panicked: {}", e)))?;
 
         // 5. Get end commit before potential cleanup
@@ -583,12 +627,14 @@ impl EmbeddedExecutor {
         info!("Cleaning up worktree at {:?}", worktree_path);
 
         // Remove the worktree directory
-        tokio::fs::remove_dir_all(worktree_path).await.map_err(|e| {
-            AppError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to remove worktree: {}", e),
-            ))
-        })?;
+        tokio::fs::remove_dir_all(worktree_path)
+            .await
+            .map_err(|e| {
+                AppError::Io(std::io::Error::other(format!(
+                    "Failed to remove worktree: {}",
+                    e
+                )))
+            })?;
 
         info!("Worktree cleanup completed: {:?}", worktree_path);
         Ok(())
@@ -608,7 +654,10 @@ impl EmbeddedExecutor {
 
         // Clone if doesn't exist
         if !worktree_path.exists() {
-            info!("Cloning {} branch {} to {:?}", repository_url, branch_name, worktree_path);
+            info!(
+                "Cloning {} branch {} to {:?}",
+                repository_url, branch_name, worktree_path
+            );
 
             let output = tokio::process::Command::new("git")
                 .args([
@@ -671,7 +720,9 @@ impl EmbeddedExecutor {
             .trim_end_matches(".git");
 
         if name.is_empty() {
-            return Err(AppError::Validation("Repository name cannot be empty".to_string()));
+            return Err(AppError::Validation(
+                "Repository name cannot be empty".to_string(),
+            ));
         }
 
         Ok(name.to_string())
@@ -688,10 +739,14 @@ impl EmbeddedExecutor {
             NormalizedEvent::ErrorOutput { content } => {
                 warn!("Agent error: {}", content);
             }
-            NormalizedEvent::FileChange { path, change_type, .. } => {
+            NormalizedEvent::FileChange {
+                path, change_type, ..
+            } => {
                 debug!("File changed: {} ({:?})", path, change_type);
             }
-            NormalizedEvent::CommandExecution { command, exit_code, .. } => {
+            NormalizedEvent::CommandExecution {
+                command, exit_code, ..
+            } => {
                 debug!("Command executed: {} (exit: {:?})", command, exit_code);
             }
             NormalizedEvent::SessionStart { agent_type, model } => {
@@ -727,7 +782,8 @@ impl TtyInputHandler for LocalTtyHandler {
         // For now, log the question and return a default response
         // Full TTY support would require UI integration
         warn!(
-            "TTY input requested for task {} (session {}) but not fully supported in local mode: {}",
+            "TTY input requested for task {} (session {}) but not fully supported in local mode: \
+             {}",
             self.task_id, self.session_id, question
         );
 
@@ -804,12 +860,16 @@ mod tests {
     #[test]
     fn test_validate_repository_url_valid() {
         // Valid HTTPS URLs
-        assert!(EmbeddedExecutor::validate_repository_url("https://github.com/user/repo.git").is_ok());
+        assert!(
+            EmbeddedExecutor::validate_repository_url("https://github.com/user/repo.git").is_ok()
+        );
         assert!(EmbeddedExecutor::validate_repository_url("https://gitlab.com/user/repo").is_ok());
 
         // Valid SSH URLs
         assert!(EmbeddedExecutor::validate_repository_url("git@github.com:user/repo.git").is_ok());
-        assert!(EmbeddedExecutor::validate_repository_url("ssh://git@github.com/user/repo.git").is_ok());
+        assert!(
+            EmbeddedExecutor::validate_repository_url("ssh://git@github.com/user/repo.git").is_ok()
+        );
     }
 
     #[test]
@@ -866,9 +926,9 @@ mod tests {
 
     #[test]
     fn test_max_retry_attempts_constant() {
-        // Verify the retry constant is reasonable
-        assert!(MAX_RETRY_ATTEMPTS > 0);
-        assert!(MAX_RETRY_ATTEMPTS <= 10);
+        // Verify the retry constant is reasonable using const assertions
+        const _: () = assert!(MAX_RETRY_ATTEMPTS > 0);
+        const _: () = assert!(MAX_RETRY_ATTEMPTS <= 10);
     }
 
     #[test]

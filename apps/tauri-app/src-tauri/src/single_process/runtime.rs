@@ -104,10 +104,14 @@ impl SingleProcessRuntime {
 
     /// Sets the polling interval for task execution.
     ///
-    /// The interval is clamped between MIN_POLL_INTERVAL_SECS and MAX_POLL_INTERVAL_SECS.
+    /// The interval is clamped between MIN_POLL_INTERVAL_SECS and
+    /// MAX_POLL_INTERVAL_SECS.
     pub fn set_poll_interval(&mut self, seconds: u64) {
         self.poll_interval_secs = seconds.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS);
-        info!("Polling interval set to {} seconds", self.poll_interval_secs);
+        info!(
+            "Polling interval set to {} seconds",
+            self.poll_interval_secs
+        );
     }
 
     /// Gets the current polling interval in seconds.
@@ -117,14 +121,18 @@ impl SingleProcessRuntime {
 
     /// Starts the background task polling loop.
     ///
-    /// This must be called after the runtime is created to begin task execution.
+    /// This must be called after the runtime is created to begin task
+    /// execution.
     pub fn start_polling_loop(&mut self) {
         let executor = self.executor.clone();
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
         let poll_interval_secs = self.poll_interval_secs;
 
-        info!("Starting task polling loop (interval: {}s)", poll_interval_secs);
+        info!(
+            "Starting task polling loop (interval: {}s)",
+            poll_interval_secs
+        );
 
         tokio::spawn(async move {
             let poll_interval = std::time::Duration::from_secs(poll_interval_secs);
@@ -219,8 +227,9 @@ mod tests {
         assert_eq!(DEFAULT_POLL_INTERVAL_SECS, 5);
         assert_eq!(MIN_POLL_INTERVAL_SECS, 1);
         assert_eq!(MAX_POLL_INTERVAL_SECS, 300);
-        assert!(MIN_POLL_INTERVAL_SECS < DEFAULT_POLL_INTERVAL_SECS);
-        assert!(DEFAULT_POLL_INTERVAL_SECS < MAX_POLL_INTERVAL_SECS);
+        // Use const assertions for compile-time verification
+        const _: () = assert!(MIN_POLL_INTERVAL_SECS < DEFAULT_POLL_INTERVAL_SECS);
+        const _: () = assert!(DEFAULT_POLL_INTERVAL_SECS < MAX_POLL_INTERVAL_SECS);
     }
 
     #[test]
@@ -230,8 +239,17 @@ mod tests {
         let above_max: u64 = 1000;
         let in_range: u64 = 10;
 
-        assert_eq!(below_min.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS), MIN_POLL_INTERVAL_SECS);
-        assert_eq!(above_max.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS), MAX_POLL_INTERVAL_SECS);
-        assert_eq!(in_range.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS), in_range);
+        assert_eq!(
+            below_min.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS),
+            MIN_POLL_INTERVAL_SECS
+        );
+        assert_eq!(
+            above_max.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS),
+            MAX_POLL_INTERVAL_SECS
+        );
+        assert_eq!(
+            in_range.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS),
+            in_range
+        );
     }
 }
