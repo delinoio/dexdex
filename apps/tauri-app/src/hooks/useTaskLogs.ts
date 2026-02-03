@@ -31,13 +31,52 @@ interface UseTaskLogsResult {
 }
 
 /**
+ * Creates a content-based fingerprint for an event to detect duplicates.
+ * This is used to match real-time events with their polled equivalents.
+ */
+function getEventFingerprint(event: NormalizedEvent): string {
+  // Create a fingerprint based on event type and key content
+  switch (event.type) {
+    case "text_output":
+    case "error_output":
+    case "thinking":
+    case "raw":
+      // For text-based events, use type + first 200 chars of content
+      return `${event.type}:${event.content.slice(0, 200)}`;
+    case "tool_use":
+      return `${event.type}:${event.tool_name}:${event.tool_id || ""}`;
+    case "tool_result":
+      return `${event.type}:${event.tool_name}:${event.tool_use_id || ""}`;
+    case "file_change":
+      return `${event.type}:${event.path}:${JSON.stringify(event.change_type)}`;
+    case "command_execution":
+      return `${event.type}:${event.command}`;
+    case "ask_user_question":
+      return `${event.type}:${event.question}`;
+    case "user_response":
+      return `${event.type}:${event.response}`;
+    case "session_start":
+      return `${event.type}:${event.agent_type}`;
+    case "session_end":
+      return `${event.type}:${event.success}:${event.error || ""}`;
+    default:
+      return `unknown:${JSON.stringify(event)}`;
+  }
+}
+
+/**
  * Hook for streaming task logs from an AI agent session.
  *
  * This hook:
  * - Polls for logs using react-query
  * - Listens for real-time agent-output Tauri events
- * - Accumulates logs in state
+ * - Deduplicates events using content-based fingerprinting
  * - Stops polling when task is complete
+ *
+ * ## Deduplication Strategy
+ * Real-time events are shown immediately for responsiveness, but may also
+ * arrive later via polling with different IDs. We use content-based fingerprinting
+ * to detect and skip duplicates, ensuring each logical event appears only once.
  */
 export function useTaskLogs({
   taskId,
@@ -47,6 +86,8 @@ export function useTaskLogs({
 }: UseTaskLogsOptions): UseTaskLogsResult {
   const [events, setEvents] = useState<NormalizedEventEntry[]>([]);
   const [lastEventId, setLastEventId] = useState<number | undefined>();
+  // Track fingerprints of all events we've seen to detect duplicates
+  const seenFingerprints = useRef(new Set<string>());
   const eventIdCounter = useRef(0);
 
   // Track if task is complete based on status
@@ -65,8 +106,16 @@ export function useTaskLogs({
   useEffect(() => {
     if (data?.events && data.events.length > 0) {
       setEvents((prev) => {
-        const existingIds = new Set(prev.map((e) => e.id));
-        const newEvents = data.events.filter((e) => !existingIds.has(e.id));
+        // Filter out events we've already seen (based on content fingerprint)
+        const newEvents = data.events.filter((e) => {
+          const fingerprint = getEventFingerprint(e.event);
+          if (seenFingerprints.current.has(fingerprint)) {
+            return false;
+          }
+          seenFingerprints.current.add(fingerprint);
+          return true;
+        });
+
         if (newEvents.length > 0) {
           return [...prev, ...newEvents];
         }
@@ -88,21 +137,23 @@ export function useTaskLogs({
     const setupListener = async () => {
       unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
         if (event.payload.taskId === taskId) {
+          // Check if we've already seen this event (from polling)
+          const fingerprint = getEventFingerprint(event.payload.event);
+          if (seenFingerprints.current.has(fingerprint)) {
+            // Skip duplicate - already have this event from polling
+            return;
+          }
+          seenFingerprints.current.add(fingerprint);
+
           // Create a new event entry for real-time events
-          // Use a string prefix "rt-" to ensure no collision with polled events (which use numeric IDs)
-          // The counter starts from lastEventId to avoid ID collisions when polling catches up
-          const baseId = lastEventId ?? 0;
+          // Use a string prefix "rt-" to distinguish from polled event IDs
           const newEntry: NormalizedEventEntry = {
-            id: `rt-${taskId}-${baseId + ++eventIdCounter.current}`,
+            id: `rt-${taskId}-${++eventIdCounter.current}`,
             timestamp: new Date().toISOString(),
             event: event.payload.event,
           };
 
-          setEvents((prev) => {
-            // Check if this event might be a duplicate from polling
-            // Real-time events with "rt-" prefix are always unique
-            return [...prev, newEntry];
-          });
+          setEvents((prev) => [...prev, newEntry]);
         }
       });
     };
@@ -122,6 +173,7 @@ export function useTaskLogs({
   useEffect(() => {
     setEvents([]);
     setLastEventId(undefined);
+    seenFingerprints.current = new Set();
     eventIdCounter.current = 0;
   }, [taskId]);
 

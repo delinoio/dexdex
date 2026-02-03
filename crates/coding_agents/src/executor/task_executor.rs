@@ -134,8 +134,34 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
     /// 2. Runs the AI agent with the task prompt
     /// 3. Streams output events to the emitter
     /// 4. Returns the execution result
+    ///
+    /// # Race Condition Prevention
+    /// This method checks if a task with the same ID is already running before
+    /// spawning a new execution. If a task is already in progress, it returns
+    /// an error instead of spawning a duplicate execution.
     pub async fn execute(&self, config: TaskExecutionConfig) -> Result<(), String> {
-        info!("Starting execution of task: {}", config.task_id);
+        let task_id = config.task_id;
+        info!("Starting execution of task: {}", task_id);
+
+        // Acquire write lock first to prevent race conditions.
+        // We check for existing execution AND insert the new handle while holding the
+        // lock.
+        let mut handles = self.execution_handles.write().await;
+
+        // Clean up finished handles to prevent memory leaks
+        handles.retain(|_id, h| !h.is_finished());
+
+        // Check if a task with this ID is already running
+        if handles.contains_key(&task_id) {
+            warn!(
+                "Task {} is already being executed, rejecting duplicate execution request",
+                task_id
+            );
+            return Err(format!(
+                "Task {} is already being executed. Cannot start duplicate execution.",
+                task_id
+            ));
+        }
 
         // Clone values needed for the spawned task
         let emitter = self.emitter.clone();
@@ -146,17 +172,13 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             .parent()
             .ok_or_else(|| "Invalid cache directory path: no parent directory".to_string())?;
         let repo_cache = RepositoryCache::new(cache_parent);
-        let task_id = config.task_id;
 
         // Spawn the execution task
         let handle = tokio::spawn(async move {
             Self::run_agent_task(config, emitter, tty_manager, repo_cache).await
         });
 
-        // Store the handle and clean up finished ones
-        let mut handles = self.execution_handles.write().await;
-        // Clean up finished handles to prevent memory leaks
-        handles.retain(|_id, h| !h.is_finished());
+        // Store the handle (we still hold the write lock, so no race can occur)
         handles.insert(task_id, handle);
 
         Ok(())

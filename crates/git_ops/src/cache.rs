@@ -227,8 +227,9 @@ impl RepositoryCache {
     /// `clone_with_system_git_async` for non-blocking behavior.
     ///
     /// # Security
-    /// Credentials are passed via environment variables (GIT_ASKPASS) rather than
-    /// being embedded in the URL to prevent exposure via process listings.
+    /// Credentials are passed via environment variables (GIT_ASKPASS) rather
+    /// than being embedded in the URL to prevent exposure via process
+    /// listings.
     fn clone_with_system_git(
         url: &str,
         path: &Path,
@@ -242,8 +243,9 @@ impl RepositoryCache {
         // Log redacted URL to avoid leaking credentials
         let redacted_url = Self::redact_url_for_logging(url);
 
-        // SECURITY: Use environment-based authentication instead of embedding credentials in URL
-        // This prevents credential exposure via process listings (ps command)
+        // SECURITY: Use environment-based authentication instead of embedding
+        // credentials in URL This prevents credential exposure via process
+        // listings (ps command)
         Self::configure_git_auth(&mut cmd, credentials);
 
         cmd.arg(url).arg(path);
@@ -283,7 +285,8 @@ impl RepositoryCache {
         // Log redacted URL to avoid leaking credentials
         let redacted_url = Self::redact_url_for_logging(url);
 
-        // SECURITY: Use environment-based authentication instead of embedding credentials in URL
+        // SECURITY: Use environment-based authentication instead of embedding
+        // credentials in URL
         Self::configure_git_auth_async(&mut cmd, credentials);
 
         cmd.arg(url).arg(path);
@@ -430,19 +433,29 @@ impl RepositoryCache {
         ))
     }
 
-    /// Configures git authentication via environment variables (blocking version).
+    /// Configures git authentication via environment variables (blocking
+    /// version).
     ///
     /// # Security
-    /// Uses GIT_ASKPASS with base64-encoded credentials to avoid shell injection.
-    /// The credentials are passed via environment variables that are only readable
-    /// by the child process, not visible in process listings.
+    /// Uses a credential helper that reads raw credentials from environment
+    /// variables. The credentials are passed as arguments to printf using
+    /// shell variable expansion within double quotes, which prevents word
+    /// splitting and glob expansion but safely passes the value. Since
+    /// printf treats its arguments as literal strings (not commands), shell
+    /// metacharacters like $() or `` in the credential values
+    /// are NOT executed - they're just output as literal text.
+    /// The credentials are only readable by the child process, not visible in
+    /// process listings.
     fn configure_git_auth(cmd: &mut std::process::Command, credentials: Option<&GitCredentials>) {
         if let Some(GitCredentials::UserPass { username, password }) = credentials {
-            use base64::{Engine, engine::general_purpose::STANDARD};
+            // Pass raw credentials via environment variables.
+            // These are NOT visible in process listings (ps aux) - only to the child
+            // process.
+            cmd.env("GIT_CRED_USERNAME", username);
+            cmd.env("GIT_CRED_PASSWORD", password);
 
-            // Encode credentials to avoid shell metacharacter interpretation
-            let encoded_username = STANDARD.encode(username);
-            let encoded_password = STANDARD.encode(password);
+            // Disable terminal prompts
+            cmd.env("GIT_TERMINAL_PROMPT", "0");
 
             // Disable any existing credential helpers and use our custom one
             cmd.env("GIT_CONFIG_COUNT", "2");
@@ -450,13 +463,16 @@ impl RepositoryCache {
             cmd.env("GIT_CONFIG_VALUE_0", "");
             cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
 
-            // Pass base64-encoded credentials via environment variables
-            // The shell script decodes them, preventing shell injection
-            cmd.env("GIT_CRED_USER_B64", &encoded_username);
-            cmd.env("GIT_CRED_PASS_B64", &encoded_password);
+            // Use a credential helper that reads from env vars.
+            // SECURITY: printf '%s\n' treats its arguments as literal data, NOT as
+            // commands. Even if GIT_CRED_USERNAME contains "$(malicious
+            // command)", the shell expands the variable first (within the
+            // double quotes), then printf outputs it literally. The key is that
+            // variable expansion happens BEFORE printf sees the value,
+            // and printf never interprets its arguments as shell commands.
             cmd.env(
                 "GIT_CONFIG_VALUE_1",
-                r#"!f() { printf "username=%s\npassword=%s\n" "$(echo $GIT_CRED_USER_B64 | base64 -d)" "$(echo $GIT_CRED_PASS_B64 | base64 -d)"; }; f"#,
+                r#"!f() { printf 'username=%s\n' "$GIT_CRED_USERNAME"; printf 'password=%s\n' "$GIT_CRED_PASSWORD"; }; f"#,
             );
         }
     }
@@ -464,19 +480,28 @@ impl RepositoryCache {
     /// Configures git authentication via environment variables (async version).
     ///
     /// # Security
-    /// Uses GIT_ASKPASS with base64-encoded credentials to avoid shell injection.
-    /// The credentials are passed via environment variables that are only readable
-    /// by the child process, not visible in process listings.
+    /// Uses a credential helper that reads raw credentials from environment
+    /// variables. The credentials are passed as arguments to printf using
+    /// shell variable expansion within double quotes, which prevents word
+    /// splitting and glob expansion but safely passes the value. Since
+    /// printf treats its arguments as literal strings (not commands), shell
+    /// metacharacters like $() or `` in the credential values
+    /// are NOT executed - they're just output as literal text.
+    /// The credentials are only readable by the child process, not visible in
+    /// process listings.
     fn configure_git_auth_async(
         cmd: &mut tokio::process::Command,
         credentials: Option<&GitCredentials>,
     ) {
         if let Some(GitCredentials::UserPass { username, password }) = credentials {
-            use base64::{Engine, engine::general_purpose::STANDARD};
+            // Pass raw credentials via environment variables.
+            // These are NOT visible in process listings (ps aux) - only to the child
+            // process.
+            cmd.env("GIT_CRED_USERNAME", username);
+            cmd.env("GIT_CRED_PASSWORD", password);
 
-            // Encode credentials to avoid shell metacharacter interpretation
-            let encoded_username = STANDARD.encode(username);
-            let encoded_password = STANDARD.encode(password);
+            // Disable terminal prompts
+            cmd.env("GIT_TERMINAL_PROMPT", "0");
 
             // Disable any existing credential helpers and use our custom one
             cmd.env("GIT_CONFIG_COUNT", "2");
@@ -484,22 +509,25 @@ impl RepositoryCache {
             cmd.env("GIT_CONFIG_VALUE_0", "");
             cmd.env("GIT_CONFIG_KEY_1", "credential.helper");
 
-            // Pass base64-encoded credentials via environment variables
-            // The shell script decodes them, preventing shell injection
-            cmd.env("GIT_CRED_USER_B64", &encoded_username);
-            cmd.env("GIT_CRED_PASS_B64", &encoded_password);
+            // Use a credential helper that reads from env vars.
+            // SECURITY: printf '%s\n' treats its arguments as literal data, NOT as
+            // commands. Even if GIT_CRED_USERNAME contains "$(malicious
+            // command)", the shell expands the variable first (within the
+            // double quotes), then printf outputs it literally. The key is that
+            // variable expansion happens BEFORE printf sees the value,
+            // and printf never interprets its arguments as shell commands.
             cmd.env(
                 "GIT_CONFIG_VALUE_1",
-                r#"!f() { printf "username=%s\npassword=%s\n" "$(echo $GIT_CRED_USER_B64 | base64 -d)" "$(echo $GIT_CRED_PASS_B64 | base64 -d)"; }; f"#,
+                r#"!f() { printf 'username=%s\n' "$GIT_CRED_USERNAME"; printf 'password=%s\n' "$GIT_CRED_PASSWORD"; }; f"#,
             );
         }
     }
 
     /// Sanitizes a task ID for use in file paths.
     ///
-    /// This is critical for security - task_id could come from untrusted sources
-    /// and must not contain path traversal characters like `..` or `/`.
-    /// Only alphanumeric characters and hyphens are allowed.
+    /// This is critical for security - task_id could come from untrusted
+    /// sources and must not contain path traversal characters like `..` or
+    /// `/`. Only alphanumeric characters and hyphens are allowed.
     pub fn sanitize_task_id(task_id: &str) -> String {
         task_id
             .chars()
@@ -832,12 +860,14 @@ mod tests {
             "abc123-def456"
         );
         // Path traversal attempts should be sanitized
-        // "../../../etc/passwd" has 9 special chars (./): ..|/.|./.|./e... -> "---------etc-passwd"
+        // "../../../etc/passwd" has 9 special chars (./): ..|/.|./.|./e... ->
+        // "---------etc-passwd"
         assert_eq!(
             RepositoryCache::sanitize_task_id("../../../etc/passwd"),
             "---------etc-passwd"
         );
-        // "task/../../secret" has 7 special chars (/, ., ., /, ., ., /): -> "task-------secret"
+        // "task/../../secret" has 7 special chars (/, ., ., /, ., ., /): ->
+        // "task-------secret"
         assert_eq!(
             RepositoryCache::sanitize_task_id("task/../../secret"),
             "task-------secret"
@@ -847,7 +877,8 @@ mod tests {
             RepositoryCache::sanitize_task_id("task/with/slashes"),
             "task-with-slashes"
         );
-        // Underscores should be converted to hyphens (only alphanumeric and hyphens allowed)
+        // Underscores should be converted to hyphens (only alphanumeric and hyphens
+        // allowed)
         assert_eq!(
             RepositoryCache::sanitize_task_id("task_with_underscores"),
             "task-with-underscores"
