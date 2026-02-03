@@ -195,3 +195,12 @@ export const WorkspaceIcon = createIcon(
   </>,
   "WorkspaceIcon"
 );
+
+// Search icon
+export const SearchIcon = createIcon(
+  <>
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.3-4.3" />
+  </>,
+  "SearchIcon"
+);

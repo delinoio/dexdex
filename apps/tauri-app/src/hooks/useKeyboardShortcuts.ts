@@ -158,8 +158,8 @@ export function useKeyboardShortcuts() {
             target.tagName === "TEXTAREA" ||
             target.isContentEditable
           ) {
-            // Allow Escape to still work
-            if (shortcut.key !== "Escape") {
+            // Allow Escape and Command Palette (Cmd/Ctrl+K) to still work
+            if (shortcut.key !== "Escape" && shortcut.key !== "k") {
               return;
             }
           }
