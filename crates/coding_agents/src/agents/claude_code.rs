@@ -8,7 +8,7 @@ use std::process::Stdio;
 use async_trait::async_trait;
 use entities::AiAgentType;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, BufReader},
     process::Command,
     sync::mpsc,
 };
@@ -293,6 +293,12 @@ impl Agent for ClaudeCodeAgent {
             .take()
             .ok_or_else(|| AgentError::Config("Failed to capture stdin".into()))?;
 
+        // Drop stdin immediately - Claude Code with --print mode doesn't need stdin
+        // and will hang if stdin stays open. If we need TTY input later,
+        // we'll need a different approach (like PTY).
+        drop(stdin);
+        tracing::info!("Dropped stdin to allow Claude Code to proceed");
+
         // Send session start event
         tracing::info!("Sending session_start event...");
         let _ = event_tx
@@ -305,65 +311,34 @@ impl Agent for ClaudeCodeAgent {
 
         // Process stdout
         let event_tx_clone = event_tx.clone();
-        let tty_handler_arc = tty_handler.map(std::sync::Arc::new);
-        let stdin = std::sync::Arc::new(tokio::sync::Mutex::new(stdin));
+        // Note: TTY input via stdin is currently disabled because Claude Code
+        // hangs when stdin is kept open. For now, we drop stdin and log warnings
+        // if Claude requests user input via AskUserQuestion.
+        // TODO: Implement proper TTY handling using PTY or alternative approach.
+        let _tty_handler = tty_handler; // Store for potential future use
 
-        let stdout_handle = tokio::spawn({
-            let stdin = stdin.clone();
-            let tty_handler = tty_handler_arc.clone();
-            async move {
-                tracing::info!("Starting stdout reader task");
-                let mut reader = BufReader::new(stdout).lines();
-                let mut line_count = 0u64;
-                while let Ok(Some(line)) = reader.next_line().await {
-                    line_count += 1;
-                    tracing::info!("Received stdout line {}: {} bytes", line_count, line.len());
-                    let events = ClaudeCodeAgent::new().parse_stream_json(&line);
-                    for event in events {
-                        // Check for TTY input request
-                        if let NormalizedEvent::AskUserQuestion {
-                            ref question,
-                            ref options,
-                        } = event
-                            && let Some(ref handler) = tty_handler
-                        {
-                            match handler.handle_input(question, options.as_deref()).await {
-                                Ok(response) => {
-                                    // Send response to stdin
-                                    let mut stdin_guard = stdin.lock().await;
-                                    if let Err(e) = stdin_guard.write_all(response.as_bytes()).await
-                                    {
-                                        error!("Failed to write to stdin: {}", e);
-                                    }
-                                    if let Err(e) = stdin_guard.write_all(b"\n").await {
-                                        error!("Failed to write newline to stdin: {}", e);
-                                    }
-                                    if let Err(e) = stdin_guard.flush().await {
-                                        error!("Failed to flush stdin: {}", e);
-                                    }
-                                    // Send user response event
-                                    if let Err(e) = event_tx_clone
-                                        .send(NormalizedEvent::user_response(&response))
-                                        .await
-                                    {
-                                        warn!("Failed to send user response event: {}", e);
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("TTY handler failed: {}", e);
-                                }
-                            }
-                        } else if let NormalizedEvent::AskUserQuestion { .. } = event {
-                            // No TTY handler but agent requested input - log warning
-                            warn!("Agent requested TTY input but no handler is configured");
-                        }
-                        if let Err(e) = event_tx_clone.send(event).await {
-                            warn!("Failed to send event: {}", e);
-                        }
+        let stdout_handle = tokio::spawn(async move {
+            tracing::info!("Starting stdout reader task");
+            let mut reader = BufReader::new(stdout).lines();
+            let mut line_count = 0u64;
+            while let Ok(Some(line)) = reader.next_line().await {
+                line_count += 1;
+                tracing::info!("Received stdout line {}: {} bytes", line_count, line.len());
+                let events = ClaudeCodeAgent::new().parse_stream_json(&line);
+                for event in events {
+                    // Log warning if Claude requests user input (not supported yet)
+                    if let NormalizedEvent::AskUserQuestion { ref question, .. } = event {
+                        warn!(
+                            "Agent requested user input but stdin is closed: {}",
+                            question
+                        );
+                    }
+                    if let Err(e) = event_tx_clone.send(event).await {
+                        warn!("Failed to send event: {}", e);
                     }
                 }
-                tracing::info!("Stdout reader task finished after {} lines", line_count);
             }
+            tracing::info!("Stdout reader task finished after {} lines", line_count);
         });
 
         // Process stderr
