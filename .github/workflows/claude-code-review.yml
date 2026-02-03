@@ -40,7 +40,8 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
 
           # Get issue comments (gh pr comment creates issue comments, not review comments)
-          gh api "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[] | select(.user.login == "claude[bot]") | .node_id' | while read -r comment_node_id; do
+          # Use --paginate to handle PRs with many comments (default is 30 per page)
+          gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[] | select(.user.login == "claude[bot]") | .node_id' | while read -r comment_node_id; do
             if [ -n "$comment_node_id" ]; then
               echo "Hiding review comment: $comment_node_id"
               gh api graphql -f query='
