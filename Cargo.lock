@@ -1420,6 +1420,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fslock"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb"
+dependencies = [
+ "libc",
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "fuchsia-zircon"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1780,8 +1790,10 @@ name = "git_ops"
 version = "0.1.0"
 dependencies = [
  "entities",
+ "fslock",
  "git2",
  "serde",
+ "sha2",
  "tempfile",
  "thiserror 2.0.17",
  "tracing",

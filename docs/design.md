@@ -600,7 +600,7 @@ Human review ──┬──► Commit to repo (done)
 
 For better performance, DeliDev caches repositories locally:
 
-1. **Cache Location**: `~/.delidev/repo-cache/<url-hash>/`
+1. **Cache Location**: `~/.delidev/repo-cache/<url-hash>/` where `<url-hash>` is a SHA256 hash of the normalized repository URL (first 32 hex characters)
 2. **Storage Format**: Bare git repositories (no working directory)
 3. **Worktree Location**: `~/.delidev/worktrees/<task-id>-<branch>/`
 

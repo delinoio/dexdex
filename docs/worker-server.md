@@ -109,13 +109,15 @@ The Worker uses repository caching for improved performance:
 
 ```
 ~/.delidev/
-├── repo-cache/                    # Cached bare repositories
-│   ├── github_com_user_repo/      # URL-derived directory name
-│   └── gitlab_com_org_project/
+├── repo-cache/                    # Cached bare repositories keyed by URL hash
+│   ├── a1b2c3d4e5f67890.../       # SHA256 hash of normalized URL (32 chars)
+│   └── f9e8d7c6b5a43210.../       # Each hash uniquely identifies a repo URL
 └── worktrees/                     # Task worktrees
     ├── task123-main/              # Worktree for task on main branch
     └── task456-feature-auth/      # Worktree for task on feature branch
 ```
+
+**Security Note**: The URL hash is computed after stripping any embedded credentials from the URL, ensuring that credentials are never leaked into filesystem paths or logs.
 
 **Benefits:**
 - Avoids repeated full clones for the same repository

@@ -11,9 +11,11 @@ entities = { path = "../entities" }
 # Git operations over HTTPS/SSH will use system git command instead of libgit2.
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
 thiserror = "2"
 tracing = "0.1"
 url = "2"
+fslock = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
