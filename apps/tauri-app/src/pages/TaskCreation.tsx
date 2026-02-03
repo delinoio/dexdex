@@ -20,6 +20,8 @@ export function TaskCreation() {
   const [title, setTitle] = useState("");
   const [branchName, setBranchName] = useState("");
   const [agentType, setAgentType] = useState<AiAgentType>(AiAgentType.ClaudeCode);
+  const [planningAgentType, setPlanningAgentType] = useState<AiAgentType>(AiAgentType.ClaudeCode);
+  const [executionAgentType, setExecutionAgentType] = useState<AiAgentType>(AiAgentType.ClaudeCode);
   const [isComposite, setIsComposite] = useState(false);
   const navigate = useNavigate();
 
@@ -86,7 +88,8 @@ export function TaskCreation() {
           repositoryGroupId: effectiveGroupId,
           prompt,
           title: title || undefined,
-          executionAgentType: agentType,
+          planningAgentType: planningAgentType,
+          executionAgentType: executionAgentType,
         });
         navigate(`/composite-tasks/${task.id}`);
       } else {
@@ -270,21 +273,6 @@ export function TaskCreation() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Agent Type</label>
-                <Select
-                  value={agentType}
-                  onChange={(e) => setAgentType(e.target.value as AiAgentType)}
-                >
-                  <option value={AiAgentType.ClaudeCode}>Claude Code</option>
-                  <option value={AiAgentType.OpenCode}>OpenCode</option>
-                  <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
-                  <option value={AiAgentType.CodexCli}>Codex CLI</option>
-                  <option value={AiAgentType.Aider}>Aider</option>
-                  <option value={AiAgentType.Amp}>Amp</option>
-                </Select>
-              </div>
-
               <div className="flex items-center space-x-2">
                 <input
                   type="checkbox"
@@ -302,6 +290,60 @@ export function TaskCreation() {
                   ? "Creates a CompositeTask with an AI-generated plan"
                   : "Direct single-step execution as a UnitTask"}
               </p>
+
+              {isComposite ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Planning Agent</label>
+                    <Select
+                      value={planningAgentType}
+                      onChange={(e) => setPlanningAgentType(e.target.value as AiAgentType)}
+                    >
+                      <option value={AiAgentType.ClaudeCode}>Claude Code</option>
+                      <option value={AiAgentType.OpenCode}>OpenCode</option>
+                      <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
+                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
+                      <option value={AiAgentType.Aider}>Aider</option>
+                      <option value={AiAgentType.Amp}>Amp</option>
+                    </Select>
+                    <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                      Agent for generating the task plan
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Execution Agent</label>
+                    <Select
+                      value={executionAgentType}
+                      onChange={(e) => setExecutionAgentType(e.target.value as AiAgentType)}
+                    >
+                      <option value={AiAgentType.ClaudeCode}>Claude Code</option>
+                      <option value={AiAgentType.OpenCode}>OpenCode</option>
+                      <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
+                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
+                      <option value={AiAgentType.Aider}>Aider</option>
+                      <option value={AiAgentType.Amp}>Amp</option>
+                    </Select>
+                    <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                      Agent for executing the UnitTasks
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Agent Type</label>
+                  <Select
+                    value={agentType}
+                    onChange={(e) => setAgentType(e.target.value as AiAgentType)}
+                  >
+                    <option value={AiAgentType.ClaudeCode}>Claude Code</option>
+                    <option value={AiAgentType.OpenCode}>OpenCode</option>
+                    <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
+                    <option value={AiAgentType.CodexCli}>Codex CLI</option>
+                    <option value={AiAgentType.Aider}>Aider</option>
+                    <option value={AiAgentType.Amp}>Amp</option>
+                  </Select>
+                </div>
+              )}
             </CardContent>
           </Card>
 
