@@ -274,6 +274,7 @@ export interface CreateCompositeTaskParams {
   prompt: string;
   title?: string;
   executionAgentType?: string;
+  planningAgentType?: string;
 }
 
 export interface ListTasksParams {

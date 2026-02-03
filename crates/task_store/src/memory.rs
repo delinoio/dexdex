@@ -217,6 +217,17 @@ impl TaskStore for MemoryTaskStore {
         if repositories.remove(&id).is_none() {
             return Err(TaskStoreError::not_found("Repository", id.to_string()));
         }
+        drop(repositories);
+
+        // Remove the deleted repository from all repository groups
+        let mut groups = self.repository_groups.write().await;
+        for group in groups.values_mut() {
+            if group.repository_ids.contains(&id) {
+                group.repository_ids.retain(|&r| r != id);
+                group.updated_at = chrono::Utc::now();
+            }
+        }
+
         Ok(())
     }
 
@@ -834,5 +845,52 @@ mod tests {
         // Delete
         store.delete_unit_task(created.id).await.unwrap();
         assert!(store.get_unit_task(created.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_repository_removes_from_groups() {
+        let store = MemoryTaskStore::new();
+
+        // Create workspace
+        let workspace = Workspace::new("Test Workspace");
+        let workspace = store.create_workspace(workspace).await.unwrap();
+
+        // Create repositories
+        let repo1 = Repository::new(
+            workspace.id,
+            "repo1",
+            "https://github.com/test/repo1",
+            VcsProviderType::Github,
+        );
+        let repo1 = store.create_repository(repo1).await.unwrap();
+
+        let repo2 = Repository::new(
+            workspace.id,
+            "repo2",
+            "https://github.com/test/repo2",
+            VcsProviderType::Github,
+        );
+        let repo2 = store.create_repository(repo2).await.unwrap();
+
+        // Create a repository group containing both repos
+        let mut group = RepositoryGroup::new(workspace.id);
+        group.add_repository(repo1.id);
+        group.add_repository(repo2.id);
+        let group = store.create_repository_group(group).await.unwrap();
+
+        // Verify both repos are in the group
+        let fetched_group = store.get_repository_group(group.id).await.unwrap().unwrap();
+        assert_eq!(fetched_group.repository_ids.len(), 2);
+        assert!(fetched_group.repository_ids.contains(&repo1.id));
+        assert!(fetched_group.repository_ids.contains(&repo2.id));
+
+        // Delete repo1
+        store.delete_repository(repo1.id).await.unwrap();
+
+        // Verify repo1 was removed from the group
+        let fetched_group = store.get_repository_group(group.id).await.unwrap().unwrap();
+        assert_eq!(fetched_group.repository_ids.len(), 1);
+        assert!(!fetched_group.repository_ids.contains(&repo1.id));
+        assert!(fetched_group.repository_ids.contains(&repo2.id));
     }
 }

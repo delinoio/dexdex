@@ -24,6 +24,7 @@ pub struct CreateCompositeTaskRequest {
     pub prompt: String,
     pub title: Option<String>,
     pub execution_agent_type: Option<AiAgentType>,
+    pub planning_agent_type: Option<AiAgentType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
