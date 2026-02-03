@@ -1,7 +1,9 @@
+import { useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { TaskGraph, TaskNodeStatus, type TaskNodeData } from "@/components/task";
 import { useTask, useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { CompositeTaskStatus } from "@/api/types";
 
@@ -39,6 +41,30 @@ export function CompositeTaskDetail() {
   }
 
   const task = data.compositeTask;
+
+  // Convert nodeIds to graph node/edge data
+  // Note: Currently using nodeIds as placeholder. When the API provides
+  // full node data with titles, prompts, and dependencies, this can be enhanced.
+  const { graphNodes, graphEdges } = useMemo(() => {
+    const nodes: TaskNodeData[] = task.nodeIds.map((nodeId, index) => ({
+      id: nodeId,
+      title: `Task ${index + 1}`,
+      prompt: `Sub-task ${nodeId.slice(0, 8)}...`,
+      status: TaskNodeStatus.Pending,
+    }));
+
+    // For now, create a simple linear dependency chain as placeholder
+    // This will be replaced with actual dependency data when available
+    const edges: Array<{ source: string; target: string }> = [];
+    for (let i = 0; i < task.nodeIds.length - 1; i++) {
+      edges.push({
+        source: task.nodeIds[i],
+        target: task.nodeIds[i + 1],
+      });
+    }
+
+    return { graphNodes: nodes, graphEdges: edges };
+  }, [task.nodeIds]);
 
   const handleApprovePlan = async () => {
     await approveMutation.mutateAsync(task.id);
@@ -162,11 +188,14 @@ export function CompositeTaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]">
-                <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                  Task graph visualization will be rendered here
-                </p>
-              </div>
+              <TaskGraph
+                nodes={graphNodes}
+                edges={graphEdges}
+                onNodeClick={(nodeId) => {
+                  // Navigate to unit task detail when clicking a node
+                  navigate(`/unit-tasks/${nodeId}`);
+                }}
+              />
             </CardContent>
           </Card>
 
