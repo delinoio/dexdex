@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -41,7 +40,7 @@ export function CompositeTaskDetail() {
   const navigate = useNavigate();
 
   const { data, isLoading, error } = useTask(id ?? "");
-  const { data: nodesData, isLoading: nodesLoading } = useCompositeTaskNodes(id ?? "");
+  const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useCompositeTaskNodes(id ?? "");
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
 
@@ -235,6 +234,12 @@ export function CompositeTaskDetail() {
                 <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]">
                   <p className="text-sm text-[hsl(var(--muted-foreground))]">
                     Loading task graph...
+                  </p>
+                </div>
+              ) : nodesError ? (
+                <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--destructive))] bg-[hsl(var(--destructive)/0.1)]">
+                  <p className="text-sm text-[hsl(var(--destructive))]">
+                    Failed to load task graph. Please try again.
                   </p>
                 </div>
               ) : (

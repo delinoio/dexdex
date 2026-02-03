@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import {
   ReactFlow,
   Controls,
@@ -67,7 +67,7 @@ const STATUS_COLORS: Record<
   },
 };
 
-interface TaskNodeData {
+interface TaskNodeData extends Record<string, unknown> {
   label: string;
   status: UnitTaskStatus | "pending";
   prompt: string;
@@ -243,12 +243,8 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
     return { initialNodes: flowNodes, initialEdges: flowEdges };
   }, [taskNodes]);
 
-  const [flowNodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [flowEdges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  const onInit = useCallback(() => {
-    // Flow is ready
-  }, []);
+  const [flowNodes, , onNodesChange] = useNodesState(initialNodes);
+  const [flowEdges, , onEdgesChange] = useEdgesState(initialEdges);
 
   if (taskNodes.length === 0) {
     return (
@@ -272,7 +268,6 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
         edges={flowEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onInit={onInit}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
@@ -286,7 +281,7 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
         />
         <MiniMap
           nodeColor={(node) => {
-            const data = node.data as TaskNodeData;
+            const data = node.data as unknown as TaskNodeData;
             const colors = STATUS_COLORS[data.status] || STATUS_COLORS.pending;
             return colors.border;
           }}
