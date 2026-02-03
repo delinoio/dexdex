@@ -34,13 +34,6 @@ git_ops = { path = "../../../crates/git_ops" }
 config = { path = "../../../crates/config" }
 coding_agents = { path = "../../../crates/coding_agents" }
 
-# Worker implementation (only used on desktop builds for local mode)
-# This enables code reuse between desktop and future remote worker implementations
-# Note: This is only included on desktop because it depends on git_ops which
-# requires libgit2-sys, which has linking issues on iOS (missing zlib/iconv)
-[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-worker_impl = { path = "../../../crates/worker_impl" }
-
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
@@ -66,6 +59,15 @@ dirs = "5"
 # HTTP client for remote mode
 # Using rustls-tls for cross-platform compatibility (avoids OpenSSL issues on iOS/mobile)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+
+# Worker implementation (only used on desktop builds for local mode)
+# This enables code reuse between desktop and future remote worker implementations
+# Note: This is only included on desktop because it depends on git_ops which
+# requires libgit2-sys, which has linking issues on iOS (missing zlib/iconv)
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+worker_impl = { path = "../../../crates/worker_impl" }
+
 
 [dev-dependencies]
 tokio-test = "0.4"
