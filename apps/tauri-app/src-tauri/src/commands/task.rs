@@ -38,6 +38,7 @@ pub struct CreateCompositeTaskParams {
     pub prompt: String,
     pub title: Option<String>,
     pub execution_agent_type: Option<String>,
+    pub planning_agent_type: Option<String>,
 }
 
 /// Parameters for listing tasks.
@@ -144,15 +145,22 @@ pub async fn create_composite_task(
     let repo_group_id = Uuid::parse_str(&params.repository_group_id)
         .map_err(|e| AppError::InvalidRequest(format!("Invalid repository group ID: {}", e)))?;
 
-    let agent_type = params
+    let execution_agent_type = params
         .execution_agent_type
         .as_deref()
         .map(parse_agent_type)
         .transpose()?;
 
+    let planning_agent_type = params
+        .planning_agent_type
+        .as_deref()
+        .map(parse_agent_type)
+        .transpose()?
+        .unwrap_or(AiAgentType::ClaudeCode);
+
     // Create a planning AgentTask
     let mut planning_task = AgentTask::new();
-    planning_task.ai_agent_type = Some(AiAgentType::ClaudeCode);
+    planning_task.ai_agent_type = Some(planning_agent_type);
     let planning_task = runtime
         .task_store_arc()
         .create_agent_task(planning_task)
@@ -163,7 +171,7 @@ pub async fn create_composite_task(
     if let Some(title) = params.title {
         task = task.with_title(title);
     }
-    if let Some(agent_type) = agent_type {
+    if let Some(agent_type) = execution_agent_type {
         task = task.with_execution_agent_type(agent_type);
     }
 
@@ -490,10 +498,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -544,10 +554,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -594,9 +606,11 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
     }
 }

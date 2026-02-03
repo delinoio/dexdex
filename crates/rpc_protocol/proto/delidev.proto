@@ -221,6 +221,7 @@ message CreateCompositeTaskRequest {
   string prompt = 2;
   optional string title = 3;
   optional AiAgentType execution_agent_type = 4;
+  optional AiAgentType planning_agent_type = 5;
 }
 
 message CreateCompositeTaskResponse {
