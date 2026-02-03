@@ -44,9 +44,9 @@ function getEventFingerprint(event: NormalizedEvent): string {
       // For text-based events, use type + first 200 chars of content
       return `${event.type}:${event.content.slice(0, 200)}`;
     case "tool_use":
-      return `${event.type}:${event.tool_name}:${event.tool_id || ""}`;
+      return `${event.type}:${event.tool_name}:${JSON.stringify(event.input).slice(0, 100)}`;
     case "tool_result":
-      return `${event.type}:${event.tool_name}:${event.tool_use_id || ""}`;
+      return `${event.type}:${event.tool_name}:${JSON.stringify(event.output).slice(0, 100)}`;
     case "file_change":
       return `${event.type}:${event.path}:${JSON.stringify(event.change_type)}`;
     case "command_execution":

@@ -119,8 +119,8 @@ impl LocalExecutor {
     /// Creates a new local executor.
     ///
     /// # Panics
-    /// This function will not panic. If the data directory cannot be determined,
-    /// it falls back to a reasonable default.
+    /// This function will not panic. If the data directory cannot be
+    /// determined, it falls back to a reasonable default.
     pub fn new(task_store: Arc<SqliteTaskStore>, app_handle: AppHandle) -> Self {
         // Initialize the repository cache using the data directory
         // Use data_dir() first, then fall back to home directory, then to /tmp
@@ -351,7 +351,11 @@ impl LocalExecutor {
                 .update_agent_session(session)
                 .await
                 .map_err(|e| format!("Failed to update agent session with logs: {}", e))?;
-            info!("Persisted {} bytes of logs for session {}", output_log.len(), session_id);
+            info!(
+                "Persisted {} bytes of logs for session {}",
+                output_log.len(),
+                session_id
+            );
         } else {
             warn!("Could not find session {} to persist logs", session_id);
         }
