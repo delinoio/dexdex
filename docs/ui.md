@@ -451,12 +451,25 @@ Built-in diff viewer for reviewing AI-generated code.
 
 ### Features
 
-| Feature | Description |
-|---------|-------------|
-| File Tree | List of changed files with viewed status |
-| Diff Viewer | Side-by-side or unified diff |
-| Inline Comments | Add comments on specific lines |
-| Viewed Tracking | Mark files as reviewed |
+| Feature | Description | Implementation |
+|---------|-------------|----------------|
+| File Tree | List of changed files with viewed status | `DiffFileList` component |
+| Diff Viewer | Side-by-side or unified diff | `DiffViewer` component |
+| Inline Comments | Add comments on specific lines | `InlineComment`, `CommentInputForm`, `LineComments` components |
+| Viewed Tracking | Mark files as reviewed | `DiffViewer` with `isViewed` prop |
+
+### Implementation Components
+
+The review interface is built from the following components:
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `DiffViewer` | `components/review/DiffViewer.tsx` | Main diff display with inline commenting support |
+| `DiffFileList` | `components/review/DiffViewer.tsx` | Sidebar file list with status indicators |
+| `InlineComment` | `components/review/InlineComment.tsx` | Single comment display with edit/delete |
+| `CommentInputForm` | `components/review/InlineComment.tsx` | Form for adding new comments |
+| `LineComments` | `components/review/InlineComment.tsx` | Container for multiple comments on a line |
+| `useReviewComments` | `hooks/useReviewComments.ts` | Hook for comment CRUD operations |
 
 ### Actions
 
