@@ -82,7 +82,9 @@ export function useTtyInput({
       });
     };
 
-    setupListener();
+    setupListener().catch((error) => {
+      console.error("Failed to set up TTY listener:", error);
+    });
 
     return () => {
       if (unlisten) {

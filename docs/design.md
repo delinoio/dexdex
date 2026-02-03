@@ -308,6 +308,7 @@ enum UnitTaskStatus {
   pr_open       // PR created
   done          // PR merged
   rejected      // Rejected and discarded
+  failed        // Task failed with error
 }
 ```
 
