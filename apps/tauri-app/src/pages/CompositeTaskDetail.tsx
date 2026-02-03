@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { useTask, useApproveTask, useRejectTask } from "@/hooks/useTasks";
+import { useTabTitle } from "@/hooks/useTabNavigation";
 import { CompositeTaskStatus } from "@/api/types";
 
 export function CompositeTaskDetail() {
@@ -40,6 +41,10 @@ export function CompositeTaskDetail() {
   }
 
   const task = data.compositeTask;
+
+  // Set dynamic tab title with task context
+  const tabTitle = task?.title ? `Composite Task: ${task.title}` : "Composite Task";
+  useTabTitle(tabTitle);
 
   const handleApprovePlan = async () => {
     await approveMutation.mutateAsync(task.id);
