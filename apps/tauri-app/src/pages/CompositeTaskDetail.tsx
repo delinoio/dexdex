@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { useTask, useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { CompositeTaskStatus } from "@/api/types";
 
@@ -91,7 +92,7 @@ export function CompositeTaskDetail() {
               <Badge variant={getStatusBadgeVariant(task.status)}>
                 {formatStatus(task.status)}
               </Badge>
-              <span>Created {new Date(task.createdAt).toLocaleDateString()}</span>
+              <span>Created <FormattedDateTime date={task.createdAt} /></span>
               <span>{task.nodeIds.length} sub-tasks</span>
             </div>
           </div>
