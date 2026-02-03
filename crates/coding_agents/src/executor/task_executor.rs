@@ -6,8 +6,10 @@
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use entities::AiAgentType;
 use git_ops::RepositoryCache;
+use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{RwLock, mpsc},
     task::JoinHandle,
@@ -20,6 +22,18 @@ use super::{
     TaskStatusChangedEvent, TaskType, TtyInputRequestManager,
 };
 use crate::{AgentConfig, NormalizedEvent, create_agent};
+
+/// A timestamped event for storage in logs.
+///
+/// This wrapper adds a timestamp to normalized events so that historical
+/// events can be displayed with their actual occurrence time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimestampedEvent {
+    /// The timestamp when the event occurred.
+    pub timestamp: DateTime<Utc>,
+    /// The normalized event.
+    pub event: NormalizedEvent,
+}
 
 /// Result of a task execution.
 #[derive(Debug, Clone)]
@@ -272,8 +286,14 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         let event_handler = tokio::spawn(async move {
             let mut logs = Vec::new();
             while let Some(event) = event_rx.recv().await {
-                // Serialize the event for the output log
-                if let Ok(json) = serde_json::to_string(&event) {
+                // Create a timestamped event for storage
+                let timestamped = TimestampedEvent {
+                    timestamp: Utc::now(),
+                    event: event.clone(),
+                };
+
+                // Serialize the timestamped event for the output log
+                if let Ok(json) = serde_json::to_string(&timestamped) {
                     logs.push(json);
                 }
 
@@ -315,6 +335,20 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         };
 
         debug!("Collected {} log entries for task {}", logs.len(), task_id);
+
+        // Clean up the worktree after task completion
+        if let Err(e) = repo_cache.remove_worktree_for_task(
+            &config.remote_url,
+            &task_id.to_string(),
+            &config.branch_name,
+        ) {
+            warn!(
+                "Failed to cleanup worktree for task {}: {}. Manual cleanup may be required.",
+                task_id, e
+            );
+        } else {
+            info!("Cleaned up worktree for task {}", task_id);
+        }
 
         match run_result {
             Ok(()) => ExecutionResult::Success { logs },

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use coding_agents::NormalizedEvent;
+use coding_agents::{NormalizedEvent, TimestampedEvent};
 use entities::{
     AgentTask, AiAgentType, CompositeTask, CompositeTaskNode, CompositeTaskStatus, UnitTask,
     UnitTaskStatus,
@@ -525,10 +525,11 @@ pub async fn get_task_logs(
         });
     }
 
-    // Get the latest session's output log (safe because we checked is_empty() above)
-    let session = sessions.last().ok_or_else(|| {
-        AppError::Internal("Sessions list became empty unexpectedly".to_string())
-    })?;
+    // Get the latest session's output log (safe because we checked is_empty()
+    // above)
+    let session = sessions
+        .last()
+        .ok_or_else(|| AppError::Internal("Sessions list became empty unexpectedly".to_string()))?;
 
     // Determine completion based on the latest agent session when available,
     // falling back to the unit task status otherwise.
@@ -541,7 +542,7 @@ pub async fn get_task_logs(
     let mut last_event_id: Option<i64> = None;
 
     if let Some(output_log) = &session.output_log {
-        // Parse the output log (each line is a JSON event)
+        // Parse the output log (each line is a JSON timestamped event)
         for (idx, line) in output_log.lines().enumerate() {
             let event_id = idx as i64;
 
@@ -552,10 +553,20 @@ pub async fn get_task_logs(
                 }
             }
 
-            if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+            // Try to parse as TimestampedEvent first (new format with timestamps)
+            if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
                 events.push(NormalizedEventEntry {
                     id: event_id,
-                    timestamp: chrono::Utc::now().to_rfc3339(), // TODO: Store actual timestamps
+                    timestamp: timestamped.timestamp.to_rfc3339(),
+                    event: timestamped.event,
+                });
+                last_event_id = Some(event_id);
+            } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+                // Fallback: parse as NormalizedEvent for backwards compatibility
+                // with logs created before timestamps were added
+                events.push(NormalizedEventEntry {
+                    id: event_id,
+                    timestamp: session.created_at.to_rfc3339(),
                     event,
                 });
                 last_event_id = Some(event_id);
