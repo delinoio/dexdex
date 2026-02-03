@@ -5376,6 +5376,8 @@ dependencies = [
  "dirs 5.0.1",
  "entities",
  "git_ops",
+ "once_cell",
+ "regex",
  "reqwest",
  "rpc_protocol",
  "secrets",

@@ -21,7 +21,13 @@ use super::executor::{EmbeddedExecutor, ExecutorStatus};
 use crate::{config::data_dir, error::AppResult};
 
 /// Default polling interval for task execution (5 seconds).
-const POLL_INTERVAL_SECS: u64 = 5;
+pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
+
+/// Minimum allowed polling interval (1 second).
+pub const MIN_POLL_INTERVAL_SECS: u64 = 1;
+
+/// Maximum allowed polling interval (5 minutes).
+pub const MAX_POLL_INTERVAL_SECS: u64 = 300;
 
 /// Single-process runtime that embeds server and worker functionality.
 pub struct SingleProcessRuntime {
@@ -33,6 +39,8 @@ pub struct SingleProcessRuntime {
     executor: Arc<EmbeddedExecutor>,
     /// Shutdown signal sender.
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Configurable polling interval in seconds.
+    poll_interval_secs: u64,
 }
 
 impl SingleProcessRuntime {
@@ -90,7 +98,21 @@ impl SingleProcessRuntime {
             default_workspace_id,
             executor,
             shutdown_tx: None,
+            poll_interval_secs: DEFAULT_POLL_INTERVAL_SECS,
         })
+    }
+
+    /// Sets the polling interval for task execution.
+    ///
+    /// The interval is clamped between MIN_POLL_INTERVAL_SECS and MAX_POLL_INTERVAL_SECS.
+    pub fn set_poll_interval(&mut self, seconds: u64) {
+        self.poll_interval_secs = seconds.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS);
+        info!("Polling interval set to {} seconds", self.poll_interval_secs);
+    }
+
+    /// Gets the current polling interval in seconds.
+    pub fn poll_interval(&self) -> u64 {
+        self.poll_interval_secs
     }
 
     /// Starts the background task polling loop.
@@ -100,11 +122,12 @@ impl SingleProcessRuntime {
         let executor = self.executor.clone();
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
+        let poll_interval_secs = self.poll_interval_secs;
 
-        info!("Starting task polling loop (interval: {}s)", POLL_INTERVAL_SECS);
+        info!("Starting task polling loop (interval: {}s)", poll_interval_secs);
 
         tokio::spawn(async move {
-            let poll_interval = std::time::Duration::from_secs(POLL_INTERVAL_SECS);
+            let poll_interval = std::time::Duration::from_secs(poll_interval_secs);
 
             loop {
                 tokio::select! {
@@ -183,5 +206,32 @@ impl Drop for SingleProcessRuntime {
             // Try to send shutdown signal synchronously
             let _ = tx.try_send(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_polling_interval_constants() {
+        // Verify constants are sensible
+        assert_eq!(DEFAULT_POLL_INTERVAL_SECS, 5);
+        assert_eq!(MIN_POLL_INTERVAL_SECS, 1);
+        assert_eq!(MAX_POLL_INTERVAL_SECS, 300);
+        assert!(MIN_POLL_INTERVAL_SECS < DEFAULT_POLL_INTERVAL_SECS);
+        assert!(DEFAULT_POLL_INTERVAL_SECS < MAX_POLL_INTERVAL_SECS);
+    }
+
+    #[test]
+    fn test_poll_interval_clamping() {
+        // Test the clamp logic directly
+        let below_min: u64 = 0;
+        let above_max: u64 = 1000;
+        let in_range: u64 = 10;
+
+        assert_eq!(below_min.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS), MIN_POLL_INTERVAL_SECS);
+        assert_eq!(above_max.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS), MAX_POLL_INTERVAL_SECS);
+        assert_eq!(in_range.clamp(MIN_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS), in_range);
     }
 }

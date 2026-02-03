@@ -75,20 +75,45 @@ In single-process mode, tasks are executed automatically by the embedded executo
          ▼
 2. Task stored in SQLite with status InProgress
          ▼
-3. Background polling loop (5s interval) finds task
+3. Background polling loop (configurable 1-300s, default 5s) finds task
          ▼
-4. EmbeddedExecutor creates AgentSession
+4. Atomic status check prevents race conditions
          ▼
-5. Executor clones repository to worktree
+5. Input validation (branch names, URLs) for security
          ▼
-6. AI agent runs directly (without Docker)
+6. EmbeddedExecutor creates AgentSession
          ▼
-7. Agent output collected and stored in session
+7. Executor clones repository to worktree
          ▼
-8. Task status updated to InReview on success
+8. AI agent runs directly (without Docker)
          ▼
-9. User reviews results in UI
+9. Agent output collected with batched writes (64 events)
+         ▼
+10. Task status updated to InReview on success
+          ▼
+11. Worktree cleaned up after completion
+          ▼
+12. User reviews results in UI
 ```
+
+### Retry Logic
+
+The executor implements automatic retry with bounded attempts:
+
+| Aspect | Behavior |
+|--------|----------|
+| Max Retries | 3 attempts per task |
+| On Failure | Task stays InProgress for retry |
+| After Max Retries | Task marked as Rejected |
+| Retry Tracking | Count of completed sessions |
+
+### Security Measures
+
+The executor validates all external inputs before use:
+
+- **Branch names**: Must match Git naming rules, no shell metacharacters
+- **Repository URLs**: Must use HTTPS or SSH, no injection characters
+- **Path traversal**: Rejected (no `..` in branch names)
 
 ### Behavior
 

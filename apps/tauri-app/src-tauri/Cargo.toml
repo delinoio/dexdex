@@ -48,6 +48,8 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 anyhow = "1"
 async-trait = "0.1"
+regex = "1"
+once_cell = "1"
 
 # Logging
 tracing = "0.1"

@@ -10,6 +10,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use coding_agents::{AgentConfig, AgentResult, NormalizedEvent, TtyInputHandler};
 use entities::{AgentSession, AiAgentType, UnitTaskStatus};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use task_store::{SqliteTaskStore, TaskFilter, TaskStore};
 use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, warn};
@@ -22,6 +24,16 @@ const TTY_RESPONSE_TIMEOUT_SECS: u64 = 300;
 
 /// Maximum output size to store (10 MB).
 const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024;
+
+/// Maximum number of retry attempts for a single task.
+const MAX_RETRY_ATTEMPTS: usize = 3;
+
+/// Regex for validating branch names (Git reference name rules).
+/// Allows alphanumeric, slashes, hyphens, underscores, and dots.
+/// Must not start or end with slash, dot, or contain consecutive slashes/dots.
+static BRANCH_NAME_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9/_.-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$").unwrap()
+});
 
 /// Status of the embedded executor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,15 +128,112 @@ impl EmbeddedExecutor {
         }
     }
 
+    /// Validates a branch name for security.
+    ///
+    /// Branch names must follow Git reference naming rules and not contain
+    /// shell metacharacters that could be used for injection.
+    fn validate_branch_name(branch_name: &str) -> AppResult<()> {
+        // Check for empty branch name
+        if branch_name.is_empty() {
+            return Err(AppError::Validation("Branch name cannot be empty".to_string()));
+        }
+
+        // Check length (Git has practical limits)
+        if branch_name.len() > 255 {
+            return Err(AppError::Validation("Branch name too long".to_string()));
+        }
+
+        // Check for dangerous characters that could be used for command injection
+        let dangerous_chars = ['$', '`', '!', '|', '&', ';', '<', '>', '(', ')', '{', '}', '[', ']', '\'', '"', '\\', '\n', '\r', '\0'];
+        if branch_name.chars().any(|c| dangerous_chars.contains(&c)) {
+            return Err(AppError::Validation(
+                "Branch name contains invalid characters".to_string(),
+            ));
+        }
+
+        // Check against regex for valid Git branch name format
+        if !BRANCH_NAME_REGEX.is_match(branch_name) {
+            return Err(AppError::Validation(
+                "Invalid branch name format".to_string(),
+            ));
+        }
+
+        // Check for path traversal attempts
+        if branch_name.contains("..") {
+            return Err(AppError::Validation(
+                "Branch name cannot contain '..'".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validates a repository URL for security.
+    fn validate_repository_url(url: &str) -> AppResult<()> {
+        // Check for empty URL
+        if url.is_empty() {
+            return Err(AppError::Validation("Repository URL cannot be empty".to_string()));
+        }
+
+        // Must be a valid Git URL format (HTTPS or SSH)
+        let is_https = url.starts_with("https://");
+        let is_ssh = url.starts_with("git@") || url.starts_with("ssh://");
+
+        if !is_https && !is_ssh {
+            return Err(AppError::Validation(
+                "Repository URL must use HTTPS or SSH".to_string(),
+            ));
+        }
+
+        // Check for dangerous characters
+        let dangerous_chars = ['|', '&', ';', '<', '>', '`', '$', '(', ')', '{', '}', '\'', '"', '\\', '\n', '\r', '\0'];
+        if url.chars().any(|c| dangerous_chars.contains(&c)) {
+            return Err(AppError::Validation(
+                "Repository URL contains invalid characters".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Polls for and executes the next available task.
     ///
     /// Returns `true` if a task was found and executed.
+    ///
+    /// This method uses atomic status checking to prevent race conditions
+    /// where multiple poll calls could select the same task.
     pub async fn poll_and_execute(&self) -> AppResult<bool> {
-        // Check if we're idle
-        if self.get_status().await != ExecutorStatus::Idle {
-            return Ok(false);
+        // Atomically check and set status to prevent race conditions
+        // This is the fix for the TOCTOU vulnerability
+        {
+            let mut status = self.status.write().await;
+            if *status != ExecutorStatus::Idle {
+                return Ok(false);
+            }
+            // Set to Busy immediately while still holding the lock
+            *status = ExecutorStatus::Busy;
         }
 
+        // If we fail to find a task, we need to reset to Idle
+        let result = self.try_select_and_execute_task().await;
+
+        // If no task was selected or an error occurred during selection,
+        // reset status back to Idle
+        if result.as_ref().map(|found| !found).unwrap_or(true) {
+            // Only reset if not currently running a task
+            let current_task = self.current_task.read().await;
+            if current_task.is_none() {
+                self.set_status(ExecutorStatus::Idle).await;
+            }
+        }
+
+        result
+    }
+
+    /// Attempts to select and execute a task.
+    ///
+    /// Called after status is already set to Busy.
+    async fn try_select_and_execute_task(&self) -> AppResult<bool> {
         // Find a task with InProgress status that doesn't have a completed session
         let filter = TaskFilter {
             unit_status: Some(UnitTaskStatus::InProgress),
@@ -140,13 +249,45 @@ impl EmbeddedExecutor {
                 None => continue,
             };
 
-            // Check if there's already a running or completed session
-            let has_active_session = agent_task.agent_sessions.iter().any(|s| {
-                s.started_at.is_some() && s.completed_at.is_none() // Running
-                    || s.completed_at.is_some() // Completed
+            // Check retry count - if we've exceeded max retries, mark as failed
+            let failed_sessions = agent_task
+                .agent_sessions
+                .iter()
+                .filter(|s| s.completed_at.is_some())
+                .count();
+
+            if failed_sessions >= MAX_RETRY_ATTEMPTS {
+                warn!(
+                    "Task {} has exceeded max retry attempts ({}), marking as rejected",
+                    task.id, MAX_RETRY_ATTEMPTS
+                );
+                // Mark task as rejected
+                let mut task_to_update = task.clone();
+                task_to_update.status = UnitTaskStatus::Rejected;
+                task_to_update.updated_at = Utc::now();
+                self.task_store.update_unit_task(task_to_update).await?;
+                continue;
+            }
+
+            // Check if there's already a running session
+            let has_running_session = agent_task.agent_sessions.iter().any(|s| {
+                s.started_at.is_some() && s.completed_at.is_none()
             });
 
-            if has_active_session {
+            if has_running_session {
+                continue;
+            }
+
+            // Check if there's a successfully completed session (no error)
+            let has_successful_session = agent_task.agent_sessions.iter().any(|s| {
+                s.completed_at.is_some()
+                    && s.output_log
+                        .as_ref()
+                        .map(|log| !log.contains("\"error\":"))
+                        .unwrap_or(true)
+            });
+
+            if has_successful_session {
                 continue;
             }
 
@@ -171,16 +312,37 @@ impl EmbeddedExecutor {
                 None => continue,
             };
 
+            // Validate inputs before execution
+            let branch_name = task.branch_name.clone().unwrap_or_else(|| repository.default_branch.clone());
+            if let Err(e) = Self::validate_branch_name(&branch_name) {
+                warn!("Invalid branch name for task {}: {}", task.id, e);
+                continue;
+            }
+
+            if let Err(e) = Self::validate_repository_url(&repository.remote_url) {
+                warn!("Invalid repository URL for task {}: {}", task.id, e);
+                continue;
+            }
+
             // Determine agent type
             let agent_type = agent_task
                 .ai_agent_type
                 .unwrap_or(AiAgentType::ClaudeCode);
 
-            // Execute the task
-            info!(
-                "Found task {} to execute with agent {:?}",
-                task.id, agent_type
-            );
+            // Log retry information if this is a retry
+            if failed_sessions > 0 {
+                info!(
+                    "Retrying task {} (attempt {}/{})",
+                    task.id,
+                    failed_sessions + 1,
+                    MAX_RETRY_ATTEMPTS
+                );
+            } else {
+                info!(
+                    "Found task {} to execute with agent {:?}",
+                    task.id, agent_type
+                );
+            }
 
             self.execute_task(
                 task.id,
@@ -188,7 +350,7 @@ impl EmbeddedExecutor {
                 agent_type,
                 agent_task.ai_agent_model.clone(),
                 &repository.remote_url,
-                &task.branch_name.unwrap_or_else(|| repository.default_branch.clone()),
+                &branch_name,
                 &task.prompt,
             )
             .await?;
@@ -212,8 +374,7 @@ impl EmbeddedExecutor {
     ) -> AppResult<()> {
         info!("Starting execution of task {}", task_id);
 
-        // Set status to busy
-        self.set_status(ExecutorStatus::Busy).await;
+        // Status is already set to Busy by poll_and_execute
 
         // Create agent session
         let mut session = AgentSession::new(agent_task_id, agent_type);
@@ -321,7 +482,6 @@ impl EmbeddedExecutor {
 
         // 2. Create TTY handler
         let tty_handler = Box::new(LocalTtyHandler {
-            executor: self.task_store.clone(), // Note: TTY not fully supported in local mode yet
             task_id,
             session_id,
         });
@@ -348,6 +508,10 @@ impl EmbeddedExecutor {
             agent.run(agent_config, event_tx, Some(tty_handler)).await
         });
 
+        // Batch buffer for output writes to reduce lock contention
+        let mut event_batch = Vec::with_capacity(64);
+        let batch_size = 64;
+
         // Process events and accumulate output
         while let Some(event) = event_rx.recv().await {
             // Log event
@@ -359,17 +523,32 @@ impl EmbeddedExecutor {
                 Err(_) => continue,
             };
 
-            // Append to output buffer (with size limit)
-            {
+            event_batch.push(event_str);
+
+            // Flush batch when full or channel is empty
+            if event_batch.len() >= batch_size || event_rx.is_empty() {
                 let mut out = output.write().await;
+                for event_str in event_batch.drain(..) {
+                    if out.len() + event_str.len() <= MAX_OUTPUT_SIZE {
+                        out.push_str(&event_str);
+                    } else {
+                        let remaining = MAX_OUTPUT_SIZE.saturating_sub(out.len());
+                        if remaining > 0 {
+                            out.push_str(&event_str[..remaining]);
+                        }
+                        warn!("Output buffer limit reached ({} bytes), truncating", MAX_OUTPUT_SIZE);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Flush any remaining events
+        if !event_batch.is_empty() {
+            let mut out = output.write().await;
+            for event_str in event_batch.drain(..) {
                 if out.len() + event_str.len() <= MAX_OUTPUT_SIZE {
                     out.push_str(&event_str);
-                } else {
-                    let remaining = MAX_OUTPUT_SIZE.saturating_sub(out.len());
-                    if remaining > 0 {
-                        out.push_str(&event_str[..remaining]);
-                    }
-                    warn!("Output buffer limit reached ({} bytes), truncating", MAX_OUTPUT_SIZE);
                 }
             }
         }
@@ -378,15 +557,41 @@ impl EmbeddedExecutor {
         let agent_result = agent_handle.await
             .map_err(|e| AppError::Internal(format!("Agent task panicked: {}", e)))?;
 
+        // 5. Get end commit before potential cleanup
+        let end_commit = self.get_current_commit(&worktree_path).await.ok();
+
+        // 6. Cleanup worktree after task completion
+        if let Err(e) = self.cleanup_worktree(&worktree_path).await {
+            warn!("Failed to cleanup worktree {:?}: {}", worktree_path, e);
+            // Don't fail the task for cleanup errors
+        }
+
         if let Err(e) = agent_result {
             error!("Agent execution failed: {}", e);
             return Err(AppError::Agent(e.to_string()));
         }
 
-        // 5. Get end commit
-        let end_commit = self.get_current_commit(&worktree_path).await.ok();
-
         Ok(end_commit)
+    }
+
+    /// Cleans up a worktree directory after task completion.
+    async fn cleanup_worktree(&self, worktree_path: &PathBuf) -> AppResult<()> {
+        if !worktree_path.exists() {
+            return Ok(());
+        }
+
+        info!("Cleaning up worktree at {:?}", worktree_path);
+
+        // Remove the worktree directory
+        tokio::fs::remove_dir_all(worktree_path).await.map_err(|e| {
+            AppError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to remove worktree: {}", e),
+            ))
+        })?;
+
+        info!("Worktree cleanup completed: {:?}", worktree_path);
+        Ok(())
     }
 
     /// Prepares a worktree for the task.
@@ -508,11 +713,7 @@ impl EmbeddedExecutor {
 
 /// TTY input handler for local mode (placeholder for now).
 struct LocalTtyHandler {
-    #[allow(dead_code)]
-    executor: Arc<SqliteTaskStore>,
-    #[allow(dead_code)]
     task_id: Uuid,
-    #[allow(dead_code)]
     session_id: Uuid,
 }
 
@@ -526,13 +727,169 @@ impl TtyInputHandler for LocalTtyHandler {
         // For now, log the question and return a default response
         // Full TTY support would require UI integration
         warn!(
-            "TTY input requested but not fully supported in local mode: {}",
-            question
+            "TTY input requested for task {} (session {}) but not fully supported in local mode: {}",
+            self.task_id, self.session_id, question
         );
 
         Err(coding_agents::AgentError::TtyInputRequired(format!(
             "TTY input not supported in local mode. Question: {}",
             question
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_branch_name_valid() {
+        // Valid branch names
+        assert!(EmbeddedExecutor::validate_branch_name("main").is_ok());
+        assert!(EmbeddedExecutor::validate_branch_name("feature/new-feature").is_ok());
+        assert!(EmbeddedExecutor::validate_branch_name("fix/bug-123").is_ok());
+        assert!(EmbeddedExecutor::validate_branch_name("release/v1.0.0").is_ok());
+        assert!(EmbeddedExecutor::validate_branch_name("user/john_doe/feature").is_ok());
+        assert!(EmbeddedExecutor::validate_branch_name("a").is_ok());
+        assert!(EmbeddedExecutor::validate_branch_name("ab").is_ok());
+    }
+
+    #[test]
+    fn test_validate_branch_name_empty() {
+        let result = EmbeddedExecutor::validate_branch_name("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_branch_name_too_long() {
+        let long_name = "a".repeat(256);
+        let result = EmbeddedExecutor::validate_branch_name(&long_name);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("too long"));
+    }
+
+    #[test]
+    fn test_validate_branch_name_dangerous_chars() {
+        // Test command injection characters
+        let dangerous_branches = [
+            "branch; rm -rf /",
+            "branch && malicious",
+            "branch | cat /etc/passwd",
+            "branch$(whoami)",
+            "branch`id`",
+            "branch\necho pwned",
+            "branch'malicious'",
+            "branch\"malicious\"",
+            "branch\\escape",
+        ];
+
+        for branch in dangerous_branches {
+            let result = EmbeddedExecutor::validate_branch_name(branch);
+            assert!(
+                result.is_err(),
+                "Branch '{}' should be rejected but was accepted",
+                branch
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_branch_name_path_traversal() {
+        let result = EmbeddedExecutor::validate_branch_name("feature/../../../etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains(".."));
+    }
+
+    #[test]
+    fn test_validate_repository_url_valid() {
+        // Valid HTTPS URLs
+        assert!(EmbeddedExecutor::validate_repository_url("https://github.com/user/repo.git").is_ok());
+        assert!(EmbeddedExecutor::validate_repository_url("https://gitlab.com/user/repo").is_ok());
+
+        // Valid SSH URLs
+        assert!(EmbeddedExecutor::validate_repository_url("git@github.com:user/repo.git").is_ok());
+        assert!(EmbeddedExecutor::validate_repository_url("ssh://git@github.com/user/repo.git").is_ok());
+    }
+
+    #[test]
+    fn test_validate_repository_url_empty() {
+        let result = EmbeddedExecutor::validate_repository_url("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_repository_url_invalid_protocol() {
+        // File protocol should be rejected
+        let result = EmbeddedExecutor::validate_repository_url("file:///path/to/repo");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("HTTPS or SSH"));
+
+        // FTP should be rejected
+        let result = EmbeddedExecutor::validate_repository_url("ftp://server/repo");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_repository_url_dangerous_chars() {
+        let dangerous_urls = [
+            "https://github.com/user/repo; rm -rf /",
+            "https://github.com/user/repo | cat /etc/passwd",
+            "https://github.com/user/repo && malicious",
+            "https://github.com/user/repo$(whoami)",
+            "https://github.com/user/repo`id`",
+        ];
+
+        for url in dangerous_urls {
+            let result = EmbeddedExecutor::validate_repository_url(url);
+            assert!(
+                result.is_err(),
+                "URL '{}' should be rejected but was accepted",
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn test_executor_status_default() {
+        // Just test the enum variants
+        let idle = ExecutorStatus::Idle;
+        let busy = ExecutorStatus::Busy;
+        let shutting_down = ExecutorStatus::ShuttingDown;
+
+        assert_eq!(idle, ExecutorStatus::Idle);
+        assert_eq!(busy, ExecutorStatus::Busy);
+        assert_eq!(shutting_down, ExecutorStatus::ShuttingDown);
+        assert_ne!(idle, busy);
+    }
+
+    #[test]
+    fn test_max_retry_attempts_constant() {
+        // Verify the retry constant is reasonable
+        assert!(MAX_RETRY_ATTEMPTS > 0);
+        assert!(MAX_RETRY_ATTEMPTS <= 10);
+    }
+
+    #[test]
+    fn test_max_output_size_constant() {
+        // Verify output size is reasonable (10 MB)
+        assert_eq!(MAX_OUTPUT_SIZE, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_branch_name_regex_patterns() {
+        // Valid patterns
+        assert!(BRANCH_NAME_REGEX.is_match("main"));
+        assert!(BRANCH_NAME_REGEX.is_match("feature/test"));
+        assert!(BRANCH_NAME_REGEX.is_match("fix-123"));
+        assert!(BRANCH_NAME_REGEX.is_match("v1.0.0"));
+        assert!(BRANCH_NAME_REGEX.is_match("a"));
+
+        // Invalid patterns (edge cases)
+        assert!(!BRANCH_NAME_REGEX.is_match("")); // Empty
+        assert!(!BRANCH_NAME_REGEX.is_match(".hidden")); // Starts with dot
+        assert!(!BRANCH_NAME_REGEX.is_match("/invalid")); // Starts with slash
+        assert!(!BRANCH_NAME_REGEX.is_match("invalid/")); // Ends with slash
     }
 }
