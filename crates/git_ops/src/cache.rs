@@ -294,29 +294,40 @@ impl RepositoryCache {
         Ok(())
     }
 
-    /// Finds the default branch (main or master) from the remote.
+    /// Finds the default branch (main or master) from the repository.
+    ///
+    /// For bare repositories (used in cache), branches are in refs/heads/*
+    /// rather than refs/remotes/origin/*.
     fn find_default_branch(repo: &git2::Repository) -> GitResult<String> {
-        // Try to find origin/HEAD which points to the default branch
-        if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
-            if let Ok(resolved) = reference.resolve() {
+        // Try to find HEAD which points to the default branch
+        if let Ok(head) = repo.find_reference("HEAD") {
+            if let Ok(resolved) = head.resolve() {
                 if let Some(name) = resolved.name() {
-                    // name is like "refs/remotes/origin/main"
-                    let branch = name.trim_start_matches("refs/remotes/");
-                    return Ok(branch.to_string());
+                    // For bare repos, HEAD points to refs/heads/main or similar
+                    debug!("HEAD points to: {}", name);
+                    return Ok(name.to_string());
                 }
             }
         }
 
-        // Fallback: try common default branch names
-        for branch in &["origin/main", "origin/master"] {
-            if repo.revparse_single(branch).is_ok() {
+        // Fallback: try common default branch names (bare repo format)
+        for branch in &["refs/heads/main", "refs/heads/master"] {
+            if repo.find_reference(branch).is_ok() {
+                debug!("Found default branch: {}", branch);
                 return Ok(branch.to_string());
             }
         }
 
+        // Also try the short names with revparse
+        for branch in &["main", "master"] {
+            if repo.revparse_single(branch).is_ok() {
+                debug!("Found default branch via revparse: {}", branch);
+                return Ok(format!("refs/heads/{}", branch));
+            }
+        }
+
         Err(GitError::Other(
-            "Could not determine default branch. Neither origin/main nor origin/master found."
-                .to_string(),
+            "Could not determine default branch. Neither main nor master found.".to_string(),
         ))
     }
 
@@ -412,20 +423,22 @@ impl RepositoryCache {
         }
 
         // Determine the base branch:
-        // 1. If origin/{branch_name} exists, use it (continuing work on existing
-        //    branch)
+        // 1. If the branch already exists in the repo, use it (continuing work)
         // 2. Otherwise, use the default branch (creating a new feature branch)
-        let remote_branch = format!("origin/{}", branch_name);
-        let base_branch = if git_repo.revparse_single(&remote_branch).is_ok() {
-            // Remote branch exists, use it as base
-            debug!("Using existing remote branch {} as base", remote_branch);
-            remote_branch
+        //
+        // Note: In bare repos (used for cache), branches are in refs/heads/*
+        // not refs/remotes/origin/*
+        let branch_ref = format!("refs/heads/{}", branch_name);
+        let base_branch = if git_repo.find_reference(&branch_ref).is_ok() {
+            // Branch exists in the bare repo, use it as base
+            debug!("Using existing branch {} as base", branch_ref);
+            branch_ref
         } else {
-            // Remote branch doesn't exist, find the default branch
+            // Branch doesn't exist, find the default branch
             let default_branch = Self::find_default_branch(git_repo)?;
             debug!(
-                "Remote branch {} not found, using default branch {} as base",
-                remote_branch, default_branch
+                "Branch {} not found, using default branch {} as base",
+                branch_ref, default_branch
             );
             default_branch
         };
