@@ -1,6 +1,7 @@
 import { memo, type KeyboardEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { UnitTaskIcon, CompositeTaskIcon } from "@/components/ui/Icons";
 import type { UnitTask, CompositeTask, UnitTaskStatus, CompositeTaskStatus } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -100,9 +101,7 @@ export const TaskCard = memo(function TaskCard({ task, onClick }: TaskCardProps)
             {isUnit ? "Unit" : "Composite"}
           </span>
           <span aria-hidden="true">•</span>
-          <span>
-            {new Date(task.createdAt).toLocaleDateString()}
-          </span>
+          <FormattedDateTime date={task.createdAt} />
         </div>
         <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))] line-clamp-2">
           {task.prompt}

@@ -2,6 +2,7 @@
 import { memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
+import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { UnitTaskIcon, CompositeTaskIcon } from "@/components/ui/Icons";
 import { SwipeableCard } from "./SwipeableCard";
 import type { UnitTask, CompositeTask, UnitTaskStatus, CompositeTaskStatus } from "@/api/types";
@@ -110,7 +111,7 @@ export const MobileTaskCard = memo(function MobileTaskCard({
       {/* Footer */}
       <div className="mt-3 flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))]">
         <span>{isUnit ? "Unit Task" : "Composite Task"}</span>
-        <span>{new Date(task.createdAt).toLocaleDateString()}</span>
+        <FormattedDateTime date={task.createdAt} />
       </div>
     </div>
   );
