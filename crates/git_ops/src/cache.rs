@@ -294,6 +294,32 @@ impl RepositoryCache {
         Ok(())
     }
 
+    /// Finds the default branch (main or master) from the remote.
+    fn find_default_branch(repo: &git2::Repository) -> GitResult<String> {
+        // Try to find origin/HEAD which points to the default branch
+        if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
+            if let Ok(resolved) = reference.resolve() {
+                if let Some(name) = resolved.name() {
+                    // name is like "refs/remotes/origin/main"
+                    let branch = name.trim_start_matches("refs/remotes/");
+                    return Ok(branch.to_string());
+                }
+            }
+        }
+
+        // Fallback: try common default branch names
+        for branch in &["origin/main", "origin/master"] {
+            if repo.revparse_single(branch).is_ok() {
+                return Ok(branch.to_string());
+            }
+        }
+
+        Err(GitError::Other(
+            "Could not determine default branch. Neither origin/main nor origin/master found."
+                .to_string(),
+        ))
+    }
+
     /// Applies credentials to a URL if provided.
     ///
     /// For HTTPS URLs with UserPass credentials, embeds the token in the URL.
@@ -369,11 +395,8 @@ impl RepositoryCache {
             })?;
         }
 
-        // Always base on the remote branch to ensure we have latest changes.
-        // If a local branch exists, delete it so we can recreate from origin.
-        let remote_branch = format!("origin/{}", branch_name);
+        // Check if the branch already exists locally
         let mut branch_exists = false;
-
         if let Ok(mut branch) = git_repo.find_branch(branch_name, git2::BranchType::Local) {
             // Try to delete the existing local branch to ensure we get fresh state
             if let Err(e) = branch.delete() {
@@ -388,11 +411,30 @@ impl RepositoryCache {
             // If deletion succeeded, branch no longer exists
         }
 
-        // Create the worktree with the branch based on origin
+        // Determine the base branch:
+        // 1. If origin/{branch_name} exists, use it (continuing work on existing
+        //    branch)
+        // 2. Otherwise, use the default branch (creating a new feature branch)
+        let remote_branch = format!("origin/{}", branch_name);
+        let base_branch = if git_repo.revparse_single(&remote_branch).is_ok() {
+            // Remote branch exists, use it as base
+            debug!("Using existing remote branch {} as base", remote_branch);
+            remote_branch
+        } else {
+            // Remote branch doesn't exist, find the default branch
+            let default_branch = Self::find_default_branch(git_repo)?;
+            debug!(
+                "Remote branch {} not found, using default branch {} as base",
+                remote_branch, default_branch
+            );
+            default_branch
+        };
+
+        // Create the worktree with the branch based on the determined base
         let options = WorktreeOptions {
             branch: Some(branch_name.to_string()),
             create_branch: !branch_exists,
-            base: Some(remote_branch),
+            base: Some(base_branch),
         };
 
         repo.create_worktree(&worktree_name, &worktree_path, options)?;
