@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/uiStore";
 import { WorkspaceSelector } from "@/components/workspace";
+import { useMode } from "@/hooks/useMode";
 
 const navItems = [
   {
@@ -91,6 +92,7 @@ const navItems = [
 export function Sidebar() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
+  const { data: mode } = useMode();
 
   return (
     <aside
@@ -163,7 +165,7 @@ export function Sidebar() {
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium">User</p>
               <p className="truncate text-xs text-[hsl(var(--muted-foreground))]">
-                Local Mode
+                {mode === "remote" ? "Remote Mode" : "Local Mode"}
               </p>
             </div>
           )}
