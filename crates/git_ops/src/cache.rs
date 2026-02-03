@@ -3,13 +3,16 @@
 //! This module provides functionality for caching cloned repositories
 //! and creating worktrees from them for task execution.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use sha2::{Digest, Sha256};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
-    CloneOptions, FetchOpts, GitCredentials, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
+    FetchOpts, GitCredentials, GitError, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
 };
 
 /// Default cache directory name within the data directory.
@@ -132,6 +135,10 @@ impl RepositoryCache {
     /// Uses a lockfile to prevent TOCTOU race conditions when multiple
     /// concurrent tasks try to clone the same repository simultaneously.
     ///
+    /// For HTTPS URLs, uses the system `git` command because git2 is compiled
+    /// without TLS support (to avoid OpenSSL dependency for iOS
+    /// cross-compilation).
+    ///
     /// Returns the path to the cached bare repository.
     pub fn ensure_cached(
         &self,
@@ -161,37 +168,151 @@ impl RepositoryCache {
             )))
         })?;
 
+        // Determine if we need to use system git (for HTTPS URLs)
+        let use_system_git = Self::needs_system_git(remote_url);
+
         // Re-check existence after acquiring lock (another process may have cloned)
         if cache_path.exists() {
             // Repository is cached, fetch latest changes
             debug!("Fetching updates for cached repository: {}", redacted_url);
-            let repo = GitRepository::open(&cache_path)?;
-            repo.fetch(
-                "origin",
-                FetchOpts {
-                    credentials,
-                    prune: true,
-                },
-            )?;
+
+            if use_system_git {
+                Self::fetch_with_system_git(&cache_path, credentials.as_ref())?;
+            } else {
+                let repo = GitRepository::open(&cache_path)?;
+                repo.fetch(
+                    "origin",
+                    FetchOpts {
+                        credentials,
+                        prune: true,
+                    },
+                )?;
+            }
             info!("Updated cached repository: {}", redacted_url);
         } else {
             // Clone as bare repository
             info!("Cloning repository to cache: {}", redacted_url);
 
-            GitRepository::clone(
-                remote_url,
-                &cache_path,
-                CloneOptions {
-                    bare: true,
-                    credentials,
-                    ..Default::default()
-                },
-            )?;
+            if use_system_git {
+                Self::clone_with_system_git(remote_url, &cache_path, credentials.as_ref())?;
+            } else {
+                // For non-HTTPS URLs, try system git first as fallback
+                if let Err(e) =
+                    Self::clone_with_system_git(remote_url, &cache_path, credentials.as_ref())
+                {
+                    warn!(
+                        "System git clone failed ({}), this may indicate git is not installed",
+                        e
+                    );
+                    return Err(GitError::CloneFailed(format!(
+                        "Clone failed: {}. Please ensure git is installed and accessible.",
+                        e
+                    )));
+                }
+            }
             info!("Cached repository: {}", redacted_url);
         }
 
         // Lock is automatically released when `lock` goes out of scope
         Ok(cache_path)
+    }
+
+    /// Checks if the URL requires system git (HTTPS URLs need TLS which git2
+    /// doesn't have).
+    fn needs_system_git(url: &str) -> bool {
+        url.starts_with("https://") || url.starts_with("http://")
+    }
+
+    /// Clones a repository using the system git command.
+    fn clone_with_system_git(
+        url: &str,
+        path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        let mut cmd = Command::new("git");
+        cmd.arg("clone").arg("--bare");
+
+        // Apply credentials to URL if provided
+        let effective_url = Self::apply_credentials_to_url(url, credentials);
+
+        cmd.arg(&effective_url).arg(path);
+
+        debug!("Running: git clone --bare {} {:?}", url, path);
+
+        let output = cmd
+            .output()
+            .map_err(|e| GitError::CloneFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::CloneFailed(format!(
+                "git clone failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Fetches from origin using the system git command.
+    fn fetch_with_system_git(
+        repo_path: &Path,
+        credentials: Option<&GitCredentials>,
+    ) -> GitResult<()> {
+        let mut cmd = Command::new("git");
+        cmd.arg("-C")
+            .arg(repo_path)
+            .arg("fetch")
+            .arg("--prune")
+            .arg("origin");
+
+        // Note: For fetch, credentials in URL are already configured in the
+        // repo's remote config from the initial clone. If we need to update
+        // credentials, we'd need to modify the remote URL.
+
+        // If credentials are provided, we might need to set them via
+        // environment or credential helper. For now, we rely on the system's
+        // git credential configuration.
+        if credentials.is_some() {
+            debug!("Note: Fetch credentials are handled by system git credential helpers");
+        }
+
+        debug!("Running: git -C {:?} fetch --prune origin", repo_path);
+
+        let output = cmd
+            .output()
+            .map_err(|e| GitError::FetchFailed(format!("Failed to execute git command: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::FetchFailed(format!(
+                "git fetch failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Applies credentials to a URL if provided.
+    ///
+    /// For HTTPS URLs with UserPass credentials, embeds the token in the URL.
+    fn apply_credentials_to_url(url: &str, credentials: Option<&GitCredentials>) -> String {
+        match credentials {
+            Some(GitCredentials::UserPass { username, password }) => {
+                // For HTTPS URLs, embed credentials
+                if let Some(rest) = url.strip_prefix("https://") {
+                    // Check if credentials are already in the URL
+                    if !rest.contains('@')
+                        || rest.find('@').unwrap() > rest.find('/').unwrap_or(rest.len())
+                    {
+                        return format!("https://{}:{}@{}", username, password, rest);
+                    }
+                }
+                url.to_string()
+            }
+            _ => url.to_string(),
+        }
     }
 
     /// Creates a worktree from a cached repository for a specific task.
