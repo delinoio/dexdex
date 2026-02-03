@@ -235,11 +235,15 @@ pub async fn get_agent_task(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let agent_task = runtime
+    let mut agent_task = runtime
         .task_store_arc()
         .get_agent_task(id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Agent task not found: {}", agent_task_id)))?;
+
+    // Fetch agent sessions from the separate agent_sessions table
+    let sessions = runtime.task_store_arc().list_agent_sessions(id).await?;
+    agent_task.agent_sessions = sessions;
 
     Ok(agent_task)
 }

@@ -280,7 +280,7 @@ function AgentSessionLogs({ sessions, isLoading, taskStatus }: AgentSessionLogsP
               {session.completedAt && ` | Completed: ${new Date(session.completedAt).toLocaleString()}`}
             </span>
           </div>
-          <div className="max-h-96 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
+          <div className="max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-xs">
             {session.outputLog ? (
               <pre className="text-[hsl(var(--foreground))]">{session.outputLog}</pre>
             ) : (
