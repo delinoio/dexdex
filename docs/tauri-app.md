@@ -62,10 +62,24 @@ Desktop apps can run in single-process mode, embedding both Server and Worker:
 ```
 apps/tauri-app/src-tauri/src/single_process/
 ├── mod.rs              # SingleProcessRuntime orchestration
-├── config.rs           # Mode configuration (single_process vs remote)
-├── embedded_server.rs  # Local RPC handling without network
-└── embedded_worker.rs  # Local task execution
+├── runtime.rs          # SingleProcessRuntime implementation (task store, executor)
+├── executor.rs         # LocalExecutor for running AI agents
+└── tty_handler.rs      # LocalTtyHandler for agent input requests
 ```
+
+### Task Execution Flow
+
+When a unit task is created in local mode:
+
+1. **Task Creation**: `create_unit_task` command creates task and agent session in SQLite
+2. **Worktree Setup**: `LocalExecutor` creates git worktree from cached repository
+3. **Agent Execution**: Claude Code (or other agent) spawned with `--print --verbose --output-format stream-json`
+4. **Event Streaming**:
+   - Stdout/stderr parsed into `NormalizedEvent` types
+   - Events emitted via Tauri `agent-output` channel for real-time display
+   - Events accumulated and stored in `agent_session.output_log` on completion
+5. **TTY Handling**: If agent requests user input, `TtyInputRequestEvent` emitted to frontend
+6. **Completion**: Task status updated to `InReview` when agent finishes
 
 ### Behavior
 
