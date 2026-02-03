@@ -89,8 +89,9 @@ When a unit task is created in local mode:
    - Stdout/stderr parsed into `NormalizedEvent` types
    - Events emitted via Tauri `agent-output` channel for real-time display
    - Events accumulated and stored in `agent_session.output_log` on completion
-5. **TTY Handling**: If agent requests user input, `TtyInputRequestEvent` emitted to frontend
-6. **Completion**: Task status updated to `InReview` when agent finishes
+5. **Completion**: Task status updated to `InReview` when agent finishes
+
+> **Note**: Interactive TTY input (e.g., `AskUserQuestion` prompts) is not currently supported. Agents run in non-interactive mode with stdin closed.
 
 ### Behavior
 

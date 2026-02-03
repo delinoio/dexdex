@@ -137,7 +137,7 @@ For desktop usage, all components can run in a single process for a seamless loc
 
 | Crate | Purpose |
 |-------|---------|
-| `coding_agents` | AI agent abstraction, output normalization, task execution |
+| `coding_agents` | AI agent abstraction, output normalization, Docker sandboxing, task execution |
 | `task_store` | Task storage (SQLite, PostgreSQL, in-memory) |
 | `rpc_protocol` | Connect RPC protocol definitions (Protobuf) |
 | `git_ops` | Git operations, worktree management & repository caching |

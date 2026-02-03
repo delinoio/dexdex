@@ -177,6 +177,15 @@ export function useTaskLogs({
     eventIdCounter.current = 0;
   }, [taskId]);
 
+  // Clean up fingerprint set when task completes to free memory
+  useEffect(() => {
+    if (isComplete) {
+      // Task is complete - no more events will arrive, so we can clear the fingerprint set
+      // The events are already stored in state, so we don't need fingerprints anymore
+      seenFingerprints.current = new Set();
+    }
+  }, [isComplete]);
+
   return {
     events,
     isLoading,
