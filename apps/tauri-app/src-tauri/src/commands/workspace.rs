@@ -285,16 +285,17 @@ pub async fn get_default_workspace_id(
 ) -> AppResult<String> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+    #[cfg(desktop)]
+    if state.mode == AppMode::Local {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        return Ok(runtime.default_workspace_id().to_string());
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    Ok(runtime.default_workspace_id().to_string())
+    return Err(AppError::InvalidRequest(
+        "Remote mode not yet implemented".to_string(),
+    ));
 }
