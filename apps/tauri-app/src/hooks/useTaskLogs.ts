@@ -89,8 +89,9 @@ export function useTaskLogs({
       unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
         if (event.payload.taskId === taskId) {
           // Create a new event entry for real-time events
+          // Use a string prefix "rt-" to avoid ID collision with polled events
           const newEntry: NormalizedEventEntry = {
-            id: ++eventIdCounter.current,
+            id: `rt-${taskId}-${++eventIdCounter.current}`,
             timestamp: new Date().toISOString(),
             event: event.payload.event,
           };
@@ -134,13 +135,13 @@ export function getEventSummary(event: NormalizedEvent): string {
     case "error_output":
       return `Error: ${event.content}`;
     case "tool_use":
-      return `Using tool: ${event.toolName}`;
+      return `Using tool: ${event.tool_name}`;
     case "tool_result":
-      return `Tool result: ${event.toolName}${event.isError ? " (error)" : ""}`;
+      return `Tool result: ${event.tool_name}${event.is_error ? " (error)" : ""}`;
     case "file_change":
       const changeType =
-        typeof event.changeType === "string"
-          ? event.changeType
+        typeof event.change_type === "string"
+          ? event.change_type
           : "rename";
       return `File ${changeType}: ${event.path}`;
     case "command_execution":
@@ -150,7 +151,7 @@ export function getEventSummary(event: NormalizedEvent): string {
     case "user_response":
       return `Response: ${event.response}`;
     case "session_start":
-      return `Session started (${event.agentType})`;
+      return `Session started (${event.agent_type})`;
     case "session_end":
       return event.success ? "Session completed" : `Session failed: ${event.error}`;
     case "thinking":

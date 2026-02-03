@@ -506,16 +506,18 @@ pub async fn get_task_logs(
             AppError::NotFound(format!("Agent task not found: {}", task.agent_task_id))
         })?;
 
-    // Get the latest session
-    let sessions = runtime
+    // Get the sessions
+    let mut sessions = runtime
         .task_store_arc()
         .list_agent_sessions(task.agent_task_id)
         .await?;
 
-    let is_complete = task.status != UnitTaskStatus::InProgress;
+    // Sort sessions by created_at to ensure we get the latest one
+    sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // If no sessions, return empty
     if sessions.is_empty() {
+        let is_complete = task.status != UnitTaskStatus::InProgress;
         return Ok(TaskLogsResponse {
             events: Vec::new(),
             is_complete,
@@ -525,6 +527,14 @@ pub async fn get_task_logs(
 
     // Get the latest session's output log
     let session = sessions.last().unwrap();
+
+    // Determine completion based on the latest agent session when available,
+    // falling back to the unit task status otherwise.
+    let is_complete = if session.completed_at.is_some() {
+        true
+    } else {
+        task.status != UnitTaskStatus::InProgress
+    };
     let mut events = Vec::new();
     let mut last_event_id: Option<i64> = None;
 

@@ -208,7 +208,7 @@ function EventContent({ event }: { event: NormalizedEvent }) {
     case "tool_use":
       return (
         <div>
-          <span className="text-blue-500 font-medium">{event.toolName}</span>
+          <span className="text-blue-500 font-medium">{event.tool_name}</span>
           <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
             {JSON.stringify(event.input, null, 2)}
           </pre>
@@ -218,8 +218,8 @@ function EventContent({ event }: { event: NormalizedEvent }) {
     case "tool_result":
       return (
         <div>
-          <span className={cn("font-medium", event.isError ? "text-destructive" : "text-green-500")}>
-            {event.toolName} {event.isError ? "(error)" : "(success)"}
+          <span className={cn("font-medium", event.is_error ? "text-destructive" : "text-green-500")}>
+            {event.tool_name} {event.is_error ? "(error)" : "(success)"}
           </span>
           <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
             {typeof event.output === "string" ? event.output : JSON.stringify(event.output, null, 2)}
@@ -228,7 +228,7 @@ function EventContent({ event }: { event: NormalizedEvent }) {
       );
 
     case "file_change":
-      const changeType = typeof event.changeType === "string" ? event.changeType : "rename";
+      const changeType = typeof event.change_type === "string" ? event.change_type : "rename";
       return (
         <div>
           <span className="text-green-500 font-medium">{changeType}</span>
@@ -240,9 +240,9 @@ function EventContent({ event }: { event: NormalizedEvent }) {
       return (
         <div>
           <code className="text-yellow-500">{event.command}</code>
-          {event.exitCode !== undefined && (
-            <span className={cn("ml-2 text-xs", event.exitCode === 0 ? "text-green-500" : "text-destructive")}>
-              (exit: {event.exitCode})
+          {event.exit_code !== undefined && (
+            <span className={cn("ml-2 text-xs", event.exit_code === 0 ? "text-green-500" : "text-destructive")}>
+              (exit: {event.exit_code})
             </span>
           )}
           {event.output && (
@@ -276,7 +276,7 @@ function EventContent({ event }: { event: NormalizedEvent }) {
     case "session_start":
       return (
         <div className="text-muted-foreground">
-          Session started ({event.agentType}
+          Session started ({event.agent_type}
           {event.model && `, ${event.model}`})
         </div>
       );
@@ -318,23 +318,35 @@ function getEventStyles(event: NormalizedEvent): string {
 interface TtyInputDialogProps {
   question: string;
   options?: string[];
-  onRespond: (response: string) => void;
+  onRespond: (response: string) => void | Promise<void>;
   isResponding: boolean;
 }
 
 function TtyInputDialog({ question, options, onRespond, isResponding }: TtyInputDialogProps) {
   const [inputValue, setInputValue] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (inputValue.trim()) {
-      onRespond(inputValue.trim());
+    const trimmed = inputValue.trim();
+    if (!trimmed) {
+      return;
+    }
+    try {
+      await onRespond(trimmed);
       setInputValue("");
+    } catch (error) {
+      // Log the error so rejections from async handlers are not unhandled.
+      console.error("Failed to send TTY response:", error);
     }
   };
 
-  const handleOptionClick = (option: string) => {
-    onRespond(option);
+  const handleOptionClick = async (option: string) => {
+    try {
+      await onRespond(option);
+    } catch (error) {
+      // Log the error so rejections from async handlers are not unhandled.
+      console.error("Failed to send TTY option response:", error);
+    }
   };
 
   return (

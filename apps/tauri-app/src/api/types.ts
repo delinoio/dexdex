@@ -389,28 +389,28 @@ export interface ErrorOutputEvent {
 
 export interface ToolUseEvent {
   type: "tool_use";
-  toolName: string;
+  tool_name: string;
   input: unknown;
 }
 
 export interface ToolResultEvent {
   type: "tool_result";
-  toolName: string;
+  tool_name: string;
   output: unknown;
-  isError: boolean;
+  is_error: boolean;
 }
 
 export interface FileChangeEvent {
   type: "file_change";
   path: string;
-  changeType: FileChangeType | { rename: { from: string } };
+  change_type: FileChangeType | { rename: { from: string } };
   content?: string;
 }
 
 export interface CommandExecutionEvent {
   type: "command_execution";
   command: string;
-  exitCode?: number;
+  exit_code?: number;
   output?: string;
 }
 
@@ -427,7 +427,7 @@ export interface UserResponseEvent {
 
 export interface SessionStartEvent {
   type: "session_start";
-  agentType: string;
+  agent_type: string;
   model?: string;
 }
 
@@ -462,7 +462,7 @@ export type NormalizedEvent =
   | RawEvent;
 
 export interface NormalizedEventEntry {
-  id: number;
+  id: number | string;
   timestamp: string;
   event: NormalizedEvent;
 }
