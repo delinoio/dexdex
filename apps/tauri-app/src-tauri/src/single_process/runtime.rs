@@ -16,6 +16,7 @@ use task_store::{SqliteTaskStore, TaskStore, WorkspaceFilter};
 use tracing::info;
 use uuid::Uuid;
 
+use super::LocalExecutor;
 use crate::{config::data_dir, error::AppResult};
 
 /// Single-process runtime that embeds server and worker functionality.
@@ -24,6 +25,8 @@ pub struct SingleProcessRuntime {
     task_store: Arc<SqliteTaskStore>,
     /// Default workspace ID for single-user mode.
     default_workspace_id: Uuid,
+    /// Local executor for running agents.
+    executor: LocalExecutor,
 }
 
 impl SingleProcessRuntime {
@@ -60,6 +63,9 @@ impl SingleProcessRuntime {
             default_workspace_id
         };
 
+        // Create local executor
+        let executor = LocalExecutor::new(task_store.clone());
+
         info!(
             "Single-process runtime initialized with workspace {}",
             default_workspace_id
@@ -68,6 +74,7 @@ impl SingleProcessRuntime {
         Ok(Self {
             task_store,
             default_workspace_id,
+            executor,
         })
     }
 
@@ -84,5 +91,10 @@ impl SingleProcessRuntime {
     /// Gets the default workspace ID.
     pub fn default_workspace_id(&self) -> Uuid {
         self.default_workspace_id
+    }
+
+    /// Gets the local executor.
+    pub fn executor(&self) -> &LocalExecutor {
+        &self.executor
     }
 }

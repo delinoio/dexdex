@@ -28,6 +28,9 @@ pub struct CreateUnitTaskParams {
     pub branch_name: Option<String>,
     pub ai_agent_type: Option<String>,
     pub ai_agent_model: Option<String>,
+    /// Local working directory for the agent to run in.
+    /// If not provided, the agent execution will be skipped.
+    pub working_dir: Option<String>,
 }
 
 /// Parameters for creating a composite task.
@@ -120,6 +123,36 @@ pub async fn create_unit_task(
 
     let created = runtime.task_store_arc().create_unit_task(task).await?;
     info!("Created unit task: {}", created.id);
+
+    // Trigger agent execution if working_dir is provided
+    if let Some(working_dir) = params.working_dir {
+        let working_path = std::path::PathBuf::from(working_dir);
+        if working_path.exists() {
+            info!(
+                "Starting agent execution for task {} in {:?}",
+                created.id, working_path
+            );
+            if let Err(e) = runtime
+                .executor()
+                .execute_unit_task(&created, working_path, agent_type, params.ai_agent_model)
+                .await
+            {
+                // Log the error but don't fail the task creation
+                tracing::error!("Failed to start agent execution: {}", e);
+            }
+        } else {
+            tracing::warn!(
+                "Working directory {:?} does not exist, skipping agent execution",
+                working_path
+            );
+        }
+    } else {
+        info!(
+            "No working directory provided for task {}, skipping agent execution",
+            created.id
+        );
+    }
+
     Ok(created)
 }
 

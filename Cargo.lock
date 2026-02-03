@@ -5370,6 +5370,7 @@ dependencies = [
  "anyhow",
  "auth",
  "chrono",
+ "coding_agents",
  "config",
  "dirs 5.0.1",
  "entities",
