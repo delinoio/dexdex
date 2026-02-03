@@ -27,6 +27,7 @@ pub enum UnitTaskStatus {
 
 /// A single task unit visible to users.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UnitTask {
     /// Unique identifier.
     pub id: Uuid,
@@ -109,6 +110,7 @@ pub enum CompositeTaskStatus {
 
 /// A node in a CompositeTask graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompositeTaskNode {
     /// Unique identifier.
     pub id: Uuid,
@@ -142,6 +144,7 @@ impl CompositeTaskNode {
 
 /// Task graph-based Agent Orchestrator.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompositeTask {
     /// Unique identifier.
     pub id: Uuid,
