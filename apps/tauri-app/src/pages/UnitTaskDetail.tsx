@@ -4,19 +4,54 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { Textarea } from "@/components/ui/Textarea";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
+import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { UnitTaskStatus } from "@/api/types";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showLog, setShowLog] = useState(true);
 
   const { data, isLoading, error } = useTask(id ?? "");
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
   const requestChangesMutation = useRequestChanges();
+
+  const task = data?.unitTask;
+
+  // Keyboard shortcut handlers
+  const handleShortcutApprove = useCallback(() => {
+    if (task?.status === UnitTaskStatus.InReview && !approveMutation.isPending) {
+      approveMutation.mutateAsync(task.id);
+    }
+  }, [task, approveMutation]);
+
+  const handleShortcutDeny = useCallback(() => {
+    if (task?.status === UnitTaskStatus.InReview && !rejectMutation.isPending) {
+      rejectMutation.mutateAsync({ taskId: task.id, reason: feedback || undefined });
+    }
+  }, [task, rejectMutation, feedback]);
+
+  const handleToggleLog = useCallback(() => {
+    setShowLog((prev) => !prev);
+  }, []);
+
+  const handleStop = useCallback(() => {
+    // Stop execution - will be implemented when stop API is available
+    console.log("Stop execution requested for task:", task?.id);
+  }, [task?.id]);
+
+  // Register keyboard shortcuts
+  useTaskDetailShortcuts({
+    onApprove: handleShortcutApprove,
+    onDeny: handleShortcutDeny,
+    onToggleLog: handleToggleLog,
+    onStop: handleStop,
+    enabled: !!task,
+  });
 
   if (isLoading) {
     return (
@@ -26,7 +61,7 @@ export function UnitTaskDetail() {
     );
   }
 
-  if (error || !data?.unitTask) {
+  if (error || !task) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
@@ -42,8 +77,6 @@ export function UnitTaskDetail() {
       </div>
     );
   }
-
-  const task = data.unitTask;
 
   const handleApprove = async () => {
     await approveMutation.mutateAsync(task.id);
@@ -210,18 +243,32 @@ export function UnitTaskDetail() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Agent Session Log</CardTitle>
-              <CardDescription>
-                Output from the AI coding agent
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="max-h-96 overflow-y-auto rounded-md bg-[hsl(var(--muted))] p-4 font-mono text-xs">
-                <p className="text-[hsl(var(--muted-foreground))]">
-                  [Awaiting agent session logs...]
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Agent Session Log</CardTitle>
+                  <CardDescription>
+                    Output from the AI coding agent
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleLog}
+                  title="Toggle log visibility (L)"
+                >
+                  {showLog ? "Hide" : "Show"}
+                </Button>
               </div>
-            </CardContent>
+            </CardHeader>
+            {showLog && (
+              <CardContent>
+                <div className="max-h-96 overflow-y-auto rounded-md bg-[hsl(var(--muted))] p-4 font-mono text-xs">
+                  <p className="text-[hsl(var(--muted-foreground))]">
+                    [Awaiting agent session logs...]
+                  </p>
+                </div>
+              </CardContent>
+            )}
           </Card>
 
           {task.status !== UnitTaskStatus.InProgress &&

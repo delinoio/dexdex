@@ -4,6 +4,7 @@ export * from "./useMode";
 export * from "./useNotificationPermission";
 export * from "./useRepositories";
 export * from "./useRepositoryGroups";
+export * from "./useReviewShortcuts";
 export * from "./useSettings";
 export * from "./useTasks";
 export * from "./useWorkspaces";
