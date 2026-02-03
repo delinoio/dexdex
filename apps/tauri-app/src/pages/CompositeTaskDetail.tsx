@@ -7,9 +7,7 @@ import { TaskGraph } from "@/components/task/TaskGraph";
 import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
 import type { CompositeTaskNodeWithUnitTask } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
-import { useTask, useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useTabTitle } from "@/hooks/useTabNavigation";
-import { CompositeTaskStatus } from "@/api/types";
         
 interface ProgressSectionProps {
   nodes: CompositeTaskNodeWithUnitTask[];

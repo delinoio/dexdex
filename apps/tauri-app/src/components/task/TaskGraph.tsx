@@ -20,6 +20,18 @@ import type {
   UnitTaskStatus,
 } from "@/api/types";
 
+// Layout configuration constants
+const LAYOUT_CONFIG = {
+  /** Horizontal spacing between nodes at different levels */
+  HORIZONTAL_SPACING: 280,
+  /** Vertical spacing between nodes at the same level */
+  VERTICAL_SPACING: 120,
+  /** Minimum width for task nodes */
+  NODE_MIN_WIDTH: 160,
+  /** Maximum width for task nodes */
+  NODE_MAX_WIDTH: 220,
+} as const;
+
 // Node status colors based on issue requirements
 const STATUS_COLORS: Record<
   UnitTaskStatus | "pending",
@@ -113,7 +125,7 @@ function TaskNode({ data, selected }: TaskNodeProps) {
           className="text-xs font-medium capitalize"
           style={{ color: colors.text }}
         >
-          {data.status.replace("_", " ")}
+          {data.status.replaceAll("_", " ")}
         </div>
       </div>
       <Handle
@@ -196,12 +208,11 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
 
     // Create React Flow nodes with positions
     const flowNodes: Node<TaskNodeData>[] = [];
-    const horizontalSpacing = 280;
-    const verticalSpacing = 120;
+    const { HORIZONTAL_SPACING, VERTICAL_SPACING } = LAYOUT_CONFIG;
 
     nodesByLevel.forEach((nodesInLevel, level) => {
       const startY =
-        -(nodesInLevel.length - 1) * verticalSpacing * 0.5;
+        -(nodesInLevel.length - 1) * VERTICAL_SPACING * 0.5;
 
       nodesInLevel.forEach((node, index) => {
         const status = node.unitTask?.status || "pending";
@@ -209,8 +220,8 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
           id: node.node.id,
           type: "taskNode",
           position: {
-            x: level * horizontalSpacing,
-            y: startY + index * verticalSpacing,
+            x: level * HORIZONTAL_SPACING,
+            y: startY + index * VERTICAL_SPACING,
           },
           data: {
             label: node.unitTask?.title || `Task ${node.node.id.slice(0, 8)}`,
@@ -253,6 +264,8 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
           "flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]",
           className
         )}
+        role="status"
+        aria-label="Task graph is empty"
       >
         <p className="text-sm text-[hsl(var(--muted-foreground))]">
           No tasks in the graph yet. The plan is still being generated.
@@ -262,7 +275,11 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
   }
 
   return (
-    <div className={cn("h-96 w-full rounded-md border border-[hsl(var(--border))]", className)}>
+    <div
+      className={cn("h-96 w-full rounded-md border border-[hsl(var(--border))]", className)}
+      role="img"
+      aria-label={`Task dependency graph showing ${taskNodes.length} tasks and their relationships`}
+    >
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
