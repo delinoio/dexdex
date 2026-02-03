@@ -101,8 +101,8 @@ export function useTaskLogs({
   const eventIdCounter = useRef(0);
 
   // Track if task is complete based on status
-  const isComplete =
-    taskStatus !== "in_progress" && taskStatus !== ("in_progress" as string);
+  // Task is complete when status is NOT "in_progress"
+  const isComplete = taskStatus !== "in_progress";
 
   // Poll for logs
   const { data, isLoading, error } = useQuery({

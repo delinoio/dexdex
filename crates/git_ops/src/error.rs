@@ -37,6 +37,14 @@ pub enum GitError {
     #[error("Invalid URL: {0}")]
     InvalidUrl(String),
 
+    /// Unsafe URL - potential security risk.
+    #[error("Unsafe URL: {0}")]
+    UnsafeUrl(String),
+
+    /// Invalid branch name.
+    #[error("Invalid branch name: {0}")]
+    InvalidBranchName(String),
+
     /// Authentication error.
     #[error("Authentication error: {0}")]
     Authentication(String),

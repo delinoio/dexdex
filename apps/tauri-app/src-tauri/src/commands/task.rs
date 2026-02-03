@@ -1,6 +1,8 @@
 //! Task-related Tauri commands.
 
 use std::sync::Arc;
+#[cfg(desktop)]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(desktop)]
 use coding_agents::{NormalizedEvent, TimestampedEvent};
@@ -21,6 +23,116 @@ use crate::{
     error::{AppError, AppResult},
     state::AppState,
 };
+
+// =============================================================================
+// Security Constants
+// =============================================================================
+
+/// Maximum allowed prompt length in characters.
+/// This prevents memory exhaustion and potential DoS attacks from very large
+/// prompts.
+const MAX_PROMPT_LENGTH: usize = 100_000;
+
+/// Minimum prompt length to be useful.
+const MIN_PROMPT_LENGTH: usize = 1;
+
+/// Maximum allowed title length in characters.
+const MAX_TITLE_LENGTH: usize = 500;
+
+/// Minimum time between task creations in milliseconds.
+/// This provides basic rate limiting to prevent resource exhaustion.
+#[cfg(desktop)]
+const MIN_TASK_CREATION_INTERVAL_MS: u64 = 1000;
+
+/// Global rate limiter for task creation (tracks last creation timestamp in ms
+/// since epoch).
+#[cfg(desktop)]
+static LAST_TASK_CREATION_TIME: AtomicU64 = AtomicU64::new(0);
+
+// =============================================================================
+// Validation Functions
+// =============================================================================
+
+/// Validates a task prompt for security and sanity.
+///
+/// # Security
+/// This prevents:
+/// - Memory exhaustion from very large prompts
+/// - Empty prompts that waste resources
+/// - Prompts with null bytes or other dangerous characters
+fn validate_prompt(prompt: &str) -> AppResult<()> {
+    // Check minimum length
+    if prompt.trim().len() < MIN_PROMPT_LENGTH {
+        return Err(AppError::InvalidRequest(
+            "Prompt cannot be empty".to_string(),
+        ));
+    }
+
+    // Check maximum length
+    if prompt.len() > MAX_PROMPT_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Prompt exceeds maximum length of {} characters (got {} characters)",
+            MAX_PROMPT_LENGTH,
+            prompt.len()
+        )));
+    }
+
+    // Check for null bytes which could cause issues in string handling
+    if prompt.contains('\0') {
+        return Err(AppError::InvalidRequest(
+            "Prompt cannot contain null bytes".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validates a task title.
+fn validate_title(title: &str) -> AppResult<()> {
+    if title.len() > MAX_TITLE_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Title exceeds maximum length of {} characters",
+            MAX_TITLE_LENGTH
+        )));
+    }
+
+    if title.contains('\0') {
+        return Err(AppError::InvalidRequest(
+            "Title cannot contain null bytes".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Checks rate limiting for task creation.
+///
+/// # Security
+/// This prevents:
+/// - Resource exhaustion from rapid task creation
+/// - Disk space exhaustion from too many worktrees
+/// - CPU exhaustion from running too many agents
+#[cfg(desktop)]
+fn check_rate_limit() -> AppResult<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let last = LAST_TASK_CREATION_TIME.load(Ordering::SeqCst);
+
+    if now.saturating_sub(last) < MIN_TASK_CREATION_INTERVAL_MS {
+        return Err(AppError::RateLimitExceeded(format!(
+            "Please wait at least {} ms between task creations",
+            MIN_TASK_CREATION_INTERVAL_MS
+        )));
+    }
+
+    LAST_TASK_CREATION_TIME.store(now, Ordering::SeqCst);
+    Ok(())
+}
 
 /// Parameters for creating a unit task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,12 +241,29 @@ pub struct RespondTtyInputParams {
 }
 
 /// Creates a new unit task.
+///
+/// # Security
+/// This command includes:
+/// - Rate limiting to prevent resource exhaustion
+/// - Prompt validation to prevent oversized inputs
+/// - Title validation for sanity
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn create_unit_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     params: CreateUnitTaskParams,
 ) -> AppResult<UnitTask> {
+    // SECURITY: Check rate limit before processing
+    check_rate_limit()?;
+
+    // SECURITY: Validate prompt to prevent oversized inputs
+    validate_prompt(&params.prompt)?;
+
+    // SECURITY: Validate title if provided
+    if let Some(ref title) = params.title {
+        validate_title(title)?;
+    }
+
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
@@ -218,12 +347,29 @@ pub async fn create_unit_task(
 }
 
 /// Creates a new composite task.
+///
+/// # Security
+/// This command includes:
+/// - Rate limiting to prevent resource exhaustion
+/// - Prompt validation to prevent oversized inputs
+/// - Title validation for sanity
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn create_composite_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     params: CreateCompositeTaskParams,
 ) -> AppResult<CompositeTask> {
+    // SECURITY: Check rate limit before processing
+    check_rate_limit()?;
+
+    // SECURITY: Validate prompt to prevent oversized inputs
+    validate_prompt(&params.prompt)?;
+
+    // SECURITY: Validate title if provided
+    if let Some(ref title) = params.title {
+        validate_title(title)?;
+    }
+
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
@@ -1006,10 +1152,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -1060,10 +1208,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -1110,9 +1260,11 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
     }
 }

@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::{
     FetchOpts, GitCredentials, GitError, GitRepository, GitResult, WorktreeExt, WorktreeOptions,
+    validate_branch_name, validate_repository_url,
 };
 
 /// Default cache directory name within the data directory.
@@ -138,11 +139,18 @@ impl RepositoryCache {
     /// cross-compilation).
     ///
     /// Returns the path to the cached bare repository.
+    ///
+    /// # Security
+    /// The remote_url is validated to prevent command injection and other
+    /// security vulnerabilities before any git operations are performed.
     pub fn ensure_cached(
         &self,
         remote_url: &str,
         credentials: Option<GitCredentials>,
     ) -> GitResult<PathBuf> {
+        // SECURITY: Validate remote URL before any operations
+        validate_repository_url(remote_url)?;
+
         let cache_path = self.cached_repo_path(remote_url);
         let redacted_url = Self::redact_url_for_logging(remote_url);
 
@@ -557,7 +565,10 @@ impl RepositoryCache {
     /// the same task_id will race and may cause issues.
     ///
     /// # Security
-    /// The task_id is sanitized to prevent path traversal attacks.
+    /// - The remote_url is validated to prevent command injection attacks
+    /// - The branch_name is validated to prevent path traversal and injection
+    ///   attacks
+    /// - The task_id is sanitized to prevent path traversal attacks
     pub fn create_worktree_for_task(
         &self,
         remote_url: &str,
@@ -565,6 +576,12 @@ impl RepositoryCache {
         task_id: &str,
         credentials: Option<GitCredentials>,
     ) -> GitResult<PathBuf> {
+        // SECURITY: Validate remote URL before any operations
+        validate_repository_url(remote_url)?;
+
+        // SECURITY: Validate branch name before any operations
+        validate_branch_name(branch_name)?;
+
         // Ensure repository is cached and up-to-date
         let cache_path = self.ensure_cached(remote_url, credentials)?;
 
