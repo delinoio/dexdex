@@ -2,3 +2,4 @@
 export * from "./uiStore";
 export * from "./notificationStore";
 export * from "./taskCreationStore";
+export * from "./chatStore";

@@ -105,11 +105,16 @@ apps/tauri-app/src/
 │   └── rpc.ts              # Connect RPC client
 ├── components/
 │   ├── ui/                 # shadcn/ui components
+│   ├── chat/               # Chat interface components
+│   │   ├── ChatWindow.tsx  # Main chat window (modal overlay)
+│   │   ├── ChatInput.tsx   # Text input with send button
+│   │   └── MessageList.tsx # Message history display
 │   ├── dashboard/          # Dashboard components
 │   ├── task/               # Task-related components
 │   ├── review/             # Review interface (InlineComment, DiffViewer)
 │   └── settings/           # Settings components
 ├── hooks/
+│   ├── useKeyboardShortcuts.ts
 │   ├── useNotificationClickHandler.ts
 │   ├── useReviewComments.ts # Inline comment state management
 │   ├── useTasks.ts
@@ -121,7 +126,9 @@ apps/tauri-app/src/
 │   ├── Settings.tsx
 │   └── ...
 ├── stores/
-│   └── ...                 # Zustand stores
+│   ├── chatStore.ts        # Chat state (messages, isOpen)
+│   ├── uiStore.ts          # UI state (tabs, dialogs)
+│   └── ...                 # Other Zustand stores
 └── App.tsx
 ```
 
