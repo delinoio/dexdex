@@ -13,9 +13,12 @@ use std::sync::Arc;
 
 use entities::Workspace;
 use task_store::{SqliteTaskStore, TaskStore, WorkspaceFilter};
+use tauri::AppHandle;
+use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
 
+use super::{executor::LocalExecutor, tty_handler::TtyInputRequestManager};
 use crate::{config::data_dir, error::AppResult};
 
 /// Single-process runtime that embeds server and worker functionality.
@@ -24,6 +27,9 @@ pub struct SingleProcessRuntime {
     task_store: Arc<SqliteTaskStore>,
     /// Default workspace ID for single-user mode.
     default_workspace_id: Uuid,
+    /// Local executor for running AI agents (initialized lazily when app handle
+    /// is available).
+    executor: RwLock<Option<Arc<LocalExecutor>>>,
 }
 
 impl SingleProcessRuntime {
@@ -68,7 +74,31 @@ impl SingleProcessRuntime {
         Ok(Self {
             task_store,
             default_workspace_id,
+            executor: RwLock::new(None),
         })
+    }
+
+    /// Initializes the local executor with the app handle.
+    ///
+    /// This must be called after the Tauri app is set up to enable task
+    /// execution.
+    pub async fn init_executor(&self, app_handle: AppHandle) {
+        let executor = LocalExecutor::new(self.task_store.clone(), app_handle);
+        let mut executor_lock = self.executor.write().await;
+        *executor_lock = Some(Arc::new(executor));
+        info!("Local executor initialized");
+    }
+
+    /// Gets the local executor if initialized.
+    pub async fn executor(&self) -> Option<Arc<LocalExecutor>> {
+        let executor_lock = self.executor.read().await;
+        executor_lock.clone()
+    }
+
+    /// Gets the TTY request manager for responding to input requests.
+    pub async fn tty_request_manager(&self) -> Option<Arc<TtyInputRequestManager>> {
+        let executor_lock = self.executor.read().await;
+        executor_lock.as_ref().map(|e| e.tty_request_manager())
     }
 
     /// Gets a reference to the task store.

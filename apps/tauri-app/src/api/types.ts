@@ -366,3 +366,144 @@ export interface UpdateRepositoryGroupParams {
   name?: string;
   repositoryIds: string[];
 }
+
+// Normalized Event Types (from coding_agents crate)
+
+export enum FileChangeType {
+  Create = "create",
+  Modify = "modify",
+  Delete = "delete",
+  Rename = "rename",
+}
+
+export interface TextOutputEvent {
+  type: "text_output";
+  content: string;
+  stream: boolean;
+}
+
+export interface ErrorOutputEvent {
+  type: "error_output";
+  content: string;
+}
+
+export interface ToolUseEvent {
+  type: "tool_use";
+  toolName: string;
+  input: unknown;
+}
+
+export interface ToolResultEvent {
+  type: "tool_result";
+  toolName: string;
+  output: unknown;
+  isError: boolean;
+}
+
+export interface FileChangeEvent {
+  type: "file_change";
+  path: string;
+  changeType: FileChangeType | { rename: { from: string } };
+  content?: string;
+}
+
+export interface CommandExecutionEvent {
+  type: "command_execution";
+  command: string;
+  exitCode?: number;
+  output?: string;
+}
+
+export interface AskUserQuestionEvent {
+  type: "ask_user_question";
+  question: string;
+  options?: string[];
+}
+
+export interface UserResponseEvent {
+  type: "user_response";
+  response: string;
+}
+
+export interface SessionStartEvent {
+  type: "session_start";
+  agentType: string;
+  model?: string;
+}
+
+export interface SessionEndEvent {
+  type: "session_end";
+  success: boolean;
+  error?: string;
+}
+
+export interface ThinkingEvent {
+  type: "thinking";
+  content: string;
+}
+
+export interface RawEvent {
+  type: "raw";
+  content: string;
+}
+
+export type NormalizedEvent =
+  | TextOutputEvent
+  | ErrorOutputEvent
+  | ToolUseEvent
+  | ToolResultEvent
+  | FileChangeEvent
+  | CommandExecutionEvent
+  | AskUserQuestionEvent
+  | UserResponseEvent
+  | SessionStartEvent
+  | SessionEndEvent
+  | ThinkingEvent
+  | RawEvent;
+
+export interface NormalizedEventEntry {
+  id: number;
+  timestamp: string;
+  event: NormalizedEvent;
+}
+
+export interface TaskLogsResponse {
+  events: NormalizedEventEntry[];
+  isComplete: boolean;
+  lastEventId?: number;
+}
+
+export interface RespondTtyInputParams {
+  requestId: string;
+  response: string;
+}
+
+// Tauri Event Types (emitted from backend)
+
+export interface TtyInputRequestEvent {
+  requestId: string;
+  taskId: string;
+  sessionId: string;
+  question: string;
+  options?: string[];
+}
+
+export interface AgentOutputEvent {
+  taskId: string;
+  sessionId: string;
+  event: NormalizedEvent;
+}
+
+export interface TaskStatusChangedEvent {
+  taskId: string;
+  taskType: "unit_task" | "composite_task";
+  oldStatus: string;
+  newStatus: string;
+}
+
+export interface TaskCompletedEvent {
+  taskId: string;
+  taskType: "unit_task" | "composite_task";
+  success: boolean;
+  error?: string;
+}

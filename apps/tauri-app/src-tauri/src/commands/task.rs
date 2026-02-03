@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use coding_agents::NormalizedEvent;
 use entities::{
     AgentTask, AiAgentType, CompositeTask, CompositeTaskNode, CompositeTaskStatus, UnitTask,
     UnitTaskStatus,
@@ -87,6 +88,32 @@ pub struct CompositeTaskNodesResult {
     pub nodes: Vec<CompositeTaskNodeWithUnitTask>,
 }
 
+/// A normalized event entry with metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NormalizedEventEntry {
+    pub id: i64,
+    pub timestamp: String,
+    pub event: NormalizedEvent,
+}
+
+/// Response for get_task_logs command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskLogsResponse {
+    pub events: Vec<NormalizedEventEntry>,
+    pub is_complete: bool,
+    pub last_event_id: Option<i64>,
+}
+
+/// Parameters for responding to a TTY input request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RespondTtyInputParams {
+    pub request_id: String,
+    pub response: String,
+}
+
 /// Creates a new unit task.
 #[tauri::command]
 pub async fn create_unit_task(
@@ -136,6 +163,22 @@ pub async fn create_unit_task(
 
     let created = runtime.task_store_arc().create_unit_task(task).await?;
     info!("Created unit task: {}", created.id);
+
+    // Trigger task execution if executor is initialized
+    if let Some(executor) = runtime.executor().await {
+        let task_id = created.id;
+        tokio::spawn(async move {
+            if let Err(e) = executor.execute_unit_task(task_id).await {
+                tracing::error!("Failed to start task execution for {}: {}", task_id, e);
+            }
+        });
+    } else {
+        tracing::warn!(
+            "Executor not initialized, task {} will not be executed",
+            created.id
+        );
+    }
+
     Ok(created)
 }
 
@@ -422,6 +465,141 @@ pub async fn request_changes(
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
 }
 
+/// Gets logs for a task.
+///
+/// Returns normalized events from the agent session output.
+#[tauri::command]
+pub async fn get_task_logs(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+    after_event_id: Option<i64>,
+) -> AppResult<TaskLogsResponse> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the unit task
+    let task = runtime
+        .task_store_arc()
+        .get_unit_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+
+    // Get the agent task
+    let agent_task = runtime
+        .task_store_arc()
+        .get_agent_task(task.agent_task_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Agent task not found: {}", task.agent_task_id))
+        })?;
+
+    // Get the latest session
+    let sessions = runtime
+        .task_store_arc()
+        .list_agent_sessions(task.agent_task_id)
+        .await?;
+
+    let is_complete = task.status != UnitTaskStatus::InProgress;
+
+    // If no sessions, return empty
+    if sessions.is_empty() {
+        return Ok(TaskLogsResponse {
+            events: Vec::new(),
+            is_complete,
+            last_event_id: None,
+        });
+    }
+
+    // Get the latest session's output log
+    let session = sessions.last().unwrap();
+    let mut events = Vec::new();
+    let mut last_event_id: Option<i64> = None;
+
+    if let Some(output_log) = &session.output_log {
+        // Parse the output log (each line is a JSON event)
+        for (idx, line) in output_log.lines().enumerate() {
+            let event_id = idx as i64;
+
+            // Skip events before after_event_id
+            if let Some(after_id) = after_event_id {
+                if event_id <= after_id {
+                    continue;
+                }
+            }
+
+            if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+                events.push(NormalizedEventEntry {
+                    id: event_id,
+                    timestamp: chrono::Utc::now().to_rfc3339(), // TODO: Store actual timestamps
+                    event,
+                });
+                last_event_id = Some(event_id);
+            }
+        }
+    }
+
+    Ok(TaskLogsResponse {
+        events,
+        is_complete,
+        last_event_id,
+    })
+}
+
+/// Responds to a TTY input request from an agent.
+#[tauri::command]
+pub async fn respond_tty_input(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    params: RespondTtyInputParams,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let request_id = Uuid::parse_str(&params.request_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid request ID: {}", e)))?;
+
+    // Get the TTY request manager
+    let tty_manager = runtime
+        .tty_request_manager()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+    // Respond to the request
+    let delivered = tty_manager.respond(request_id, params.response).await;
+
+    if !delivered {
+        return Err(AppError::NotFound(format!(
+            "TTY request not found or already responded: {}",
+            params.request_id
+        )));
+    }
+
+    info!("Responded to TTY input request: {}", params.request_id);
+    Ok(())
+}
+
 /// Gets all nodes for a composite task with their associated unit tasks.
 ///
 /// # Note
@@ -575,10 +753,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -629,10 +809,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -679,9 +861,11 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
     }
 }

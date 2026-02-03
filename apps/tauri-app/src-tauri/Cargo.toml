@@ -32,6 +32,7 @@ auth = { path = "../../../crates/auth" }
 secrets = { path = "../../../crates/secrets" }
 git_ops = { path = "../../../crates/git_ops" }
 config = { path = "../../../crates/config" }
+coding_agents = { path = "../../../crates/coding_agents" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -46,6 +47,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 anyhow = "1"
+async-trait = "0.1"
 
 # Logging
 tracing = "0.1"

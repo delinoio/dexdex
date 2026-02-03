@@ -28,10 +28,21 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Create application state
     let rt = tokio::runtime::Runtime::new()?;
     let state = rt.block_on(async { AppState::new().await })?;
-    app.manage(Arc::new(tokio::sync::RwLock::new(state)));
+    let state = Arc::new(tokio::sync::RwLock::new(state));
+    app.manage(state.clone());
 
     // Store the runtime handle
     app.manage(rt);
+
+    // Initialize the executor with the app handle
+    let app_handle = app.handle().clone();
+    let state_clone = state.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = state_clone.read().await;
+        if let Some(runtime) = &state.local_runtime {
+            runtime.init_executor(app_handle).await;
+        }
+    });
 
     info!("DeliDev Tauri app initialized");
 
@@ -40,7 +51,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize tracing for logging.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tauri=warn"));
@@ -133,6 +144,8 @@ pub fn run() {
             commands::task::approve_task,
             commands::task::reject_task,
             commands::task::request_changes,
+            commands::task::get_task_logs,
+            commands::task::respond_tty_input,
             commands::task::get_composite_task_nodes,
             // Repository commands
             commands::repository::add_repository,
