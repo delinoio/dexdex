@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use entities::{
-    AgentTask, AiAgentType, CompositeTask, CompositeTaskStatus, UnitTask, UnitTaskStatus,
+    AgentTask, AiAgentType, CompositeTask, CompositeTaskNode, CompositeTaskStatus, UnitTask,
+    UnitTaskStatus,
 };
 use serde::{Deserialize, Serialize};
 use task_store::{TaskFilter, TaskStore};
@@ -69,6 +70,21 @@ pub struct ListTasksResult {
     pub unit_tasks: Vec<UnitTask>,
     pub composite_tasks: Vec<CompositeTask>,
     pub total_count: i32,
+}
+
+/// A composite task node with its associated unit task.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompositeTaskNodeWithUnitTask {
+    pub node: CompositeTaskNode,
+    pub unit_task: UnitTask,
+}
+
+/// Response for get_composite_task_nodes command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompositeTaskNodesResult {
+    pub nodes: Vec<CompositeTaskNodeWithUnitTask>,
 }
 
 /// Creates a new unit task.
@@ -404,6 +420,67 @@ pub async fn request_changes(
     }
 
     Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+}
+
+/// Gets all nodes for a composite task with their associated unit tasks.
+///
+/// # Note
+/// Remote mode is not yet implemented for this command. The frontend will
+/// gracefully handle this by showing an error message. Remote mode support
+/// is tracked in: https://github.com/delinoio/delidev/issues/96#issuecomment-remote-mode
+/// TODO(remote-mode): Implement remote API call when server supports this
+/// endpoint.
+#[tauri::command]
+pub async fn get_composite_task_nodes(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    composite_task_id: String,
+) -> AppResult<CompositeTaskNodesResult> {
+    let state = state.read().await;
+
+    // TODO(remote-mode): Implement remote API call when server supports this
+    // endpoint. For now, only local mode is supported for task graph
+    // visualization.
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented for task graph visualization".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&composite_task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid composite task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let nodes = runtime
+        .task_store_arc()
+        .list_composite_task_nodes(id)
+        .await?;
+
+    // TODO(performance): Consider adding a bulk fetch method
+    // `get_unit_tasks_by_ids(Vec<Uuid>)` to the TaskStore trait to avoid N+1
+    // queries for large graphs. For now, this is acceptable for typical graph
+    // sizes (< 50 nodes).
+    let mut result = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        if let Some(unit_task) = runtime
+            .task_store_arc()
+            .get_unit_task(node.unit_task_id)
+            .await?
+        {
+            result.push(CompositeTaskNodeWithUnitTask { node, unit_task });
+        } else {
+            tracing::warn!(
+                "CompositeTaskNode {} references missing UnitTask {}",
+                node.id,
+                node.unit_task_id
+            );
+        }
+    }
+
+    Ok(CompositeTaskNodesResult { nodes: result })
 }
 
 // Helper functions

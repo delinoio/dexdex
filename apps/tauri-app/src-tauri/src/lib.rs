@@ -133,6 +133,7 @@ pub fn run() {
             commands::task::approve_task,
             commands::task::reject_task,
             commands::task::request_changes,
+            commands::task::get_composite_task_nodes,
             // Repository commands
             commands::repository::add_repository,
             commands::repository::list_repositories,

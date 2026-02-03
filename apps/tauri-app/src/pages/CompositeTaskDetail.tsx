@@ -3,15 +3,45 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
-import { useTask, useApproveTask, useRejectTask } from "@/hooks/useTasks";
+import { TaskGraph } from "@/components/task/TaskGraph";
+import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
+import type { CompositeTaskNodeWithUnitTask } from "@/api/types";
+import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
-import { CompositeTaskStatus } from "@/api/types";
+        
+interface ProgressSectionProps {
+  nodes: CompositeTaskNodeWithUnitTask[];
+  totalCount: number;
+}
+
+function ProgressSection({ nodes, totalCount }: ProgressSectionProps) {
+  const completedCount = nodes.filter(
+    (n) => n.unitTask?.status === UnitTaskStatus.Done
+  ).length;
+
+  const percentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+
+  return (
+    <div className="rounded-md bg-[hsl(var(--muted))] p-4">
+      <p className="text-sm text-[hsl(var(--muted-foreground))]">
+        Progress: {completedCount}/{totalCount} tasks complete
+      </p>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[hsl(var(--border))]">
+        <div
+          className="h-full bg-[hsl(var(--primary))] transition-all duration-300"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export function CompositeTaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const { data, isLoading, error } = useTask(id ?? "");
+  const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useCompositeTaskNodes(id ?? "");
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
 
@@ -82,6 +112,43 @@ export function CompositeTaskDetail() {
         return "Rejected";
       default:
         return status;
+    }
+  };
+
+  const getUnitTaskBadgeVariant = (status?: UnitTaskStatus) => {
+    switch (status) {
+      case UnitTaskStatus.InProgress:
+      case UnitTaskStatus.InReview:
+        return "default";
+      case UnitTaskStatus.Approved:
+      case UnitTaskStatus.PrOpen:
+      case UnitTaskStatus.Done:
+        return "outline";
+      case UnitTaskStatus.Rejected:
+        return "destructive";
+      case UnitTaskStatus.Unspecified:
+      default:
+        return "secondary";
+    }
+  };
+
+  const formatUnitTaskStatus = (status?: UnitTaskStatus): string => {
+    switch (status) {
+      case UnitTaskStatus.InProgress:
+        return "In Progress";
+      case UnitTaskStatus.InReview:
+        return "In Review";
+      case UnitTaskStatus.Approved:
+        return "Approved";
+      case UnitTaskStatus.PrOpen:
+        return "PR Open";
+      case UnitTaskStatus.Done:
+        return "Done";
+      case UnitTaskStatus.Rejected:
+        return "Rejected";
+      case UnitTaskStatus.Unspecified:
+      default:
+        return "Pending";
     }
   };
 
@@ -168,11 +235,21 @@ export function CompositeTaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]">
-                <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                  Task graph visualization will be rendered here
-                </p>
-              </div>
+              {nodesLoading ? (
+                <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]">
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                    Loading task graph...
+                  </p>
+                </div>
+              ) : nodesError ? (
+                <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--destructive))] bg-[hsl(var(--destructive)/0.1)]">
+                  <p className="text-sm text-[hsl(var(--destructive))]">
+                    Failed to load task graph. Please try again.
+                  </p>
+                </div>
+              ) : (
+                <TaskGraph nodes={nodesData?.nodes || []} />
+              )}
             </CardContent>
           </Card>
 
@@ -184,24 +261,34 @@ export function CompositeTaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {task.nodeIds.length === 0 ? (
+              {nodesLoading ? (
+                <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                  Loading sub-tasks...
+                </p>
+              ) : !nodesData?.nodes || nodesData.nodes.length === 0 ? (
                 <p className="text-sm text-[hsl(var(--muted-foreground))]">
                   No sub-tasks yet. The plan is still being generated.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {task.nodeIds.map((nodeId, index) => (
+                  {nodesData.nodes.map((nodeWithTask, index) => (
                     <div
-                      key={nodeId}
+                      key={nodeWithTask.node.id}
                       className="flex items-center justify-between rounded-md border border-[hsl(var(--border))] p-3"
                     >
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-medium">
-                          {index + 1}. Task {nodeId.slice(0, 8)}
+                          {index + 1}. {nodeWithTask.unitTask?.title || `Task ${nodeWithTask.node.id.slice(0, 8)}`}
                         </span>
-                        <Badge variant="outline">Pending</Badge>
+                        <Badge variant={getUnitTaskBadgeVariant(nodeWithTask.unitTask?.status)}>
+                          {formatUnitTaskStatus(nodeWithTask.unitTask?.status)}
+                        </Badge>
                       </div>
-                      <Button variant="ghost" size="sm">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/unit-tasks/${nodeWithTask.unitTask?.id}`)}
+                      >
                         →
                       </Button>
                     </div>
@@ -211,17 +298,10 @@ export function CompositeTaskDetail() {
             </CardContent>
           </Card>
 
-          <div className="rounded-md bg-[hsl(var(--muted))] p-4">
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">
-              Progress: 0/{task.nodeIds.length} tasks complete
-            </p>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[hsl(var(--border))]">
-              <div
-                className="h-full bg-[hsl(var(--primary))]"
-                style={{ width: "0%" }}
-              />
-            </div>
-          </div>
+          <ProgressSection
+            nodes={nodesData?.nodes || []}
+            totalCount={task.nodeIds.length}
+          />
         </div>
       </div>
     </div>

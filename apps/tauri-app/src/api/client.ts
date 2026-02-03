@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AddRepositoryParams,
   CompositeTask,
+  CompositeTaskNodesResult,
   CreateCompositeTaskParams,
   CreateRepositoryGroupParams,
   CreateUnitTaskParams,
@@ -77,6 +78,14 @@ export async function requestChanges(
   feedback: string
 ): Promise<void> {
   return invoke<void>("request_changes", { taskId, feedback });
+}
+
+export async function getCompositeTaskNodes(
+  compositeTaskId: string
+): Promise<CompositeTaskNodesResult> {
+  return invoke<CompositeTaskNodesResult>("get_composite_task_nodes", {
+    compositeTaskId,
+  });
 }
 
 // Repository commands
