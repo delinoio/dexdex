@@ -3,7 +3,7 @@
 //! This module defines the events that can be emitted from the Rust backend
 //! to the frontend.
 
-use coding_agents::NormalizedEvent;
+use rpc_protocol::NormalizedEvent;
 use serde::{Deserialize, Serialize};
 
 /// Event emitted when a task status changes.
