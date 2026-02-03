@@ -34,6 +34,10 @@ git_ops = { path = "../../../crates/git_ops" }
 config = { path = "../../../crates/config" }
 coding_agents = { path = "../../../crates/coding_agents" }
 
+# Worker implementation (only used on desktop builds for local mode)
+# This enables code reuse between desktop and future remote worker implementations
+worker_impl = { path = "../../../crates/worker_impl" }
+
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 

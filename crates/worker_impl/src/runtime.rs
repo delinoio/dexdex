@@ -1,44 +1,57 @@
-//! Single-process runtime implementation.
+//! Local runtime implementation.
 //!
-//! This module provides an embedded server and worker that run in the same
-//! process as the Tauri app, using direct function calls instead of network
-//! communication.
+//! This module provides the runtime that manages the task store and executor
+//! lifecycle for single-process (local) mode.
 //!
 //! # Data Persistence
 //!
 //! Task data is persisted to a SQLite database at ~/.delidev/data/tasks.db.
 //! Data is preserved across application restarts.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
+use coding_agents::executor::EventEmitter;
 use entities::Workspace;
 use task_store::{SqliteTaskStore, TaskStore, WorkspaceFilter};
-use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
 
-use super::{executor::LocalExecutor, tty_handler::TtyInputRequestManager};
-use crate::{config::data_dir, error::AppResult};
+use crate::{
+    TtyInputRequestManager,
+    error::{WorkerError, WorkerResult},
+    executor::LocalExecutor,
+};
 
-/// Single-process runtime that embeds server and worker functionality.
-pub struct SingleProcessRuntime {
+/// Local runtime that manages the task store and executor lifecycle.
+///
+/// This runtime is designed to be used in single-process (local) mode where
+/// the application embeds both server and worker functionality.
+pub struct LocalRuntime<E: EventEmitter> {
     /// Task store (using SQLite storage for persistence).
     task_store: Arc<SqliteTaskStore>,
     /// Default workspace ID for single-user mode.
     default_workspace_id: Uuid,
-    /// Local executor for running AI agents (initialized lazily when app handle
+    /// Local executor for running AI agents (initialized lazily when emitter
     /// is available).
-    executor: RwLock<Option<Arc<LocalExecutor>>>,
+    executor: RwLock<Option<Arc<LocalExecutor<E>>>>,
+    /// Data directory path.
+    data_dir: PathBuf,
 }
 
-impl SingleProcessRuntime {
-    /// Creates a new single-process runtime.
-    pub async fn new() -> AppResult<Self> {
-        info!("Initializing single-process runtime");
+impl<E: EventEmitter + 'static> LocalRuntime<E> {
+    /// Creates a new local runtime.
+    ///
+    /// This initializes the SQLite task store and creates a default workspace
+    /// if one doesn't exist.
+    pub async fn new() -> WorkerResult<Self> {
+        info!("Initializing local runtime");
+
+        // Determine the data directory
+        let data_dir = get_data_dir()?;
 
         // Create SQLite task store for persistent storage
-        let db_path = data_dir()?.join("tasks.db");
+        let db_path = data_dir.join("tasks.db");
         let task_store = Arc::new(SqliteTaskStore::new(&db_path).await?);
 
         // Check if default workspace already exists, otherwise create it
@@ -67,7 +80,7 @@ impl SingleProcessRuntime {
         };
 
         info!(
-            "Single-process runtime initialized with workspace {}",
+            "Local runtime initialized with workspace {}",
             default_workspace_id
         );
 
@@ -75,22 +88,23 @@ impl SingleProcessRuntime {
             task_store,
             default_workspace_id,
             executor: RwLock::new(None),
+            data_dir,
         })
     }
 
-    /// Initializes the local executor with the app handle.
+    /// Initializes the local executor with the provided event emitter.
     ///
-    /// This must be called after the Tauri app is set up to enable task
-    /// execution.
-    pub async fn init_executor(&self, app_handle: AppHandle) {
-        let executor = LocalExecutor::new(self.task_store.clone(), app_handle);
+    /// This must be called after the runtime is created to enable task
+    /// execution. The emitter is platform-specific and handles event delivery.
+    pub async fn init_executor(&self, emitter: Arc<E>) {
+        let executor = LocalExecutor::new(self.task_store.clone(), self.data_dir.clone(), emitter);
         let mut executor_lock = self.executor.write().await;
         *executor_lock = Some(Arc::new(executor));
         info!("Local executor initialized");
     }
 
     /// Gets the local executor if initialized.
-    pub async fn executor(&self) -> Option<Arc<LocalExecutor>> {
+    pub async fn executor(&self) -> Option<Arc<LocalExecutor<E>>> {
         let executor_lock = self.executor.read().await;
         executor_lock.clone()
     }
@@ -115,4 +129,23 @@ impl SingleProcessRuntime {
     pub fn default_workspace_id(&self) -> Uuid {
         self.default_workspace_id
     }
+
+    /// Gets the data directory path.
+    pub fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
+    }
+}
+
+/// Gets the data directory for the worker.
+///
+/// Returns an error if the directory cannot be determined.
+fn get_data_dir() -> WorkerResult<PathBuf> {
+    let config_dir = config::config_dir()
+        .ok_or_else(|| WorkerError::Config("Cannot find home directory".to_string()))?;
+
+    let data_dir = config_dir.join("data");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| WorkerError::Config(format!("Failed to create data directory: {}", e)))?;
+
+    Ok(data_dir)
 }

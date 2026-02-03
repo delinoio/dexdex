@@ -36,6 +36,9 @@ pub enum AppError {
     #[error("Secrets keychain error: {0}")]
     SecretsKeychain(#[from] secrets::SecretsError),
 
+    #[error("Worker error: {0}")]
+    Worker(#[from] worker_impl::error::WorkerError),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }

@@ -1,145 +1,47 @@
 //! Local task executor for running AI agents in single-process mode.
 //!
 //! This module provides the `LocalExecutor` which wraps the core `TaskExecutor`
-//! from the `coding_agents` crate with Tauri-specific event emission.
+//! from the `coding_agents` crate with platform-specific event emission.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
-use coding_agents::{
-    executor::{
-        AgentOutputEvent as CoreAgentOutputEvent, EventEmitter,
-        TaskCompletedEvent as CoreTaskCompletedEvent, TaskExecutionConfig, TaskExecutor,
-        TaskStatusChangedEvent as CoreTaskStatusChangedEvent, TaskType as CoreTaskType,
-        TtyInputRequestEvent as CoreTtyInputRequestEvent, TtyInputRequestManager,
-    },
-    AgentResult,
-};
+use coding_agents::executor::{EventEmitter, TaskExecutionConfig, TaskExecutor};
 use entities::{AgentSession, AiAgentType, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
-use tauri::{AppHandle, Emitter};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::{
-    config::data_dir,
-    events::{
-        event_names, AgentOutputEvent, TaskCompletedEvent, TaskStatusChangedEvent, TaskType,
-        TtyInputRequestEvent,
-    },
-};
-
-/// Tauri-specific event emitter that emits events via the Tauri app handle.
-pub struct TauriEventEmitter {
-    app_handle: AppHandle,
-}
-
-impl TauriEventEmitter {
-    /// Creates a new Tauri event emitter.
-    pub fn new(app_handle: AppHandle) -> Self {
-        Self { app_handle }
-    }
-}
-
-impl EventEmitter for TauriEventEmitter {
-    fn emit_task_status_changed(&self, event: CoreTaskStatusChangedEvent) -> AgentResult<()> {
-        let tauri_event = TaskStatusChangedEvent {
-            task_id: event.task_id,
-            task_type: match event.task_type {
-                CoreTaskType::UnitTask => TaskType::UnitTask,
-                CoreTaskType::CompositeTask => TaskType::CompositeTask,
-            },
-            old_status: event.old_status,
-            new_status: event.new_status,
-        };
-
-        self.app_handle
-            .emit(event_names::TASK_STATUS_CHANGED, &tauri_event)
-            .map_err(|e| coding_agents::AgentError::Other(format!("Failed to emit event: {}", e)))
-    }
-
-    fn emit_agent_output(&self, event: CoreAgentOutputEvent) -> AgentResult<()> {
-        let tauri_event = AgentOutputEvent {
-            task_id: event.task_id,
-            session_id: event.session_id,
-            event: event.event,
-        };
-
-        self.app_handle
-            .emit(event_names::AGENT_OUTPUT, &tauri_event)
-            .map_err(|e| coding_agents::AgentError::Other(format!("Failed to emit event: {}", e)))
-    }
-
-    fn emit_tty_input_request(&self, event: CoreTtyInputRequestEvent) -> AgentResult<()> {
-        let tauri_event = TtyInputRequestEvent {
-            request_id: event.request_id,
-            task_id: event.task_id,
-            session_id: event.session_id,
-            question: event.question,
-            options: event.options,
-        };
-
-        self.app_handle
-            .emit(event_names::TTY_INPUT_REQUEST, &tauri_event)
-            .map_err(|e| coding_agents::AgentError::Other(format!("Failed to emit event: {}", e)))
-    }
-
-    fn emit_task_completed(&self, event: CoreTaskCompletedEvent) -> AgentResult<()> {
-        let tauri_event = TaskCompletedEvent {
-            task_id: event.task_id,
-            task_type: match event.task_type {
-                CoreTaskType::UnitTask => TaskType::UnitTask,
-                CoreTaskType::CompositeTask => TaskType::CompositeTask,
-            },
-            success: event.success,
-            error: event.error,
-        };
-
-        self.app_handle
-            .emit(event_names::TASK_COMPLETED, &tauri_event)
-            .map_err(|e| coding_agents::AgentError::Other(format!("Failed to emit event: {}", e)))
-    }
-}
+use crate::{TtyInputRequestManager, error::WorkerError};
 
 /// Local task executor that runs AI agents in the same process.
 ///
 /// This is a wrapper around the core `TaskExecutor` that integrates with
-/// the Tauri task store and handles session management.
-pub struct LocalExecutor {
+/// the task store and handles session management. It's generic over the
+/// `EventEmitter` type to support different platforms.
+pub struct LocalExecutor<E: EventEmitter> {
     /// Task store for reading/updating tasks.
     task_store: Arc<SqliteTaskStore>,
-    /// Tauri app handle for emitting events.
-    app_handle: AppHandle,
     /// Core task executor.
-    executor: TaskExecutor<TauriEventEmitter>,
+    executor: TaskExecutor<E>,
+    /// Event emitter for platform-specific event delivery.
+    emitter: Arc<E>,
+    /// Data directory path (kept for potential future use).
+    #[allow(dead_code)]
+    data_dir: PathBuf,
 }
 
-impl LocalExecutor {
+impl<E: EventEmitter + 'static> LocalExecutor<E> {
     /// Creates a new local executor.
-    ///
-    /// # Panics
-    /// This function will not panic. If the data directory cannot be
-    /// determined, it falls back to a reasonable default.
-    pub fn new(task_store: Arc<SqliteTaskStore>, app_handle: AppHandle) -> Self {
-        // Initialize the repository cache using the data directory
-        // Use data_dir() first, then fall back to home directory, then to /tmp
-        let data_dir = data_dir().unwrap_or_else(|_| {
-            dirs::home_dir()
-                .map(|home| home.join(".delidev"))
-                .unwrap_or_else(|| {
-                    warn!("Could not find home directory, falling back to /tmp/.delidev");
-                    std::path::PathBuf::from("/tmp/.delidev")
-                })
-        });
-
-        let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
-        let executor = TaskExecutor::new(data_dir, emitter);
+    pub fn new(task_store: Arc<SqliteTaskStore>, data_dir: PathBuf, emitter: Arc<E>) -> Self {
+        let executor = TaskExecutor::new(data_dir.clone(), emitter.clone());
 
         Self {
             task_store,
-            app_handle,
             executor,
+            emitter,
+            data_dir,
         }
     }
 
@@ -232,10 +134,9 @@ impl LocalExecutor {
 
         // Clone values needed for the spawned task
         let task_store = self.task_store.clone();
-        let app_handle = self.app_handle.clone();
+        let emitter = self.emitter.clone();
         // Reuse the existing repo_cache to avoid redundant clones
         let repo_cache = self.executor.repo_cache().clone();
-        let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
         let executor = TaskExecutor::with_repo_cache(repo_cache, emitter);
 
         // Spawn the execution task
@@ -259,7 +160,6 @@ impl LocalExecutor {
                     info!("Task {} completed successfully", task_id);
                     if let Err(e) = Self::update_task_status(
                         &task_store,
-                        &app_handle,
                         task_id,
                         session_id,
                         UnitTaskStatus::InReview,
@@ -274,7 +174,6 @@ impl LocalExecutor {
                     // Update task status to Failed
                     if let Err(e) = Self::update_task_status(
                         &task_store,
-                        &app_handle,
                         task_id,
                         session_id,
                         UnitTaskStatus::Failed,
@@ -293,28 +192,22 @@ impl LocalExecutor {
         Ok(())
     }
 
-    /// Updates a task's status and emits an event.
+    /// Updates a task's status.
     async fn update_task_status(
         task_store: &Arc<SqliteTaskStore>,
-        app_handle: &AppHandle,
         task_id: Uuid,
         session_id: Uuid,
         new_status: UnitTaskStatus,
-    ) -> Result<(), String> {
+    ) -> Result<(), WorkerError> {
         let mut task = task_store
             .get_unit_task(task_id)
-            .await
-            .map_err(|e| format!("Failed to get task: {}", e))?
-            .ok_or_else(|| format!("Task not found: {}", task_id))?;
+            .await?
+            .ok_or_else(|| WorkerError::TaskNotFound(task_id.to_string()))?;
 
-        let old_status = task.status;
         task.status = new_status;
         task.updated_at = Utc::now();
 
-        task_store
-            .update_unit_task(task)
-            .await
-            .map_err(|e| format!("Failed to update task: {}", e))?;
+        task_store.update_unit_task(task).await?;
 
         // Update session completed_at
         if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
@@ -322,18 +215,6 @@ impl LocalExecutor {
             if let Err(e) = task_store.update_agent_session(session).await {
                 warn!("Failed to update agent session: {}", e);
             }
-        }
-
-        // Emit status changed event
-        let event = TaskStatusChangedEvent {
-            task_id: task_id.to_string(),
-            task_type: TaskType::UnitTask,
-            old_status: format!("{:?}", old_status).to_lowercase(),
-            new_status: format!("{:?}", new_status).to_lowercase(),
-        };
-
-        if let Err(e) = app_handle.emit(event_names::TASK_STATUS_CHANGED, &event) {
-            warn!("Failed to emit task status changed event: {}", e);
         }
 
         Ok(())

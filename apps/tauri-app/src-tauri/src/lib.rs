@@ -40,7 +40,8 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         let state = state_clone.read().await;
         if let Some(runtime) = &state.local_runtime {
-            runtime.init_executor(app_handle).await;
+            let emitter = single_process::TauriEventEmitter::new_arc(app_handle);
+            runtime.init_executor(emitter).await;
         }
     });
 
@@ -51,7 +52,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize tracing for logging.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tauri=warn"));
