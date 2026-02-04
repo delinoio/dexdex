@@ -244,12 +244,10 @@ mod tests {
     fn test_invalid_file_url() {
         let result = validate_repository_url("file:///etc/passwd");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("URL scheme not allowed")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("URL scheme not allowed"));
     }
 
     #[test]
@@ -280,12 +278,10 @@ mod tests {
         let long_url = format!("https://github.com/{}", "a".repeat(3000));
         let result = validate_repository_url(&long_url);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("exceeds maximum length")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum length"));
     }
 
     #[test]
@@ -362,11 +358,9 @@ mod tests {
         let long_name = "a".repeat(300);
         let result = validate_branch_name(&long_name);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("exceeds maximum length")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum length"));
     }
 }

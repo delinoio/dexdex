@@ -1,8 +1,8 @@
 //! Task-related Tauri commands.
 
-use std::sync::Arc;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 #[cfg(desktop)]
 use coding_agents::{NormalizedEvent, TimestampedEvent};
@@ -1182,12 +1182,10 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown agent type")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown agent type"));
     }
 
     // =========================================================================
@@ -1238,12 +1236,10 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown unit task status")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown unit task status"));
     }
 
     // =========================================================================
@@ -1290,12 +1286,10 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown composite task status")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown composite task status"));
     }
 
     // =========================================================================
@@ -1404,12 +1398,10 @@ mod tests {
         // Immediate second call should be blocked
         let result = check_rate_limit();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Please wait at least")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Please wait at least"));
     }
 
     #[cfg(desktop)]
