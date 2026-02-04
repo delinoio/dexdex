@@ -211,7 +211,7 @@ export function UnitTaskDetail() {
                   variant="destructive"
                   onClick={handleStop}
                   disabled={cancelMutation.isPending}
-                  title="Stop execution (Esc)"
+                  title="Stop execution (S)"
                 >
                   {cancelMutation.isPending ? "Stopping..." : "Stop Agent"}
                 </Button>

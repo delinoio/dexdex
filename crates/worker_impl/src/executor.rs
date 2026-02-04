@@ -185,6 +185,17 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
                 ExecutionResult::Cancelled => {
                     info!("Task {} was cancelled", task_id);
+                    // Update task status to Cancelled
+                    if let Err(e) = Self::update_task_status(
+                        &task_store,
+                        task_id,
+                        session_id,
+                        UnitTaskStatus::Cancelled,
+                    )
+                    .await
+                    {
+                        error!("Failed to update task status to Cancelled: {}", e);
+                    }
                 }
             }
         });

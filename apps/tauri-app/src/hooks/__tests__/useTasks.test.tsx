@@ -10,6 +10,7 @@ import {
   useApproveTask,
   useRejectTask,
   useRequestChanges,
+  useCancelTask,
   taskKeys,
 } from "../useTasks";
 import * as client from "@/api/client";
@@ -25,6 +26,7 @@ vi.mock("@/api/client", () => ({
   approveTask: vi.fn(),
   rejectTask: vi.fn(),
   requestChanges: vi.fn(),
+  cancelTask: vi.fn(),
 }));
 
 const mockUnitTask: UnitTask = {
@@ -230,6 +232,27 @@ describe("useTasks hooks", () => {
       await result.current.mutateAsync({ taskId: "task-1", feedback: "Please fix this" });
 
       expect(client.requestChanges).toHaveBeenCalledWith("task-1", "Please fix this");
+    });
+  });
+
+  describe("useCancelTask", () => {
+    it("cancels task successfully", async () => {
+      vi.mocked(client.cancelTask).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useCancelTask(), { wrapper: createWrapper() });
+
+      await result.current.mutateAsync("task-1");
+
+      expect(client.cancelTask).toHaveBeenCalledWith("task-1");
+    });
+
+    it("handles cancel task error", async () => {
+      const error = new Error("Failed to cancel task");
+      vi.mocked(client.cancelTask).mockRejectedValue(error);
+
+      const { result } = renderHook(() => useCancelTask(), { wrapper: createWrapper() });
+
+      await expect(result.current.mutateAsync("task-1")).rejects.toThrow("Failed to cancel task");
     });
   });
 });
