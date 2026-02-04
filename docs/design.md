@@ -143,7 +143,7 @@ For desktop usage, all components can run in a single process for a seamless loc
 | `git_ops` | Git operations, worktree management & repository caching |
 | `auth` | JWT authentication & RBAC |
 | `secrets` | Cross-platform keychain access |
-| `worker_impl` | Local worker implementation for single-process mode task execution |
+| `worker_impl` | Local worker implementation with incremental log persistence for single-process mode task execution |
 
 ### Frontend (React + TypeScript)
 

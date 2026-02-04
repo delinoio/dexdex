@@ -6,15 +6,141 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use chrono::Utc;
+use coding_agents::{AgentResult, TimestampedEvent};
 pub use coding_agents::executor::ExecutionResult;
-use coding_agents::executor::{EventEmitter, TaskExecutionConfig, TaskExecutor};
+use coding_agents::executor::{
+    AgentOutputEvent, EventEmitter, TaskCompletedEvent, TaskExecutionConfig, TaskExecutor,
+    TaskStatusChangedEvent, TtyInputRequestEvent,
+};
 use entities::{AgentSession, AiAgentType, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::{TtyInputRequestManager, error::WorkerError};
+
+/// A wrapper emitter that both emits events to an inner emitter AND persists
+/// them to the database incrementally.
+///
+/// This ensures that events are available via polling even if the frontend
+/// misses the real-time events due to race conditions (e.g., page load).
+struct PersistingEventEmitter<E: EventEmitter> {
+    /// The inner emitter for real-time event delivery.
+    inner: Arc<E>,
+    /// The task store for persisting logs.
+    task_store: Arc<SqliteTaskStore>,
+    /// The session ID to persist logs for.
+    session_id: Uuid,
+    /// Accumulated log lines (protected by mutex for thread-safe access).
+    logs: Arc<tokio::sync::Mutex<Vec<String>>>,
+}
+
+impl<E: EventEmitter> PersistingEventEmitter<E> {
+    /// Creates a new persisting event emitter.
+    fn new(inner: Arc<E>, task_store: Arc<SqliteTaskStore>, session_id: Uuid) -> Self {
+        Self {
+            inner,
+            task_store,
+            session_id,
+            logs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Persists the accumulated logs to the database.
+    async fn persist_logs(&self) {
+        let logs = self.logs.lock().await;
+        if logs.is_empty() {
+            return;
+        }
+
+        let output_log = logs.join("\n");
+
+        if let Ok(Some(mut session)) = self.task_store.get_agent_session(self.session_id).await {
+            session.output_log = Some(output_log.clone());
+            if let Err(e) = self.task_store.update_agent_session(session).await {
+                warn!(
+                    "Failed to persist final logs for session {}: {}",
+                    self.session_id, e
+                );
+            } else {
+                debug!(
+                    "Persisted {} bytes of final logs for session {}",
+                    output_log.len(),
+                    self.session_id
+                );
+            }
+        }
+    }
+}
+
+impl<E: EventEmitter> EventEmitter for PersistingEventEmitter<E> {
+    fn emit_task_status_changed(&self, event: TaskStatusChangedEvent) -> AgentResult<()> {
+        self.inner.emit_task_status_changed(event)
+    }
+
+    fn emit_agent_output(&self, event: AgentOutputEvent) -> AgentResult<()> {
+        // Persist the event to the log buffer
+        let timestamped = TimestampedEvent {
+            timestamp: Utc::now(),
+            event: event.event.clone(),
+        };
+        if let Ok(json) = serde_json::to_string(&timestamped) {
+            // Use blocking_lock since this is a sync function but we need to access
+            // the async mutex. This is safe because we're running in an async context.
+            let task_store = self.task_store.clone();
+            let session_id = self.session_id;
+
+            // Use try_lock to avoid blocking if possible
+            if let Ok(mut logs) = self.logs.try_lock() {
+                logs.push(json);
+                let logs_count = logs.len();
+
+                // Spawn incremental persistence every 10 events
+                if logs_count % 10 == 0 {
+                    let output_log = logs.join("\n");
+                    tokio::spawn(async move {
+                        if let Ok(Some(mut session)) =
+                            task_store.get_agent_session(session_id).await
+                        {
+                            session.output_log = Some(output_log);
+                            if let Err(e) = task_store.update_agent_session(session).await {
+                                warn!(
+                                    "Failed to persist incremental logs for session {}: {}",
+                                    session_id, e
+                                );
+                            } else {
+                                debug!(
+                                    "Incrementally persisted logs for session {} ({} events)",
+                                    session_id, logs_count
+                                );
+                            }
+                        }
+                    });
+                }
+            } else {
+                // Lock is contended - spawn a task to add the log entry
+                // This ensures we don't lose events even under contention
+                let logs = self.logs.clone();
+                tokio::spawn(async move {
+                    let mut logs = logs.lock().await;
+                    logs.push(json);
+                });
+            }
+        }
+
+        // Always emit to the inner emitter for real-time delivery
+        self.inner.emit_agent_output(event)
+    }
+
+    fn emit_tty_input_request(&self, event: TtyInputRequestEvent) -> AgentResult<()> {
+        self.inner.emit_tty_input_request(event)
+    }
+
+    fn emit_task_completed(&self, event: TaskCompletedEvent) -> AgentResult<()> {
+        self.inner.emit_task_completed(event)
+    }
+}
 
 /// Local task executor that runs AI agents in the same process.
 ///
@@ -142,14 +268,28 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let emitter = self.emitter.clone();
         // Reuse the existing repo_cache to avoid redundant clones
         let repo_cache = self.executor.repo_cache().clone();
-        let executor = TaskExecutor::with_repo_cache(repo_cache, emitter);
+
+        // Create a persisting emitter that both emits events AND persists them
+        // incrementally. This ensures events are available via polling even if
+        // the frontend misses real-time events.
+        let persisting_emitter = Arc::new(PersistingEventEmitter::new(
+            emitter,
+            task_store.clone(),
+            session_id,
+        ));
+        let executor = TaskExecutor::with_repo_cache(repo_cache, persisting_emitter.clone());
         let execution_handles = self.execution_handles.clone();
 
         // Spawn the execution task and store the handle for cancellation support
         let handle = tokio::spawn(async move {
             let result = executor.execute_and_wait(config).await;
 
-            // Persist logs to the database before updating task status
+            // Final persist of all logs (in case some were missed during incremental
+            // persistence)
+            persisting_emitter.persist_logs().await;
+
+            // Also persist the collected logs from the result (these include all
+            // events for backwards compatibility)
             let logs = result.logs();
             if !logs.is_empty() {
                 let output_log = logs.join("\n");
