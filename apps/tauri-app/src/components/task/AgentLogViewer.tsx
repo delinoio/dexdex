@@ -21,6 +21,7 @@ import {
   MessageSquareIcon,
   BrainIcon,
 } from "@/components/ui/Icons";
+import { ToolUseContent, ToolResultContent } from "./ToolEventComponents";
 
 interface AgentLogViewerProps {
   taskId: string;
@@ -206,14 +207,7 @@ function EventContent({ event }: { event: NormalizedEvent }) {
       );
 
     case "tool_use":
-      return (
-        <div>
-          <span className="text-blue-500 font-medium">{event.tool_name}</span>
-          <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
-            {JSON.stringify(event.input, null, 2)}
-          </pre>
-        </div>
-      );
+      return <ToolUseContent toolName={event.tool_name} input={event.input} />;
 
     case "tool_result":
       return (
@@ -221,9 +215,13 @@ function EventContent({ event }: { event: NormalizedEvent }) {
           <span className={cn("font-medium", event.is_error ? "text-destructive" : "text-green-500")}>
             {event.tool_name} {event.is_error ? "(error)" : "(success)"}
           </span>
-          <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {typeof event.output === "string" ? event.output : JSON.stringify(event.output, null, 2)}
-          </pre>
+          <div className="mt-1">
+            <ToolResultContent
+              toolName={event.tool_name}
+              output={event.output}
+              isError={event.is_error}
+            />
+          </div>
         </div>
       );
 
