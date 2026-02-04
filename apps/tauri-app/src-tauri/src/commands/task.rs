@@ -23,9 +23,9 @@ use crate::{
     remote_client::{
         entity_to_rpc_agent_type, entity_to_rpc_composite_status, entity_to_rpc_unit_status,
         rpc_to_entity_composite_task, rpc_to_entity_unit_task, validate_optional_name,
-        validate_text, validate_uuid_string, RemoteClient,
+        validate_text, validate_uuid_string,
     },
-    state::AppState,
+    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
 };
 
 /// Parameters for creating a unit task.
@@ -151,11 +151,7 @@ pub async fn create_unit_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let agent_type = params
             .ai_agent_type
@@ -250,11 +246,7 @@ pub async fn create_unit_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let agent_type = params
             .ai_agent_type
@@ -279,7 +271,7 @@ pub async fn create_unit_task(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -299,11 +291,7 @@ pub async fn create_composite_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let execution_agent_type = params
             .execution_agent_type
@@ -392,11 +380,7 @@ pub async fn create_composite_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let execution_agent_type = params
             .execution_agent_type
@@ -427,7 +411,7 @@ pub async fn create_composite_task(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -442,11 +426,7 @@ pub async fn get_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::GetTaskRequest {
             task_id: task_id.clone(),
@@ -505,11 +485,7 @@ pub async fn get_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::GetTaskRequest {
             task_id: task_id.clone(),
@@ -531,7 +507,7 @@ pub async fn get_task(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -546,11 +522,7 @@ pub async fn list_tasks(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let unit_status = params
             .unit_status
@@ -639,11 +611,7 @@ pub async fn list_tasks(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let unit_status = params
             .unit_status
@@ -684,7 +652,7 @@ pub async fn list_tasks(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -699,11 +667,7 @@ pub async fn approve_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::ApproveTaskRequest {
             task_id: task_id.clone(),
@@ -758,11 +722,7 @@ pub async fn approve_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::ApproveTaskRequest {
             task_id: task_id.clone(),
@@ -774,7 +734,7 @@ pub async fn approve_task(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -794,11 +754,7 @@ pub async fn reject_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::RejectTaskRequest {
             task_id: task_id.clone(),
@@ -851,11 +807,7 @@ pub async fn reject_task(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::RejectTaskRequest {
             task_id: task_id.clone(),
@@ -868,7 +820,7 @@ pub async fn reject_task(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -888,11 +840,7 @@ pub async fn request_changes(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::RequestChangesRequest {
             task_id: task_id.clone(),
@@ -943,11 +891,7 @@ pub async fn request_changes(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::RequestChangesRequest {
             task_id: task_id.clone(),
@@ -960,7 +904,7 @@ pub async fn request_changes(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -980,8 +924,7 @@ pub async fn get_task_logs(
         // In remote mode on desktop, we currently return minimal data
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
-        // TODO: Implement proper remote log streaming
-        let _ = (task_id, after_event_id);
+        // TODO: Implement proper remote log streaming (task_id and after_event_id are unused here)
         return Ok(TaskLogsResponse {
             events: Vec::new(),
             is_complete: true,
@@ -1095,10 +1038,11 @@ pub async fn get_task_logs(
 /// rather than parsed events.
 #[cfg(not(desktop))]
 #[tauri::command]
+#[allow(unused_variables)]
 pub async fn get_task_logs(
     state: State<'_, Arc<RwLock<AppState>>>,
     task_id: String,
-    _after_event_id: Option<i64>,
+    after_event_id: Option<i64>,
 ) -> AppResult<TaskLogsResponse> {
     let state = state.read().await;
 
@@ -1107,7 +1051,6 @@ pub async fn get_task_logs(
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
         // TODO: Implement proper remote log streaming
-        let _ = task_id;
         return Ok(TaskLogsResponse {
             events: Vec::new(),
             is_complete: true,
@@ -1116,7 +1059,7 @@ pub async fn get_task_logs(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -1131,11 +1074,7 @@ pub async fn respond_tty_input(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::SubmitTtyInputRequest {
             request_id: params.request_id.clone(),
@@ -1186,11 +1125,7 @@ pub async fn respond_tty_input(
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::SubmitTtyInputRequest {
             request_id: params.request_id.clone(),
@@ -1203,7 +1138,7 @@ pub async fn respond_tty_input(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -1225,7 +1160,7 @@ pub async fn get_composite_task_nodes(
     // have an endpoint for composite task nodes
     if state.mode == AppMode::Remote {
         // TODO: Implement remote API call when server supports composite task nodes endpoint
-        let _ = composite_task_id;
+        // (composite_task_id is unused in remote mode until the API is implemented)
         return Ok(CompositeTaskNodesResult { nodes: Vec::new() });
     }
 
@@ -1285,7 +1220,7 @@ pub async fn get_composite_task_nodes(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 

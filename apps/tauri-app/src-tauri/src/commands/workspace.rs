@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
-    remote_client::{rpc_to_entity_workspace, RemoteClient},
-    state::AppState,
+    remote_client::rpc_to_entity_workspace,
+    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
 };
 
 /// Maximum length for workspace name.
@@ -117,11 +117,7 @@ pub async fn create_workspace(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::CreateWorkspaceRequest {
             name: params.name,
@@ -166,7 +162,7 @@ pub async fn create_workspace(
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -180,11 +176,7 @@ pub async fn list_workspaces(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::ListWorkspacesRequest {
             limit: params.limit.unwrap_or(100),
@@ -228,7 +220,7 @@ pub async fn list_workspaces(
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -242,11 +234,7 @@ pub async fn get_workspace(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::GetWorkspaceRequest {
             workspace_id: workspace_id.clone(),
@@ -279,7 +267,7 @@ pub async fn get_workspace(
     let _ = &workspace_id;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -294,11 +282,7 @@ pub async fn update_workspace(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::UpdateWorkspaceRequest {
             workspace_id: workspace_id.clone(),
@@ -345,7 +329,7 @@ pub async fn update_workspace(
     let _ = (&workspace_id, &params);
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -359,11 +343,7 @@ pub async fn delete_workspace(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::DeleteWorkspaceRequest {
             workspace_id: workspace_id.clone(),
@@ -393,7 +373,7 @@ pub async fn delete_workspace(
     let _ = &workspace_id;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -406,11 +386,7 @@ pub async fn get_default_workspace_id(
 
     // Remote mode: get the first workspace from the server as default
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::ListWorkspacesRequest {
             limit: 1,
@@ -442,6 +418,6 @@ pub async fn get_default_workspace_id(
     }
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }

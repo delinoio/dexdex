@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
-    remote_client::{rpc_to_entity_repository, rpc_to_entity_repository_group, RemoteClient},
-    state::AppState,
+    remote_client::{rpc_to_entity_repository, rpc_to_entity_repository_group},
+    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
 };
 
 /// Parameters for adding a repository.
@@ -55,11 +55,7 @@ pub async fn add_repository(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::AddRepositoryRequest {
             workspace_id: params.workspace_id.unwrap_or_default(),
@@ -117,9 +113,7 @@ pub async fn add_repository(
     #[cfg(not(desktop))]
     let _ = &params;
 
-    Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
-    ))
+    Err(AppError::InvalidRequest(ERR_LOCAL_MODE_NOT_SUPPORTED.to_string()))
 }
 
 /// Lists repositories.
@@ -132,11 +126,7 @@ pub async fn list_repositories(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::ListRepositoriesRequest {
             workspace_id: params.workspace_id,
@@ -201,7 +191,7 @@ pub async fn list_repositories(
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -215,11 +205,7 @@ pub async fn remove_repository(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::RemoveRepositoryRequest {
             repository_id: repository_id.clone(),
@@ -249,7 +235,7 @@ pub async fn remove_repository(
     let _ = &repository_id;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -388,11 +374,7 @@ pub async fn create_repository_group(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::CreateRepositoryGroupRequest {
             workspace_id: params.workspace_id.unwrap_or_default(),
@@ -480,7 +462,7 @@ pub async fn create_repository_group(
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -494,11 +476,7 @@ pub async fn list_repository_groups(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::ListRepositoryGroupsRequest {
             workspace_id: params.workspace_id,
@@ -568,7 +546,7 @@ pub async fn list_repository_groups(
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -582,16 +560,18 @@ pub async fn get_repository_group(
 
     // Remote mode: make API call to main server
     // Note: The server doesn't have a dedicated get_repository_group endpoint yet,
-    // so we list all groups and find the one we need
+    // so we list all groups and find the one we need.
+    //
+    // PERFORMANCE WARNING: This fetches up to 1000 groups just to find one, causing:
+    // - O(n) search through potentially hundreds of groups
+    // - Unnecessary data transfer over the network
+    // - Performance degradation as groups increase
+    //
+    // TODO(perf): Add a dedicated get_repository_group endpoint to the server API
+    // to avoid this inefficient lookup. See: https://github.com/delinoio/delidev/issues/142
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
-        // List groups and find the one we need
-        // TODO: Add a dedicated get_repository_group endpoint to the server
         let request = requests::ListRepositoryGroupsRequest {
             workspace_id: None,
             limit: 1000,
@@ -632,7 +612,7 @@ pub async fn get_repository_group(
     let _ = &group_id;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -647,11 +627,7 @@ pub async fn update_repository_group(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::UpdateRepositoryGroupRequest {
             group_id: group_id.clone(),
@@ -736,7 +712,7 @@ pub async fn update_repository_group(
     let _ = (&group_id, &params);
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -750,11 +726,7 @@ pub async fn delete_repository_group(
 
     // Remote mode: make API call to main server
     if state.mode == AppMode::Remote {
-        let base_url = state
-            .remote_server_url
-            .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
-        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+        let client = state.get_remote_client()?;
 
         let request = requests::DeleteRepositoryGroupRequest {
             group_id: group_id.clone(),
@@ -784,7 +756,7 @@ pub async fn delete_repository_group(
     let _ = &group_id;
 
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 

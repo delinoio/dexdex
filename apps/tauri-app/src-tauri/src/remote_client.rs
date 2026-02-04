@@ -56,7 +56,6 @@ impl RemoteClient {
     ///
     /// The token will be sent as a Bearer token in the Authorization header
     /// for all subsequent API requests.
-    #[allow(dead_code)]
     pub fn with_auth_token(mut self, token: String) -> Self {
         self.auth_token = Some(token);
         self
@@ -376,23 +375,47 @@ fn parse_uuid(id_str: &str, field_name: &str) -> AppResult<Uuid> {
     })
 }
 
-/// Parses a list of UUIDs, logging warnings for invalid entries and collecting valid ones.
-/// This is used for non-critical list fields where partial results are acceptable.
+/// Parses a list of UUIDs, logging errors for invalid entries and collecting valid ones.
+///
+/// This is used for list fields where partial results are acceptable (e.g., non-critical
+/// relationships). Invalid UUIDs are logged at error level to help identify potential
+/// server bugs or data corruption issues.
+///
+/// # Arguments
+///
+/// * `ids` - The list of UUID strings to parse
+/// * `field_name` - The name of the field being parsed (for logging context)
+///
+/// # Returns
+///
+/// A vector of successfully parsed UUIDs. Invalid UUIDs are excluded but logged.
 fn parse_uuid_list(ids: &[String], field_name: &str) -> Vec<Uuid> {
-    ids.iter()
-        .filter_map(|id| {
-            match id.parse() {
-                Ok(uuid) => Some(uuid),
-                Err(e) => {
-                    warn!(
-                        "Skipping invalid {} UUID '{}': {}",
-                        field_name, id, e
-                    );
-                    None
-                }
+    let mut valid_uuids = Vec::with_capacity(ids.len());
+    let mut invalid_count = 0;
+
+    for id in ids {
+        match id.parse() {
+            Ok(uuid) => valid_uuids.push(uuid),
+            Err(e) => {
+                error!(
+                    "Invalid {} UUID '{}': {} - this may indicate a server bug or data corruption",
+                    field_name, id, e
+                );
+                invalid_count += 1;
             }
-        })
-        .collect()
+        }
+    }
+
+    if invalid_count > 0 {
+        error!(
+            "Skipped {} invalid {} UUID(s) out of {} total",
+            invalid_count,
+            field_name,
+            ids.len()
+        );
+    }
+
+    valid_uuids
 }
 
 /// Converts entity AiAgentType to RPC AiAgentType.
@@ -581,4 +604,286 @@ pub fn rpc_to_entity_workspace(rpc: rpc_protocol::Workspace) -> AppResult<entiti
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // Input Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_required_string_valid() {
+        assert!(validate_required_string("hello", "field").is_ok());
+        assert!(validate_required_string("  hello  ", "field").is_ok());
+    }
+
+    #[test]
+    fn test_validate_required_string_empty() {
+        assert!(validate_required_string("", "field").is_err());
+        assert!(validate_required_string("   ", "field").is_err());
+        assert!(validate_required_string("\t\n", "field").is_err());
+    }
+
+    #[test]
+    fn test_validate_string_length_within_limit() {
+        assert!(validate_string_length("hello", "field", 10).is_ok());
+        assert!(validate_string_length("hello", "field", 5).is_ok());
+    }
+
+    #[test]
+    fn test_validate_string_length_exceeds_limit() {
+        let result = validate_string_length("hello world", "field", 5);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum length"));
+    }
+
+    #[test]
+    fn test_validate_name_valid() {
+        assert!(validate_name("My Workspace", "name").is_ok());
+        assert!(validate_name("test", "name").is_ok());
+    }
+
+    #[test]
+    fn test_validate_name_empty() {
+        assert!(validate_name("", "name").is_err());
+        assert!(validate_name("   ", "name").is_err());
+    }
+
+    #[test]
+    fn test_validate_name_too_long() {
+        let long_name = "a".repeat(300);
+        let result = validate_name(&long_name, "name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_optional_name_none() {
+        assert!(validate_optional_name(None, "name").is_ok());
+    }
+
+    #[test]
+    fn test_validate_optional_name_some_valid() {
+        assert!(validate_optional_name(Some("test"), "name").is_ok());
+    }
+
+    #[test]
+    fn test_validate_optional_name_some_too_long() {
+        let long_name = "a".repeat(300);
+        let result = validate_optional_name(Some(&long_name), "name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_text_valid() {
+        assert!(validate_text("This is a prompt", "prompt").is_ok());
+    }
+
+    #[test]
+    fn test_validate_text_empty() {
+        assert!(validate_text("", "prompt").is_err());
+    }
+
+    #[test]
+    fn test_validate_text_too_long() {
+        let long_text = "a".repeat(20000);
+        let result = validate_text(&long_text, "prompt");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_uuid_string_valid() {
+        assert!(validate_uuid_string(
+            "550e8400-e29b-41d4-a716-446655440000",
+            "id"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_validate_uuid_string_invalid() {
+        assert!(validate_uuid_string("not-a-uuid", "id").is_err());
+        assert!(validate_uuid_string("", "id").is_err());
+    }
+
+    #[test]
+    fn test_validate_optional_uuid_string_none() {
+        assert!(validate_optional_uuid_string(None, "id").is_ok());
+    }
+
+    #[test]
+    fn test_validate_optional_uuid_string_valid() {
+        assert!(validate_optional_uuid_string(
+            Some("550e8400-e29b-41d4-a716-446655440000"),
+            "id"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_validate_optional_uuid_string_invalid() {
+        assert!(validate_optional_uuid_string(Some("not-a-uuid"), "id").is_err());
+    }
+
+    // =========================================================================
+    // UUID Parsing Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_uuid_valid() {
+        let result = parse_uuid("550e8400-e29b-41d4-a716-446655440000", "test");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap().to_string(),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
+    }
+
+    #[test]
+    fn test_parse_uuid_invalid() {
+        let result = parse_uuid("not-a-uuid", "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid"));
+    }
+
+    #[test]
+    fn test_parse_uuid_list_all_valid() {
+        let ids = vec![
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            "550e8400-e29b-41d4-a716-446655440001".to_string(),
+        ];
+        let result = parse_uuid_list(&ids, "test");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_uuid_list_some_invalid() {
+        let ids = vec![
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            "invalid".to_string(),
+            "550e8400-e29b-41d4-a716-446655440001".to_string(),
+        ];
+        let result = parse_uuid_list(&ids, "test");
+        // Invalid UUIDs are skipped
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_uuid_list_empty() {
+        let ids: Vec<String> = vec![];
+        let result = parse_uuid_list(&ids, "test");
+        assert!(result.is_empty());
+    }
+
+    // =========================================================================
+    // Type Conversion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_entity_to_rpc_agent_type() {
+        assert!(matches!(
+            entity_to_rpc_agent_type(entities::AiAgentType::ClaudeCode),
+            RpcAiAgentType::ClaudeCode
+        ));
+        assert!(matches!(
+            entity_to_rpc_agent_type(entities::AiAgentType::OpenCode),
+            RpcAiAgentType::OpenCode
+        ));
+        assert!(matches!(
+            entity_to_rpc_agent_type(entities::AiAgentType::Aider),
+            RpcAiAgentType::Aider
+        ));
+    }
+
+    #[test]
+    fn test_rpc_to_entity_agent_type() {
+        assert!(matches!(
+            rpc_to_entity_agent_type(RpcAiAgentType::ClaudeCode),
+            entities::AiAgentType::ClaudeCode
+        ));
+        assert!(matches!(
+            rpc_to_entity_agent_type(RpcAiAgentType::OpenCode),
+            entities::AiAgentType::OpenCode
+        ));
+        // Unspecified defaults to ClaudeCode
+        assert!(matches!(
+            rpc_to_entity_agent_type(RpcAiAgentType::Unspecified),
+            entities::AiAgentType::ClaudeCode
+        ));
+    }
+
+    #[test]
+    fn test_rpc_to_entity_unit_status() {
+        assert!(matches!(
+            rpc_to_entity_unit_status(RpcUnitTaskStatus::InProgress),
+            entities::UnitTaskStatus::InProgress
+        ));
+        assert!(matches!(
+            rpc_to_entity_unit_status(RpcUnitTaskStatus::InReview),
+            entities::UnitTaskStatus::InReview
+        ));
+        assert!(matches!(
+            rpc_to_entity_unit_status(RpcUnitTaskStatus::Done),
+            entities::UnitTaskStatus::Done
+        ));
+        // Unspecified defaults to InProgress
+        assert!(matches!(
+            rpc_to_entity_unit_status(RpcUnitTaskStatus::Unspecified),
+            entities::UnitTaskStatus::InProgress
+        ));
+    }
+
+    #[test]
+    fn test_entity_to_rpc_unit_status() {
+        assert!(matches!(
+            entity_to_rpc_unit_status(entities::UnitTaskStatus::InProgress),
+            RpcUnitTaskStatus::InProgress
+        ));
+        assert!(matches!(
+            entity_to_rpc_unit_status(entities::UnitTaskStatus::Approved),
+            RpcUnitTaskStatus::Approved
+        ));
+        assert!(matches!(
+            entity_to_rpc_unit_status(entities::UnitTaskStatus::Failed),
+            RpcUnitTaskStatus::Failed
+        ));
+    }
+
+    #[test]
+    fn test_rpc_to_entity_composite_status() {
+        assert!(matches!(
+            rpc_to_entity_composite_status(RpcCompositeTaskStatus::Planning),
+            entities::CompositeTaskStatus::Planning
+        ));
+        assert!(matches!(
+            rpc_to_entity_composite_status(RpcCompositeTaskStatus::InProgress),
+            entities::CompositeTaskStatus::InProgress
+        ));
+        // Unspecified defaults to Planning
+        assert!(matches!(
+            rpc_to_entity_composite_status(RpcCompositeTaskStatus::Unspecified),
+            entities::CompositeTaskStatus::Planning
+        ));
+    }
+
+    #[test]
+    fn test_entity_to_rpc_composite_status() {
+        assert!(matches!(
+            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Planning),
+            RpcCompositeTaskStatus::Planning
+        ));
+        assert!(matches!(
+            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Done),
+            RpcCompositeTaskStatus::Done
+        ));
+        assert!(matches!(
+            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Rejected),
+            RpcCompositeTaskStatus::Rejected
+        ));
+    }
 }
