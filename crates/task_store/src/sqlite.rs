@@ -42,8 +42,19 @@ impl SqliteTaskStore {
         Ok(store)
     }
 
-    /// Initializes the database schema.
+    /// Initializes the database schema and runs migrations.
     async fn initialize_schema(&self) -> TaskStoreResult<()> {
+        // Create initial schema
+        self.create_tables().await?;
+
+        // Run migrations for existing databases
+        self.run_migrations().await?;
+
+        Ok(())
+    }
+
+    /// Creates all tables if they don't exist.
+    async fn create_tables(&self) -> TaskStoreResult<()> {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
@@ -169,6 +180,33 @@ impl SqliteTaskStore {
         )
         .execute(&self.pool)
         .await?;
+
+        Ok(())
+    }
+
+    /// Runs database migrations for existing databases.
+    ///
+    /// This handles adding new columns to existing tables that were created
+    /// before those columns were added to the schema.
+    async fn run_migrations(&self) -> TaskStoreResult<()> {
+        // Migration 1: Add token_usage column to agent_sessions table
+        // This column was added to track AI agent token consumption.
+        // For existing databases, we need to add it via ALTER TABLE.
+        let has_token_usage = sqlx::query(
+            "SELECT COUNT(*) as cnt FROM pragma_table_info('agent_sessions') WHERE name = \
+             'token_usage'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let count: i64 = has_token_usage.get("cnt");
+        if count == 0 {
+            info!("Running migration: Adding token_usage column to agent_sessions table");
+            sqlx::query("ALTER TABLE agent_sessions ADD COLUMN token_usage TEXT")
+                .execute(&self.pool)
+                .await?;
+            info!("Migration completed: token_usage column added");
+        }
 
         Ok(())
     }
@@ -2093,5 +2131,61 @@ mod tests {
         assert_eq!(fetched_group.repository_ids.len(), 1);
         assert!(!fetched_group.repository_ids.contains(&repo1.id));
         assert!(fetched_group.repository_ids.contains(&repo2.id));
+    }
+
+    #[tokio::test]
+    async fn test_agent_session_with_token_usage() {
+        let test = create_test_store().await;
+        let store = &test.store;
+
+        // Create agent task
+        let agent_task = AgentTask::new();
+        let agent_task = store.create_agent_task(agent_task).await.unwrap();
+
+        // Create session with token usage
+        let token_usage = TokenUsage::new(1000, 500)
+            .with_cache_read_tokens(100)
+            .with_cache_creation_tokens(50);
+        let session = AgentSession::new(agent_task.id, entities::AiAgentType::ClaudeCode)
+            .with_token_usage(token_usage);
+        let created = store.create_agent_session(session).await.unwrap();
+
+        // Verify token usage is stored
+        assert!(created.token_usage.is_some());
+        let usage = created.token_usage.as_ref().unwrap();
+        assert_eq!(usage.input_tokens, 1000);
+        assert_eq!(usage.output_tokens, 500);
+        assert_eq!(usage.cache_read_tokens, Some(100));
+        assert_eq!(usage.cache_creation_tokens, Some(50));
+
+        // Fetch and verify
+        let fetched = store.get_agent_session(created.id).await.unwrap().unwrap();
+        assert!(fetched.token_usage.is_some());
+        let fetched_usage = fetched.token_usage.as_ref().unwrap();
+        assert_eq!(fetched_usage.input_tokens, 1000);
+        assert_eq!(fetched_usage.output_tokens, 500);
+        assert_eq!(fetched_usage.cache_read_tokens, Some(100));
+        assert_eq!(fetched_usage.cache_creation_tokens, Some(50));
+    }
+
+    #[tokio::test]
+    async fn test_agent_session_without_token_usage() {
+        let test = create_test_store().await;
+        let store = &test.store;
+
+        // Create agent task
+        let agent_task = AgentTask::new();
+        let agent_task = store.create_agent_task(agent_task).await.unwrap();
+
+        // Create session without token usage
+        let session = AgentSession::new(agent_task.id, entities::AiAgentType::ClaudeCode);
+        let created = store.create_agent_session(session).await.unwrap();
+
+        // Verify token usage is None
+        assert!(created.token_usage.is_none());
+
+        // Fetch and verify
+        let fetched = store.get_agent_session(created.id).await.unwrap().unwrap();
+        assert!(fetched.token_usage.is_none());
     }
 }

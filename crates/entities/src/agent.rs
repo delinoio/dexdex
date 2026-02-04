@@ -95,9 +95,30 @@ impl TokenUsage {
         }
     }
 
-    /// Returns the total number of tokens (input + output).
+    /// Returns the total number of billable tokens (input + output).
+    ///
+    /// Note: Cache tokens are intentionally excluded from this total because
+    /// they have different pricing structures depending on the AI provider:
+    /// - Cache read tokens are typically much cheaper than regular input tokens
+    /// - Cache creation tokens may have the same cost as regular tokens
+    ///
+    /// For cost estimation that accounts for cache tokens, use
+    /// `total_with_cache_tokens()` or access the individual cache token
+    /// fields directly.
     pub fn total_tokens(&self) -> i64 {
         self.input_tokens + self.output_tokens
+    }
+
+    /// Returns the total number of all tokens including cache tokens.
+    ///
+    /// This includes input, output, cache read, and cache creation tokens.
+    /// Useful for understanding total token volume, though not for direct cost
+    /// calculation since cache tokens have different pricing.
+    pub fn total_with_cache_tokens(&self) -> i64 {
+        self.input_tokens
+            + self.output_tokens
+            + self.cache_read_tokens.unwrap_or(0)
+            + self.cache_creation_tokens.unwrap_or(0)
     }
 
     /// Sets the cache read tokens.
@@ -270,5 +291,82 @@ mod tests {
             "https://github.com/user/repo"
         );
         assert_eq!(task.base_remotes[0].git_branch_name, "main");
+    }
+
+    #[test]
+    fn test_token_usage_new() {
+        let usage = TokenUsage::new(100, 50);
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.cache_read_tokens, None);
+        assert_eq!(usage.cache_creation_tokens, None);
+    }
+
+    #[test]
+    fn test_token_usage_total_tokens() {
+        let usage = TokenUsage::new(100, 50);
+        // total_tokens() only includes input + output (excludes cache tokens)
+        assert_eq!(usage.total_tokens(), 150);
+    }
+
+    #[test]
+    fn test_token_usage_with_cache_tokens() {
+        let usage = TokenUsage::new(100, 50)
+            .with_cache_read_tokens(20)
+            .with_cache_creation_tokens(10);
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.cache_read_tokens, Some(20));
+        assert_eq!(usage.cache_creation_tokens, Some(10));
+    }
+
+    #[test]
+    fn test_token_usage_total_with_cache() {
+        let usage = TokenUsage::new(100, 50)
+            .with_cache_read_tokens(20)
+            .with_cache_creation_tokens(10);
+        // total_tokens() excludes cache tokens
+        assert_eq!(usage.total_tokens(), 150);
+        // total_with_cache_tokens() includes all tokens
+        assert_eq!(usage.total_with_cache_tokens(), 180);
+    }
+
+    #[test]
+    fn test_token_usage_total_with_partial_cache() {
+        // Test with only cache_read_tokens set
+        let usage = TokenUsage::new(100, 50).with_cache_read_tokens(20);
+        assert_eq!(usage.total_with_cache_tokens(), 170);
+
+        // Test with only cache_creation_tokens set
+        let usage2 = TokenUsage::new(100, 50).with_cache_creation_tokens(10);
+        assert_eq!(usage2.total_with_cache_tokens(), 160);
+    }
+
+    #[test]
+    fn test_token_usage_default() {
+        let usage = TokenUsage::default();
+        assert_eq!(usage.input_tokens, 0);
+        assert_eq!(usage.output_tokens, 0);
+        assert_eq!(usage.cache_read_tokens, None);
+        assert_eq!(usage.cache_creation_tokens, None);
+        assert_eq!(usage.total_tokens(), 0);
+        assert_eq!(usage.total_with_cache_tokens(), 0);
+    }
+
+    #[test]
+    fn test_agent_session_with_token_usage() {
+        let task_id = Uuid::new_v4();
+        let token_usage = TokenUsage::new(1000, 500)
+            .with_cache_read_tokens(100)
+            .with_cache_creation_tokens(50);
+        let session =
+            AgentSession::new(task_id, AiAgentType::ClaudeCode).with_token_usage(token_usage);
+
+        assert!(session.token_usage.is_some());
+        let usage = session.token_usage.unwrap();
+        assert_eq!(usage.input_tokens, 1000);
+        assert_eq!(usage.output_tokens, 500);
+        assert_eq!(usage.total_tokens(), 1500);
+        assert_eq!(usage.total_with_cache_tokens(), 1650);
     }
 }

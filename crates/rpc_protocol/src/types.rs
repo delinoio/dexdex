@@ -393,9 +393,30 @@ impl TokenUsage {
         }
     }
 
-    /// Returns the total number of tokens (input + output).
+    /// Returns the total number of billable tokens (input + output).
+    ///
+    /// Note: Cache tokens are intentionally excluded from this total because
+    /// they have different pricing structures depending on the AI provider:
+    /// - Cache read tokens are typically much cheaper than regular input tokens
+    /// - Cache creation tokens may have the same cost as regular tokens
+    ///
+    /// For cost estimation that accounts for cache tokens, use
+    /// `total_with_cache_tokens()` or access the individual cache token
+    /// fields directly.
     pub fn total_tokens(&self) -> i64 {
         self.input_tokens + self.output_tokens
+    }
+
+    /// Returns the total number of all tokens including cache tokens.
+    ///
+    /// This includes input, output, cache read, and cache creation tokens.
+    /// Useful for understanding total token volume, though not for direct cost
+    /// calculation since cache tokens have different pricing.
+    pub fn total_with_cache_tokens(&self) -> i64 {
+        self.input_tokens
+            + self.output_tokens
+            + self.cache_read_tokens.unwrap_or(0)
+            + self.cache_creation_tokens.unwrap_or(0)
     }
 }
 
