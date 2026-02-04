@@ -273,6 +273,8 @@ export function ToolResultContent({ toolName, output, isError }: ToolResultConte
       return <GlobToolResult output={output} />;
     case ToolType.Grep:
       return <GrepToolResult output={output} />;
+    case ToolType.Task:
+      return <TaskToolResult output={output} />;
     case ToolType.WebSearch:
       return <WebSearchToolResult output={output} />;
     default:
@@ -457,24 +459,22 @@ function TaskToolUse({ input }: { input: unknown }) {
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <span className="text-muted-foreground">Spawning</span>
+    <details>
+      <summary className="cursor-pointer hover:text-foreground">
+        <span className="text-muted-foreground">Spawning</span>{" "}
         <span className="px-1.5 py-0.5 bg-cyan-500/20 text-cyan-500 rounded text-sm">
           {input.subagent_type}
-        </span>
-        <span className="text-muted-foreground">agent:</span>
+        </span>{" "}
+        <span className="text-muted-foreground">agent:</span>{" "}
         <span className="text-foreground">{input.description}</span>
-      </div>
-      <details className="mt-1">
-        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-          Show prompt
-        </summary>
-        <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto bg-muted/50 p-2 rounded">
+      </summary>
+      <div className="mt-2 ml-4 border-l-2 border-cyan-500/30 pl-3">
+        <div className="text-xs text-muted-foreground mb-1">Prompt:</div>
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto bg-muted/50 p-2 rounded">
           {input.prompt}
         </pre>
-      </details>
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -661,6 +661,26 @@ function GrepToolResult({ output }: { output: unknown }) {
         {content}
       </pre>
     </div>
+  );
+}
+
+function TaskToolResult({ output }: { output: unknown }) {
+  const content = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+  const lines = content.split("\n");
+  const lineCount = lines.length;
+  // Show preview of first 3 lines for the summary
+  const preview = lines.slice(0, 3).join(" ").slice(0, 100);
+  const previewText = preview.length < content.length ? `${preview}...` : preview;
+
+  return (
+    <details className="border-l-2 border-cyan-500/30 pl-3">
+      <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+        Subagent result ({lineCount} lines){previewText && `: ${previewText}`}
+      </summary>
+      <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap max-h-60 overflow-y-auto bg-muted/50 p-2 rounded">
+        {content}
+      </pre>
+    </details>
   );
 }
 
