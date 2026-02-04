@@ -471,6 +471,34 @@ Built-in diff viewer for reviewing AI-generated code.
 | Inline Comments | Add comments on specific lines | `InlineComment`, `CommentInputForm`, `LineComments` components |
 | Viewed Tracking | Mark files as reviewed | `DiffViewer` with `isViewed` prop |
 
+### Agent Log Viewer
+
+The Agent Session Log displays real-time streaming output from AI coding agents. It uses dedicated components to render tool events with rich formatting instead of raw JSON.
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `AgentLogViewer` | `components/task/AgentLogViewer.tsx` | Main log viewer with auto-scroll and TTY input |
+| `ToolUseContent` | `components/task/ToolEventComponents.tsx` | Renders tool use events with tool-specific formatting |
+| `ToolResultContent` | `components/task/ToolEventComponents.tsx` | Renders tool results with tool-specific formatting |
+
+#### Supported Tool Formats
+
+| Tool | Display Format |
+|------|----------------|
+| Read | File icon with path, offset/limit info |
+| Write | File icon with path, collapsible content preview |
+| Edit | Pencil icon with path, diff-style old/new strings |
+| Bash | Terminal icon with command, description |
+| Glob | Folder icon with pattern and path |
+| Grep | Search icon with pattern, path, glob filter |
+| Task | Agent type badge, description, collapsible prompt |
+| WebFetch | URL link with prompt |
+| WebSearch | Search icon with query |
+| TodoWrite | Todo list with status indicators |
+| AskUserQuestion | Question with header badge and options |
+
+Unknown tools fall back to JSON display.
+
 ### Implementation Components
 
 The review interface is built from the following components:
