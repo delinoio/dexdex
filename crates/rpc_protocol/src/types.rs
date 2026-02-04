@@ -124,6 +124,18 @@ pub enum NormalizedEvent {
         /// Raw content from the agent.
         content: String,
     },
+
+    /// Token usage report from the agent.
+    UsageReport {
+        /// Number of input tokens (prompt tokens).
+        input_tokens: u64,
+        /// Number of output tokens (completion tokens).
+        output_tokens: u64,
+        /// Number of cache read tokens (if applicable).
+        cache_read_tokens: u64,
+        /// Number of cache write tokens (if applicable).
+        cache_write_tokens: u64,
+    },
 }
 
 impl NormalizedEvent {
@@ -234,6 +246,26 @@ impl NormalizedEvent {
     /// Returns true if this event is an ask-user question (TTY input required).
     pub fn is_tty_input_required(&self) -> bool {
         matches!(self, Self::AskUserQuestion { .. })
+    }
+
+    /// Creates a new usage report event.
+    pub fn usage_report(
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_read_tokens: u64,
+        cache_write_tokens: u64,
+    ) -> Self {
+        Self::UsageReport {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+        }
+    }
+
+    /// Returns true if this event is a usage report.
+    pub fn is_usage_report(&self) -> bool {
+        matches!(self, Self::UsageReport { .. })
     }
 }
 
@@ -370,6 +402,19 @@ pub struct BaseRemote {
     pub git_branch_name: String,
 }
 
+/// Token usage information for an AI agent session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// Number of input tokens (prompt tokens).
+    pub input_tokens: u64,
+    /// Number of output tokens (completion tokens).
+    pub output_tokens: u64,
+    /// Number of cache read tokens (if applicable).
+    pub cache_read_tokens: u64,
+    /// Number of cache write tokens (if applicable).
+    pub cache_write_tokens: u64,
+}
+
 /// Agent session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSession {
@@ -380,6 +425,7 @@ pub struct AgentSession {
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub output_log: Option<String>,
+    pub token_usage: Option<TokenUsage>,
     pub created_at: DateTime<Utc>,
 }
 

@@ -8,10 +8,10 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
 use coding_agents::executor::{EventEmitter, TaskExecutionConfig, TaskExecutor};
-use entities::{AgentSession, AiAgentType, UnitTaskStatus};
+use entities::{AgentSession, AiAgentType, TokenUsage, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::{TtyInputRequestManager, error::WorkerError};
@@ -243,7 +243,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         Ok(())
     }
 
-    /// Persists the output logs to the agent session in the database.
+    /// Persists the output logs and token usage to the agent session in the
+    /// database.
     async fn persist_session_logs(
         task_store: &Arc<SqliteTaskStore>,
         session_id: Uuid,
@@ -251,6 +252,21 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
     ) -> Result<(), String> {
         if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
             session.output_log = Some(output_log.to_string());
+
+            // Extract token usage from the logs
+            if let Some(token_usage) = Self::extract_token_usage_from_logs(output_log) {
+                debug!(
+                    "Extracted token usage for session {}: input={}, output={}, cache_read={}, \
+                     cache_write={}",
+                    session_id,
+                    token_usage.input_tokens,
+                    token_usage.output_tokens,
+                    token_usage.cache_read_tokens,
+                    token_usage.cache_write_tokens
+                );
+                session.token_usage = Some(token_usage);
+            }
+
             task_store
                 .update_agent_session(session)
                 .await
@@ -264,6 +280,55 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             warn!("Could not find session {} to persist logs", session_id);
         }
         Ok(())
+    }
+
+    /// Extracts token usage from the log entries.
+    ///
+    /// This function parses the JSON log entries looking for usage_report
+    /// events and aggregates the token usage data.
+    fn extract_token_usage_from_logs(output_log: &str) -> Option<TokenUsage> {
+        let mut total_usage = TokenUsage::new();
+        let mut found_usage = false;
+
+        for line in output_log.lines() {
+            // Try to parse the line as a timestamped event
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+                // Check if this is a timestamped event with a usage_report
+                if let Some(event) = value.get("event") {
+                    if let Some(event_type) = event.get("type").and_then(|v| v.as_str()) {
+                        if event_type == "usage_report" {
+                            let input_tokens = event
+                                .get("input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            let output_tokens = event
+                                .get("output_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            let cache_read_tokens = event
+                                .get("cache_read_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            let cache_write_tokens = event
+                                .get("cache_write_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+
+                            let usage = TokenUsage {
+                                input_tokens,
+                                output_tokens,
+                                cache_read_tokens,
+                                cache_write_tokens,
+                            };
+                            total_usage.add(&usage);
+                            found_usage = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if found_usage { Some(total_usage) } else { None }
     }
 
     /// Checks if a task is currently being executed.

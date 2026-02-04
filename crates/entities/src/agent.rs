@@ -70,6 +70,40 @@ impl AiAgentType {
     }
 }
 
+/// Token usage information for an AI agent session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    /// Number of input tokens (prompt tokens).
+    pub input_tokens: u64,
+    /// Number of output tokens (completion tokens).
+    pub output_tokens: u64,
+    /// Number of cache read tokens (if applicable).
+    pub cache_read_tokens: u64,
+    /// Number of cache write tokens (if applicable).
+    pub cache_write_tokens: u64,
+}
+
+impl TokenUsage {
+    /// Creates a new TokenUsage with all values set to zero.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the total number of tokens (input + output).
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens
+    }
+
+    /// Adds another TokenUsage to this one, accumulating the values.
+    pub fn add(&mut self, other: &TokenUsage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_read_tokens += other.cache_read_tokens;
+        self.cache_write_tokens += other.cache_write_tokens;
+    }
+}
+
 /// A single AI coding agent session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +122,8 @@ pub struct AgentSession {
     pub completed_at: Option<DateTime<Utc>>,
     /// Output log from the agent.
     pub output_log: Option<String>,
+    /// Token usage for this session.
+    pub token_usage: Option<TokenUsage>,
     /// When this record was created.
     pub created_at: DateTime<Utc>,
 }
@@ -103,6 +139,7 @@ impl AgentSession {
             started_at: None,
             completed_at: None,
             output_log: None,
+            token_usage: None,
             created_at: Utc::now(),
         }
     }
@@ -110,6 +147,12 @@ impl AgentSession {
     /// Sets the model for this session.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.ai_agent_model = Some(model.into());
+        self
+    }
+
+    /// Sets the token usage for this session.
+    pub fn with_token_usage(mut self, token_usage: TokenUsage) -> Self {
+        self.token_usage = Some(token_usage);
         self
     }
 }

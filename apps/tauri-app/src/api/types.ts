@@ -82,6 +82,18 @@ export interface BaseRemote {
   gitBranchName: string;
 }
 
+// Token usage information for an AI agent session.
+export interface TokenUsage {
+  // Number of input tokens (prompt tokens).
+  inputTokens: number;
+  // Number of output tokens (completion tokens).
+  outputTokens: number;
+  // Number of cache read tokens (if applicable).
+  cacheReadTokens: number;
+  // Number of cache write tokens (if applicable).
+  cacheWriteTokens: number;
+}
+
 export interface AgentSession {
   id: string;
   agentTaskId: string;
@@ -90,6 +102,7 @@ export interface AgentSession {
   startedAt?: string;
   completedAt?: string;
   outputLog?: string;
+  tokenUsage?: TokenUsage;
   createdAt: string;
 }
 
@@ -449,6 +462,14 @@ export interface RawEvent {
   content: string;
 }
 
+export interface UsageReportEvent {
+  type: "usage_report";
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
 export type NormalizedEvent =
   | TextOutputEvent
   | ErrorOutputEvent
@@ -461,7 +482,8 @@ export type NormalizedEvent =
   | SessionStartEvent
   | SessionEndEvent
   | ThinkingEvent
-  | RawEvent;
+  | RawEvent
+  | UsageReportEvent;
 
 export interface NormalizedEventEntry {
   id: number | string;

@@ -111,7 +111,31 @@ impl ClaudeCodeAgent {
                     }
                 }
                 "result" => {
-                    // Final result
+                    // Final result - extract token usage from usage field
+                    if let Some(usage) = value.get("usage") {
+                        let input_tokens = usage
+                            .get("input_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let output_tokens = usage
+                            .get("output_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let cache_read_tokens = usage
+                            .get("cache_read_input_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let cache_write_tokens = usage
+                            .get("cache_creation_input_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        events.push(NormalizedEvent::usage_report(
+                            input_tokens,
+                            output_tokens,
+                            cache_read_tokens,
+                            cache_write_tokens,
+                        ));
+                    }
                     let success = value
                         .get("success")
                         .and_then(|v| v.as_bool())
@@ -523,6 +547,50 @@ mod tests {
         assert!(matches!(
             events.first(),
             Some(NormalizedEvent::UserResponse { response }) if response == "Hello from array"
+        ));
+    }
+
+    #[test]
+    fn test_parse_result_event_with_usage() {
+        let agent = ClaudeCodeAgent::new();
+        let line = r#"{"type":"result","success":true,"usage":{"input_tokens":1000,"output_tokens":500,"cache_read_input_tokens":100,"cache_creation_input_tokens":50}}"#;
+        let events = agent.parse_output(line);
+
+        // Should have both usage_report and session_end events
+        assert_eq!(events.len(), 2);
+
+        // Check usage report
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::UsageReport {
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 100,
+                cache_write_tokens: 50,
+            })
+        ));
+
+        // Check session end
+        assert!(matches!(
+            events.get(1),
+            Some(NormalizedEvent::SessionEnd {
+                success: true,
+                error: None
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_result_event_without_usage() {
+        let agent = ClaudeCodeAgent::new();
+        let line = r#"{"type":"result","success":false,"error":"Task failed"}"#;
+        let events = agent.parse_output(line);
+
+        // Should only have session_end event (no usage)
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::SessionEnd { success: false, error: Some(e) }) if e == "Task failed"
         ));
     }
 }

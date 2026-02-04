@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import { useTtyInput } from "@/hooks/useTtyInput";
-import type { NormalizedEvent, NormalizedEventEntry, UnitTaskStatus } from "@/api/types";
+import type { NormalizedEvent, NormalizedEventEntry, UnitTaskStatus, TokenUsage, UsageReportEvent } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
@@ -20,6 +20,7 @@ import {
   AlertCircleIcon,
   MessageSquareIcon,
   BrainIcon,
+  CoinsIcon,
 } from "@/components/ui/Icons";
 import { ToolUseContent, ToolResultContent } from "./ToolEventComponents";
 
@@ -46,6 +47,28 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
     taskId,
     enabled: !!taskId,
   });
+
+  // Calculate total token usage from usage_report events
+  const tokenUsage = useMemo<TokenUsage | null>(() => {
+    const total: TokenUsage = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    };
+    let found = false;
+    for (const entry of events) {
+      if (entry.event.type === "usage_report") {
+        const usageEvent = entry.event as UsageReportEvent;
+        total.inputTokens += usageEvent.input_tokens;
+        total.outputTokens += usageEvent.output_tokens;
+        total.cacheReadTokens += usageEvent.cache_read_tokens;
+        total.cacheWriteTokens += usageEvent.cache_write_tokens;
+        found = true;
+      }
+    }
+    return found ? total : null;
+  }, [events]);
 
   // Auto-scroll to bottom when new events arrive
   useEffect(() => {
@@ -85,11 +108,16 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
             <LoaderIcon size={12} className="animate-spin ml-2" />
           )}
         </div>
-        {events.length > 0 && (
-          <span className="text-xs text-muted-foreground">
-            {events.length} event{events.length !== 1 ? "s" : ""}
-          </span>
-        )}
+        <div className="flex items-center gap-4">
+          {tokenUsage && (
+            <TokenUsageDisplay usage={tokenUsage} />
+          )}
+          {events.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {events.length} event{events.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* TTY Input Dialog */}
@@ -388,5 +416,36 @@ function TtyInputDialog({ question, options, onRespond, isResponding }: TtyInput
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Helper to format large numbers with abbreviations
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M`;
+  }
+  if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}K`;
+  }
+  return count.toString();
+}
+
+interface TokenUsageDisplayProps {
+  usage: TokenUsage;
+}
+
+// Component to display token usage in the log viewer header
+function TokenUsageDisplay({ usage }: TokenUsageDisplayProps) {
+  const totalTokens = usage.inputTokens + usage.outputTokens;
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground" title={`Input: ${usage.inputTokens.toLocaleString()}, Output: ${usage.outputTokens.toLocaleString()}, Cache Read: ${usage.cacheReadTokens.toLocaleString()}, Cache Write: ${usage.cacheWriteTokens.toLocaleString()}`}>
+      <CoinsIcon size={14} className="text-yellow-500" />
+      <span className="font-medium">{formatTokenCount(totalTokens)}</span>
+      <span className="text-muted-foreground/70">tokens</span>
+      <span className="text-muted-foreground/50">
+        (in: {formatTokenCount(usage.inputTokens)}, out: {formatTokenCount(usage.outputTokens)})
+      </span>
+    </div>
   );
 }
