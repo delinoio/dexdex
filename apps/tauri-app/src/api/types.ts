@@ -77,6 +77,16 @@ export enum TodoItemStatus {
 
 // Entities
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  totalCostUsd: number;
+  durationMs: number;
+  numTurns: number;
+}
+
 export interface BaseRemote {
   gitRemoteUrl: string;
   gitBranchName: string;
@@ -90,6 +100,7 @@ export interface AgentSession {
   startedAt?: string;
   completedAt?: string;
   outputLog?: string;
+  tokenUsage?: TokenUsage;
   createdAt: string;
 }
 
@@ -437,6 +448,7 @@ export interface SessionEndEvent {
   type: "session_end";
   success: boolean;
   error?: string;
+  token_usage?: TokenUsage;
 }
 
 export interface ThinkingEvent {

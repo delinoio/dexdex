@@ -15,7 +15,8 @@ use tokio::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler,
+    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TokenUsage,
+    TtyInputHandler,
 };
 
 /// Claude Code agent.
@@ -144,16 +145,70 @@ impl ClaudeCodeAgent {
                     }
                 }
                 "result" => {
-                    // Final result
-                    let success = value
-                        .get("success")
+                    // Final result - extract success, error, and token usage
+                    let success = !value
+                        .get("is_error")
                         .and_then(|v| v.as_bool())
-                        .unwrap_or(true);
+                        .unwrap_or(false);
                     let error = value
                         .get("error")
                         .and_then(|v| v.as_str())
                         .map(String::from);
-                    events.push(NormalizedEvent::session_end(success, error));
+
+                    // Extract token usage from the result event
+                    // Claude Code outputs usage in this format:
+                    // {
+                    //   "type": "result",
+                    //   "total_cost_usd": 0.08255525,
+                    //   "duration_ms": 6017,
+                    //   "num_turns": 2,
+                    //   "usage": {
+                    //     "input_tokens": 2,
+                    //     "cache_creation_input_tokens": 11777,
+                    //     "cache_read_input_tokens": 13928,
+                    //     "output_tokens": 79
+                    //   }
+                    // }
+                    let token_usage = if value.get("usage").is_some()
+                        || value.get("total_cost_usd").is_some()
+                    {
+                        Some(TokenUsage {
+                            input_tokens: value
+                                .pointer("/usage/input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            output_tokens: value
+                                .pointer("/usage/output_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cache_read_input_tokens: value
+                                .pointer("/usage/cache_read_input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cache_creation_input_tokens: value
+                                .pointer("/usage/cache_creation_input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            total_cost_usd: value
+                                .get("total_cost_usd")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0),
+                            duration_ms: value
+                                .get("duration_ms")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            num_turns: value.get("num_turns").and_then(|v| v.as_u64()).unwrap_or(0)
+                                as u32,
+                        })
+                    } else {
+                        None
+                    };
+
+                    events.push(NormalizedEvent::session_end_with_usage(
+                        success,
+                        error,
+                        token_usage,
+                    ));
                 }
                 "user" => {
                     // User message - extract content from the message field
@@ -667,5 +722,56 @@ mod tests {
             events.first(),
             Some(NormalizedEvent::ToolResult { tool_name, is_error, .. }) if tool_name == "tool123" && !*is_error
         ));
+    }
+
+    #[test]
+    fn test_parse_result_with_token_usage() {
+        let agent = ClaudeCodeAgent::new();
+        // Result event with token usage from Claude Code
+        let line = r#"{"type":"result","duration_ms":6017,"duration_api_ms":3236,"num_turns":2,"total_cost_usd":0.08255525,"usage":{"input_tokens":2,"cache_creation_input_tokens":11777,"cache_read_input_tokens":13928,"output_tokens":79}}"#;
+        let events = agent.parse_output(line);
+
+        assert_eq!(events.len(), 1);
+        match events.first() {
+            Some(NormalizedEvent::SessionEnd {
+                success,
+                error,
+                token_usage,
+            }) => {
+                assert!(*success);
+                assert!(error.is_none());
+                let usage = token_usage.as_ref().expect("token_usage should be present");
+                assert_eq!(usage.input_tokens, 2);
+                assert_eq!(usage.output_tokens, 79);
+                assert_eq!(usage.cache_read_input_tokens, 13928);
+                assert_eq!(usage.cache_creation_input_tokens, 11777);
+                assert!((usage.total_cost_usd - 0.08255525).abs() < 0.0001);
+                assert_eq!(usage.duration_ms, 6017);
+                assert_eq!(usage.num_turns, 2);
+            }
+            _ => panic!("Expected SessionEnd event with token usage"),
+        }
+    }
+
+    #[test]
+    fn test_parse_result_with_error() {
+        let agent = ClaudeCodeAgent::new();
+        // Result event with error
+        let line = r#"{"type":"result","is_error":true,"error":"Task failed","duration_ms":1000,"num_turns":1,"total_cost_usd":0.01,"usage":{"input_tokens":100,"output_tokens":50}}"#;
+        let events = agent.parse_output(line);
+
+        assert_eq!(events.len(), 1);
+        match events.first() {
+            Some(NormalizedEvent::SessionEnd {
+                success,
+                error,
+                token_usage,
+            }) => {
+                assert!(!*success);
+                assert_eq!(error.as_deref(), Some("Task failed"));
+                assert!(token_usage.is_some());
+            }
+            _ => panic!("Expected SessionEnd event"),
+        }
     }
 }

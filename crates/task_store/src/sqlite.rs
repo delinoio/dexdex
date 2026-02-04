@@ -101,6 +101,7 @@ impl SqliteTaskStore {
                 started_at TEXT,
                 completed_at TEXT,
                 output_log TEXT,
+                token_usage TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -931,9 +932,15 @@ impl TaskStore for SqliteTaskStore {
     // =========================================================================
 
     async fn create_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
+        let token_usage_json = session
+            .token_usage
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         sqlx::query(
             "INSERT INTO agent_sessions (id, agent_task_id, ai_agent_type, ai_agent_model, \
-             started_at, completed_at, output_log, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             started_at, completed_at, output_log, token_usage, created_at) VALUES (?, ?, ?, ?, \
+             ?, ?, ?, ?, ?)",
         )
         .bind(session.id.to_string())
         .bind(session.agent_task_id.to_string())
@@ -942,6 +949,7 @@ impl TaskStore for SqliteTaskStore {
         .bind(session.started_at.map(|t| t.to_rfc3339()))
         .bind(session.completed_at.map(|t| t.to_rfc3339()))
         .bind(&session.output_log)
+        .bind(&token_usage_json)
         .bind(session.created_at.to_rfc3339())
         .execute(&self.pool)
         .await
@@ -966,6 +974,7 @@ impl TaskStore for SqliteTaskStore {
                 let agent_type_str: String = row.get("ai_agent_type");
                 let started_at_str: Option<String> = row.get("started_at");
                 let completed_at_str: Option<String> = row.get("completed_at");
+                let token_usage_str: Option<String> = row.get("token_usage");
                 let session = AgentSession {
                     id: Self::parse_uuid(row.get("id"))?,
                     agent_task_id: Self::parse_uuid(row.get("agent_task_id"))?,
@@ -986,6 +995,9 @@ impl TaskStore for SqliteTaskStore {
                         .transpose()
                         .map_err(|e| TaskStoreError::Other(e.to_string()))?,
                     output_log: row.get("output_log"),
+                    token_usage: token_usage_str
+                        .map(|s| serde_json::from_str(&s))
+                        .transpose()?,
                     created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
                         .map_err(|e| TaskStoreError::Other(e.to_string()))?
                         .with_timezone(&chrono::Utc),
@@ -1007,6 +1019,7 @@ impl TaskStore for SqliteTaskStore {
             let agent_type_str: String = row.get("ai_agent_type");
             let started_at_str: Option<String> = row.get("started_at");
             let completed_at_str: Option<String> = row.get("completed_at");
+            let token_usage_str: Option<String> = row.get("token_usage");
             sessions.push(AgentSession {
                 id: Self::parse_uuid(row.get("id"))?,
                 agent_task_id: Self::parse_uuid(row.get("agent_task_id"))?,
@@ -1027,6 +1040,9 @@ impl TaskStore for SqliteTaskStore {
                     .transpose()
                     .map_err(|e| TaskStoreError::Other(e.to_string()))?,
                 output_log: row.get("output_log"),
+                token_usage: token_usage_str
+                    .map(|s| serde_json::from_str(&s))
+                    .transpose()?,
                 created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
                     .map_err(|e| TaskStoreError::Other(e.to_string()))?
                     .with_timezone(&chrono::Utc),
@@ -1037,9 +1053,14 @@ impl TaskStore for SqliteTaskStore {
     }
 
     async fn update_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
+        let token_usage_json = session
+            .token_usage
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
         let result = sqlx::query(
             "UPDATE agent_sessions SET agent_task_id = ?, ai_agent_type = ?, ai_agent_model = ?, \
-             started_at = ?, completed_at = ?, output_log = ? WHERE id = ?",
+             started_at = ?, completed_at = ?, output_log = ?, token_usage = ? WHERE id = ?",
         )
         .bind(session.agent_task_id.to_string())
         .bind(serde_json::to_string(&session.ai_agent_type)?)
@@ -1047,6 +1068,7 @@ impl TaskStore for SqliteTaskStore {
         .bind(session.started_at.map(|t| t.to_rfc3339()))
         .bind(session.completed_at.map(|t| t.to_rfc3339()))
         .bind(&session.output_log)
+        .bind(&token_usage_json)
         .bind(session.id.to_string())
         .execute(&self.pool)
         .await?;
