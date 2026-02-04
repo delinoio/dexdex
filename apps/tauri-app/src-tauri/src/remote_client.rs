@@ -190,6 +190,14 @@ impl RemoteClient {
         self.post("/api/repository-group/create", &request).await
     }
 
+    /// Gets a repository group by ID.
+    pub async fn get_repository_group(
+        &self,
+        request: GetRepositoryGroupRequest,
+    ) -> AppResult<GetRepositoryGroupResponse> {
+        self.post("/api/repository-group/get", &request).await
+    }
+
     /// Lists repository groups.
     pub async fn list_repository_groups(
         &self,

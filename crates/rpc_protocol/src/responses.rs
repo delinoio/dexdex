@@ -108,6 +108,11 @@ pub struct ListRepositoryGroupsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetRepositoryGroupResponse {
+    pub group: RepositoryGroup,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateRepositoryGroupResponse {
     pub group: RepositoryGroup,
 }

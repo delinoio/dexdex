@@ -564,37 +564,15 @@ pub async fn get_repository_group(
     let state = state.read().await;
 
     // Remote mode: make API call to main server
-    // Note: The server doesn't have a dedicated get_repository_group endpoint yet,
-    // so we list all groups and find the one we need.
-    //
-    // PERFORMANCE WARNING: This fetches up to 1000 groups just to find one,
-    // causing:
-    // - O(n) search through potentially hundreds of groups
-    // - Unnecessary data transfer over the network
-    // - Performance degradation as groups increase
-    //
-    // TODO(perf): Add a dedicated get_repository_group endpoint to the server API
-    // to avoid this inefficient lookup. See: https://github.com/delinoio/delidev/issues/142
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
-        let request = requests::ListRepositoryGroupsRequest {
-            workspace_id: None,
-            limit: 1000,
-            offset: 0,
+        let request = requests::GetRepositoryGroupRequest {
+            group_id: group_id.clone(),
         };
 
-        let response = client.list_repository_groups(request).await?;
-        for group in response.groups {
-            if group.id == group_id {
-                return rpc_to_entity_repository_group(group);
-            }
-        }
-
-        return Err(AppError::NotFound(format!(
-            "Repository group not found: {}",
-            group_id
-        )));
+        let response = client.get_repository_group(request).await?;
+        return rpc_to_entity_repository_group(response.group);
     }
 
     #[cfg(desktop)]

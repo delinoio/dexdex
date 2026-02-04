@@ -220,6 +220,27 @@ pub async fn create_repository_group<S: TaskStore>(
     }))
 }
 
+/// Gets a repository group by ID.
+pub async fn get_repository_group<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<GetRepositoryGroupRequest>,
+) -> ServerResult<Json<GetRepositoryGroupResponse>> {
+    let group_id: Uuid = request
+        .group_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid group_id".to_string()))?;
+
+    let group = state
+        .store
+        .get_repository_group(group_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Repository group not found".to_string()))?;
+
+    Ok(Json(GetRepositoryGroupResponse {
+        group: entity_to_rpc_repository_group(&group),
+    }))
+}
+
 /// Lists repository groups.
 pub async fn list_repository_groups<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
