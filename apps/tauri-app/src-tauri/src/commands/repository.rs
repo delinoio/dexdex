@@ -69,7 +69,7 @@ pub async fn add_repository(
         };
 
         let response = client.add_repository(request).await?;
-        let repository = rpc_to_entity_repository(response.repository);
+        let repository = rpc_to_entity_repository(response.repository)?;
         info!("Added repository via remote: {} ({})", repository.name, repository.id);
         return Ok(repository);
     }
@@ -145,12 +145,13 @@ pub async fn list_repositories(
         };
 
         let response = client.list_repositories(request).await?;
+        let repositories: crate::error::AppResult<Vec<_>> = response
+            .repositories
+            .into_iter()
+            .map(rpc_to_entity_repository)
+            .collect();
         return Ok(ListRepositoriesResult {
-            repositories: response
-                .repositories
-                .into_iter()
-                .map(rpc_to_entity_repository)
-                .collect(),
+            repositories: repositories?,
             total_count: response.total_count,
         });
     }
@@ -400,7 +401,7 @@ pub async fn create_repository_group(
         };
 
         let response = client.create_repository_group(request).await?;
-        let group = rpc_to_entity_repository_group(response.group);
+        let group = rpc_to_entity_repository_group(response.group)?;
         info!(
             "Created repository group via remote: {} ({})",
             group.name.as_deref().unwrap_or("unnamed"),
@@ -506,12 +507,13 @@ pub async fn list_repository_groups(
         };
 
         let response = client.list_repository_groups(request).await?;
+        let groups: crate::error::AppResult<Vec<_>> = response
+            .groups
+            .into_iter()
+            .map(rpc_to_entity_repository_group)
+            .collect();
         return Ok(ListRepositoryGroupsResult {
-            groups: response
-                .groups
-                .into_iter()
-                .map(rpc_to_entity_repository_group)
-                .collect(),
+            groups: groups?,
             total_count: response.total_count,
         });
     }
@@ -599,7 +601,7 @@ pub async fn get_repository_group(
         let response = client.list_repository_groups(request).await?;
         for group in response.groups {
             if group.id == group_id {
-                return Ok(rpc_to_entity_repository_group(group));
+                return rpc_to_entity_repository_group(group);
             }
         }
 
@@ -658,7 +660,7 @@ pub async fn update_repository_group(
         };
 
         let response = client.update_repository_group(request).await?;
-        let group = rpc_to_entity_repository_group(response.group);
+        let group = rpc_to_entity_repository_group(response.group)?;
         info!(
             "Updated repository group via remote: {} ({})",
             group.name.as_deref().unwrap_or("unnamed"),

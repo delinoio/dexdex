@@ -8,11 +8,32 @@ use rpc_protocol::{
     CompositeTaskStatus as RpcCompositeTaskStatus, UnitTaskStatus as RpcUnitTaskStatus,
 };
 use serde::de::DeserializeOwned;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
 /// Remote client for making API calls to the main server.
+///
+/// # Authentication
+///
+/// The remote client supports JWT authentication via the `with_auth_token` method.
+/// According to the design docs, JWT authentication is required when connecting to
+/// a remote DeliDev server in production. The token is obtained after successful
+/// OIDC authentication (see `docs/design.md` for details).
+///
+/// Currently, the auth token is not automatically injected because:
+/// 1. The OIDC authentication flow is not yet implemented in the Tauri client
+/// 2. Development/testing often uses servers with authentication disabled
+///
+/// Once OIDC authentication is implemented, the AppState should store the JWT token
+/// after login and pass it when creating the RemoteClient:
+/// ```ignore
+/// let client = RemoteClient::new(http_client, base_url)
+///     .with_auth_token(state.auth_token.clone());
+/// ```
+///
+/// TODO: Implement OIDC authentication flow and automatic token injection
 pub struct RemoteClient {
     http_client: reqwest::Client,
     base_url: String,
@@ -20,7 +41,9 @@ pub struct RemoteClient {
 }
 
 impl RemoteClient {
-    /// Creates a new remote client.
+    /// Creates a new remote client without authentication.
+    ///
+    /// For servers requiring authentication, use `with_auth_token` to set the JWT token.
     pub fn new(http_client: reqwest::Client, base_url: String) -> Self {
         Self {
             http_client,
@@ -29,7 +52,10 @@ impl RemoteClient {
         }
     }
 
-    /// Sets the authentication token.
+    /// Sets the authentication token (JWT) for authenticated requests.
+    ///
+    /// The token will be sent as a Bearer token in the Authorization header
+    /// for all subsequent API requests.
     #[allow(dead_code)]
     pub fn with_auth_token(mut self, token: String) -> Self {
         self.auth_token = Some(token);
@@ -251,8 +277,123 @@ impl RemoteClient {
 }
 
 // ============================================================================
+// Input validation helpers
+// ============================================================================
+
+/// Maximum allowed length for text input fields.
+const MAX_TEXT_LENGTH: usize = 10000;
+/// Maximum allowed length for name fields.
+const MAX_NAME_LENGTH: usize = 255;
+
+/// Validates that a required string field is not empty after trimming.
+pub fn validate_required_string(value: &str, field_name: &str) -> AppResult<()> {
+    if value.trim().is_empty() {
+        return Err(AppError::InvalidRequest(format!(
+            "{} cannot be empty",
+            field_name
+        )));
+    }
+    Ok(())
+}
+
+/// Validates that a string field does not exceed the maximum length.
+pub fn validate_string_length(value: &str, field_name: &str, max_length: usize) -> AppResult<()> {
+    if value.len() > max_length {
+        return Err(AppError::InvalidRequest(format!(
+            "{} exceeds maximum length of {} characters",
+            field_name, max_length
+        )));
+    }
+    Ok(())
+}
+
+/// Validates a name field (required, max 255 chars).
+pub fn validate_name(value: &str, field_name: &str) -> AppResult<()> {
+    validate_required_string(value, field_name)?;
+    validate_string_length(value, field_name, MAX_NAME_LENGTH)
+}
+
+/// Validates an optional name field (max 255 chars if present).
+pub fn validate_optional_name(value: Option<&str>, field_name: &str) -> AppResult<()> {
+    if let Some(v) = value {
+        if !v.trim().is_empty() {
+            validate_string_length(v, field_name, MAX_NAME_LENGTH)?;
+        }
+    }
+    Ok(())
+}
+
+/// Validates a text field (required, max 10000 chars).
+pub fn validate_text(value: &str, field_name: &str) -> AppResult<()> {
+    validate_required_string(value, field_name)?;
+    validate_string_length(value, field_name, MAX_TEXT_LENGTH)
+}
+
+/// Validates an optional text field (max 10000 chars if present).
+pub fn validate_optional_text(value: Option<&str>, field_name: &str) -> AppResult<()> {
+    if let Some(v) = value {
+        if !v.trim().is_empty() {
+            validate_string_length(v, field_name, MAX_TEXT_LENGTH)?;
+        }
+    }
+    Ok(())
+}
+
+/// Validates that a UUID string is well-formed (for remote mode where we send it as string).
+pub fn validate_uuid_string(value: &str, field_name: &str) -> AppResult<()> {
+    validate_required_string(value, field_name)?;
+    value.parse::<Uuid>().map_err(|_| {
+        AppError::InvalidRequest(format!("Invalid {} format", field_name))
+    })?;
+    Ok(())
+}
+
+/// Validates an optional UUID string.
+pub fn validate_optional_uuid_string(value: Option<&str>, field_name: &str) -> AppResult<()> {
+    if let Some(v) = value {
+        if !v.trim().is_empty() {
+            validate_uuid_string(v, field_name)?;
+        }
+    }
+    Ok(())
+}
+
+// ============================================================================
 // Type conversion helpers
 // ============================================================================
+
+/// Parses a UUID from a string, returning an error with context if parsing fails.
+fn parse_uuid(id_str: &str, field_name: &str) -> AppResult<Uuid> {
+    id_str.parse().map_err(|e| {
+        warn!(
+            "Failed to parse {} UUID '{}': {}",
+            field_name, id_str, e
+        );
+        AppError::Remote(format!(
+            "Server returned invalid {}: '{}'",
+            field_name, id_str
+        ))
+    })
+}
+
+/// Parses a list of UUIDs, logging warnings for invalid entries and collecting valid ones.
+/// This is used for non-critical list fields where partial results are acceptable.
+fn parse_uuid_list(ids: &[String], field_name: &str) -> Vec<Uuid> {
+    ids.iter()
+        .filter_map(|id| {
+            match id.parse() {
+                Ok(uuid) => Some(uuid),
+                Err(e) => {
+                    warn!(
+                        "Skipping invalid {} UUID '{}': {}",
+                        field_name, id, e
+                    );
+                    None
+                }
+            }
+        })
+        .collect()
+}
 
 /// Converts entity AiAgentType to RPC AiAgentType.
 pub fn entity_to_rpc_agent_type(agent_type: entities::AiAgentType) -> RpcAiAgentType {
@@ -267,46 +408,44 @@ pub fn entity_to_rpc_agent_type(agent_type: entities::AiAgentType) -> RpcAiAgent
 }
 
 /// Converts RPC UnitTask to entity UnitTask.
-pub fn rpc_to_entity_unit_task(rpc: rpc_protocol::UnitTask) -> entities::UnitTask {
-    entities::UnitTask {
-        id: rpc.id.parse().unwrap_or_default(),
-        repository_group_id: rpc.repository_group_id.parse().unwrap_or_default(),
-        agent_task_id: rpc.agent_task_id.parse().unwrap_or_default(),
+///
+/// Returns an error if required UUID fields cannot be parsed.
+pub fn rpc_to_entity_unit_task(rpc: rpc_protocol::UnitTask) -> AppResult<entities::UnitTask> {
+    Ok(entities::UnitTask {
+        id: parse_uuid(&rpc.id, "task id")?,
+        repository_group_id: parse_uuid(&rpc.repository_group_id, "repository group id")?,
+        agent_task_id: parse_uuid(&rpc.agent_task_id, "agent task id")?,
         prompt: rpc.prompt,
         title: rpc.title,
         branch_name: rpc.branch_name,
         linked_pr_url: rpc.linked_pr_url,
         base_commit: rpc.base_commit,
         end_commit: rpc.end_commit,
-        auto_fix_task_ids: rpc
-            .auto_fix_task_ids
-            .iter()
-            .filter_map(|id| id.parse().ok())
-            .collect(),
+        auto_fix_task_ids: parse_uuid_list(&rpc.auto_fix_task_ids, "auto fix task id"),
         status: rpc_to_entity_unit_status(rpc.status),
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
-    }
+    })
 }
 
 /// Converts RPC CompositeTask to entity CompositeTask.
-pub fn rpc_to_entity_composite_task(rpc: rpc_protocol::CompositeTask) -> entities::CompositeTask {
-    entities::CompositeTask {
-        id: rpc.id.parse().unwrap_or_default(),
-        repository_group_id: rpc.repository_group_id.parse().unwrap_or_default(),
-        planning_task_id: rpc.planning_task_id.parse().unwrap_or_default(),
+///
+/// Returns an error if required UUID fields cannot be parsed.
+pub fn rpc_to_entity_composite_task(
+    rpc: rpc_protocol::CompositeTask,
+) -> AppResult<entities::CompositeTask> {
+    Ok(entities::CompositeTask {
+        id: parse_uuid(&rpc.id, "composite task id")?,
+        repository_group_id: parse_uuid(&rpc.repository_group_id, "repository group id")?,
+        planning_task_id: parse_uuid(&rpc.planning_task_id, "planning task id")?,
         prompt: rpc.prompt,
         title: rpc.title,
-        node_ids: rpc
-            .node_ids
-            .iter()
-            .filter_map(|id| id.parse().ok())
-            .collect(),
+        node_ids: parse_uuid_list(&rpc.node_ids, "node id"),
         status: rpc_to_entity_composite_status(rpc.status),
         execution_agent_type: rpc.execution_agent_type.map(rpc_to_entity_agent_type),
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
-    }
+    })
 }
 
 /// Converts RPC UnitTaskStatus to entity UnitTaskStatus.
@@ -378,10 +517,12 @@ pub fn rpc_to_entity_agent_type(agent_type: RpcAiAgentType) -> entities::AiAgent
 }
 
 /// Converts RPC Repository to entity Repository.
-pub fn rpc_to_entity_repository(rpc: rpc_protocol::Repository) -> entities::Repository {
-    entities::Repository {
-        id: rpc.id.parse().unwrap_or_default(),
-        workspace_id: rpc.workspace_id.parse().unwrap_or_default(),
+///
+/// Returns an error if required UUID fields cannot be parsed.
+pub fn rpc_to_entity_repository(rpc: rpc_protocol::Repository) -> AppResult<entities::Repository> {
+    Ok(entities::Repository {
+        id: parse_uuid(&rpc.id, "repository id")?,
+        workspace_id: parse_uuid(&rpc.workspace_id, "workspace id")?,
         name: rpc.name,
         remote_url: rpc.remote_url,
         default_branch: rpc.default_branch,
@@ -397,35 +538,47 @@ pub fn rpc_to_entity_repository(rpc: rpc_protocol::Repository) -> entities::Repo
         },
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
-    }
+    })
 }
 
 /// Converts RPC RepositoryGroup to entity RepositoryGroup.
+///
+/// Returns an error if required UUID fields cannot be parsed.
 pub fn rpc_to_entity_repository_group(
     rpc: rpc_protocol::RepositoryGroup,
-) -> entities::RepositoryGroup {
-    entities::RepositoryGroup {
-        id: rpc.id.parse().unwrap_or_default(),
-        workspace_id: rpc.workspace_id.parse().unwrap_or_default(),
+) -> AppResult<entities::RepositoryGroup> {
+    Ok(entities::RepositoryGroup {
+        id: parse_uuid(&rpc.id, "repository group id")?,
+        workspace_id: parse_uuid(&rpc.workspace_id, "workspace id")?,
         name: rpc.name,
-        repository_ids: rpc
-            .repository_ids
-            .iter()
-            .filter_map(|id| id.parse().ok())
-            .collect(),
+        repository_ids: parse_uuid_list(&rpc.repository_ids, "repository id"),
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
-    }
+    })
 }
 
 /// Converts RPC Workspace to entity Workspace.
-pub fn rpc_to_entity_workspace(rpc: rpc_protocol::Workspace) -> entities::Workspace {
-    entities::Workspace {
-        id: rpc.id.parse().unwrap_or_default(),
-        user_id: rpc.user_id.as_ref().and_then(|id| id.parse().ok()),
+///
+/// Returns an error if required UUID fields cannot be parsed.
+pub fn rpc_to_entity_workspace(rpc: rpc_protocol::Workspace) -> AppResult<entities::Workspace> {
+    // For user_id, log a warning if parsing fails but don't fail the entire conversion
+    // since user_id is optional and may legitimately be missing or invalid in some contexts
+    let user_id = rpc.user_id.as_ref().and_then(|id| {
+        match id.parse() {
+            Ok(uuid) => Some(uuid),
+            Err(e) => {
+                warn!("Failed to parse user_id UUID '{}': {}", id, e);
+                None
+            }
+        }
+    });
+
+    Ok(entities::Workspace {
+        id: parse_uuid(&rpc.id, "workspace id")?,
+        user_id,
         name: rpc.name,
         description: rpc.description,
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
-    }
+    })
 }

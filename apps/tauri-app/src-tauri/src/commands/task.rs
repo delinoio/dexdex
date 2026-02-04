@@ -22,7 +22,8 @@ use crate::{
     error::{AppError, AppResult},
     remote_client::{
         entity_to_rpc_agent_type, entity_to_rpc_composite_status, entity_to_rpc_unit_status,
-        rpc_to_entity_composite_task, rpc_to_entity_unit_task, RemoteClient,
+        rpc_to_entity_composite_task, rpc_to_entity_unit_task, validate_optional_name,
+        validate_text, validate_uuid_string, RemoteClient,
     },
     state::AppState,
 };
@@ -142,6 +143,12 @@ pub async fn create_unit_task(
 ) -> AppResult<UnitTask> {
     let state = state.read().await;
 
+    // Validate input parameters
+    validate_uuid_string(&params.repository_group_id, "repository group ID")?;
+    validate_text(&params.prompt, "prompt")?;
+    validate_optional_name(params.title.as_deref(), "title")?;
+    validate_optional_name(params.branch_name.as_deref(), "branch name")?;
+
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
         let base_url = state
@@ -167,7 +174,7 @@ pub async fn create_unit_task(
         };
 
         let response = client.create_unit_task(request).await?;
-        let task = rpc_to_entity_unit_task(response.task);
+        let task = rpc_to_entity_unit_task(response.task)?;
         info!("Created unit task via remote: {}", task.id);
         return Ok(task);
     }
@@ -235,6 +242,12 @@ pub async fn create_unit_task(
 ) -> AppResult<UnitTask> {
     let state = state.read().await;
 
+    // Validate input parameters
+    validate_uuid_string(&params.repository_group_id, "repository group ID")?;
+    validate_text(&params.prompt, "prompt")?;
+    validate_optional_name(params.title.as_deref(), "title")?;
+    validate_optional_name(params.branch_name.as_deref(), "branch name")?;
+
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
         let base_url = state
@@ -260,7 +273,7 @@ pub async fn create_unit_task(
         };
 
         let response = client.create_unit_task(request).await?;
-        let task = rpc_to_entity_unit_task(response.task);
+        let task = rpc_to_entity_unit_task(response.task)?;
         info!("Created unit task via remote: {}", task.id);
         return Ok(task);
     }
@@ -278,6 +291,11 @@ pub async fn create_composite_task(
     params: CreateCompositeTaskParams,
 ) -> AppResult<CompositeTask> {
     let state = state.read().await;
+
+    // Validate input parameters
+    validate_uuid_string(&params.repository_group_id, "repository group ID")?;
+    validate_text(&params.prompt, "prompt")?;
+    validate_optional_name(params.title.as_deref(), "title")?;
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
@@ -310,7 +328,7 @@ pub async fn create_composite_task(
         };
 
         let response = client.create_composite_task(request).await?;
-        let task = rpc_to_entity_composite_task(response.task);
+        let task = rpc_to_entity_composite_task(response.task)?;
         info!("Created composite task via remote: {}", task.id);
         return Ok(task);
     }
@@ -367,6 +385,11 @@ pub async fn create_composite_task(
 ) -> AppResult<CompositeTask> {
     let state = state.read().await;
 
+    // Validate input parameters
+    validate_uuid_string(&params.repository_group_id, "repository group ID")?;
+    validate_text(&params.prompt, "prompt")?;
+    validate_optional_name(params.title.as_deref(), "title")?;
+
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
         let base_url = state
@@ -398,7 +421,7 @@ pub async fn create_composite_task(
         };
 
         let response = client.create_composite_task(request).await?;
-        let task = rpc_to_entity_composite_task(response.task);
+        let task = rpc_to_entity_composite_task(response.task)?;
         info!("Created composite task via remote: {}", task.id);
         return Ok(task);
     }
@@ -432,13 +455,13 @@ pub async fn get_task(
         let response = client.get_task(request).await?;
         return match response {
             rpc_protocol::responses::GetTaskResponse::UnitTask { unit_task } => Ok(TaskResponse {
-                unit_task: Some(rpc_to_entity_unit_task(unit_task)),
+                unit_task: Some(rpc_to_entity_unit_task(unit_task)?),
                 composite_task: None,
             }),
             rpc_protocol::responses::GetTaskResponse::CompositeTask { composite_task } => {
                 Ok(TaskResponse {
                     unit_task: None,
-                    composite_task: Some(rpc_to_entity_composite_task(composite_task)),
+                    composite_task: Some(rpc_to_entity_composite_task(composite_task)?),
                 })
             }
         };
@@ -495,13 +518,13 @@ pub async fn get_task(
         let response = client.get_task(request).await?;
         return match response {
             rpc_protocol::responses::GetTaskResponse::UnitTask { unit_task } => Ok(TaskResponse {
-                unit_task: Some(rpc_to_entity_unit_task(unit_task)),
+                unit_task: Some(rpc_to_entity_unit_task(unit_task)?),
                 composite_task: None,
             }),
             rpc_protocol::responses::GetTaskResponse::CompositeTask { composite_task } => {
                 Ok(TaskResponse {
                     unit_task: None,
-                    composite_task: Some(rpc_to_entity_composite_task(composite_task)),
+                    composite_task: Some(rpc_to_entity_composite_task(composite_task)?),
                 })
             }
         };
@@ -550,17 +573,19 @@ pub async fn list_tasks(
         };
 
         let response = client.list_tasks(request).await?;
+        let unit_tasks: AppResult<Vec<_>> = response
+            .unit_tasks
+            .into_iter()
+            .map(rpc_to_entity_unit_task)
+            .collect();
+        let composite_tasks: AppResult<Vec<_>> = response
+            .composite_tasks
+            .into_iter()
+            .map(rpc_to_entity_composite_task)
+            .collect();
         return Ok(ListTasksResult {
-            unit_tasks: response
-                .unit_tasks
-                .into_iter()
-                .map(rpc_to_entity_unit_task)
-                .collect(),
-            composite_tasks: response
-                .composite_tasks
-                .into_iter()
-                .map(rpc_to_entity_composite_task)
-                .collect(),
+            unit_tasks: unit_tasks?,
+            composite_tasks: composite_tasks?,
             total_count: response.total_count,
         });
     }
@@ -641,17 +666,19 @@ pub async fn list_tasks(
         };
 
         let response = client.list_tasks(request).await?;
+        let unit_tasks: AppResult<Vec<_>> = response
+            .unit_tasks
+            .into_iter()
+            .map(rpc_to_entity_unit_task)
+            .collect();
+        let composite_tasks: AppResult<Vec<_>> = response
+            .composite_tasks
+            .into_iter()
+            .map(rpc_to_entity_composite_task)
+            .collect();
         return Ok(ListTasksResult {
-            unit_tasks: response
-                .unit_tasks
-                .into_iter()
-                .map(rpc_to_entity_unit_task)
-                .collect(),
-            composite_tasks: response
-                .composite_tasks
-                .into_iter()
-                .map(rpc_to_entity_composite_task)
-                .collect(),
+            unit_tasks: unit_tasks?,
+            composite_tasks: composite_tasks?,
             total_count: response.total_count,
         });
     }
@@ -855,6 +882,10 @@ pub async fn request_changes(
 ) -> AppResult<()> {
     let state = state.read().await;
 
+    // Validate input parameters
+    validate_uuid_string(&task_id, "task ID")?;
+    validate_text(&feedback, "feedback")?;
+
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
         let base_url = state
@@ -905,6 +936,10 @@ pub async fn request_changes(
     feedback: String,
 ) -> AppResult<()> {
     let state = state.read().await;
+
+    // Validate input parameters
+    validate_uuid_string(&task_id, "task ID")?;
+    validate_text(&feedback, "feedback")?;
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server

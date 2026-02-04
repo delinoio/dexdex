@@ -129,7 +129,7 @@ pub async fn create_workspace(
         };
 
         let response = client.create_workspace(request).await?;
-        let workspace = rpc_to_entity_workspace(response.workspace);
+        let workspace = rpc_to_entity_workspace(response.workspace)?;
         info!("Created workspace via remote: {} ({})", workspace.name, workspace.id);
         return Ok(workspace);
     }
@@ -192,12 +192,13 @@ pub async fn list_workspaces(
         };
 
         let response = client.list_workspaces(request).await?;
+        let workspaces: crate::error::AppResult<Vec<_>> = response
+            .workspaces
+            .into_iter()
+            .map(rpc_to_entity_workspace)
+            .collect();
         return Ok(ListWorkspacesResult {
-            workspaces: response
-                .workspaces
-                .into_iter()
-                .map(rpc_to_entity_workspace)
-                .collect(),
+            workspaces: workspaces?,
             total_count: response.total_count,
         });
     }
@@ -252,7 +253,7 @@ pub async fn get_workspace(
         };
 
         let response = client.get_workspace(request).await?;
-        return Ok(rpc_to_entity_workspace(response.workspace));
+        return rpc_to_entity_workspace(response.workspace);
     }
 
     #[cfg(desktop)]
@@ -306,7 +307,7 @@ pub async fn update_workspace(
         };
 
         let response = client.update_workspace(request).await?;
-        let workspace = rpc_to_entity_workspace(response.workspace);
+        let workspace = rpc_to_entity_workspace(response.workspace)?;
         info!("Updated workspace via remote: {} ({})", workspace.name, workspace.id);
         return Ok(workspace);
     }
