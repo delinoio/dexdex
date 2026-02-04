@@ -12,7 +12,8 @@ DeliDev is a desktop and mobile application for orchestrating AI coding agents w
 6. [Secrets Management](#secrets-management)
 7. [Workflows](#workflows)
 8. [Error Handling](#error-handling)
-9. [Related Documents](#related-documents)
+9. [CI/CD and Release](#cicd-and-release)
+10. [Related Documents](#related-documents)
 
 ---
 
@@ -771,6 +772,56 @@ interface ChatMessage {
 - **Windows/Linux**: `Alt + Z`
 
 Toggles chat window visibility from anywhere in the app.
+
+---
+
+## CI/CD and Release
+
+### GitHub Actions Workflows
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| CI.yml | Push to main, PRs | Run tests, linting, build verification |
+| create-tag.yml | Manual (workflow_dispatch) | Create version commits and tags |
+| release.yml | Tag push (v*) | Build and publish releases |
+
+### Release Process
+
+1. **Create Tag** (`create-tag.yml`):
+   - Triggered manually with version input (e.g., "0.1.0")
+   - Updates version in `package.json` and `tauri.conf.json`
+   - Creates commit with version bump
+   - Pushes tag `v{version}`
+
+2. **Release Build** (`release.yml`):
+   - Triggered automatically by tag push
+   - Creates draft GitHub release
+   - Builds for all platforms in parallel:
+     - Linux (x86_64)
+     - macOS (ARM64 and x86_64)
+     - Windows (x86_64)
+     - iOS (uploaded to TestFlight)
+   - Uploads debug symbols to Sentry
+   - Publishes release when all builds complete
+
+### iOS TestFlight Upload
+
+The release workflow includes automated iOS TestFlight uploads:
+
+1. Build iOS app for App Store distribution
+2. Sign with distribution certificate and provisioning profile
+3. Upload IPA to App Store Connect via `xcrun altool`
+
+**Required Secrets:**
+
+| Secret | Description |
+|--------|-------------|
+| `APPLE_CERTIFICATE` | Base64-encoded .p12 distribution certificate |
+| `APPLE_CERTIFICATE_PASSWORD` | Password for the certificate |
+| `APPLE_PROVISIONING_PROFILE` | Base64-encoded App Store provisioning profile |
+| `APPLE_API_KEY_ID` | App Store Connect API key ID |
+| `APPLE_API_ISSUER_ID` | App Store Connect API issuer ID |
+| `APPLE_API_KEY` | Base64-encoded App Store Connect API private key (.p8) |
 
 ---
 
