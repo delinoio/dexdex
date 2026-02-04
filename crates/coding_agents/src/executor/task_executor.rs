@@ -163,22 +163,8 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         let mut handles = self.execution_handles.write().await;
 
         // Clean up finished handles and their cleanup info to prevent memory leaks
-        let finished_ids: Vec<Uuid> = handles
-            .iter()
-            .filter(|(_, h)| h.is_finished())
-            .map(|(id, _)| *id)
-            .collect();
-        for id in &finished_ids {
-            handles.remove(id);
-        }
-
-        // Also clean up cleanup info for finished tasks
-        if !finished_ids.is_empty() {
-            let mut cleanup_info = self.task_cleanup_info.write().await;
-            for id in finished_ids {
-                cleanup_info.remove(&id);
-            }
-        }
+        let finished_ids = Self::collect_and_remove_finished_tasks(&mut handles);
+        self.remove_cleanup_info_for_tasks(finished_ids).await;
 
         // Check if a task with this ID is already running
         if handles.contains_key(&task_id) {
@@ -256,6 +242,16 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
     /// Cleans up finished execution handles to prevent memory leaks.
     pub async fn cleanup_finished_handles(&self) {
         let mut handles = self.execution_handles.write().await;
+        let finished_ids = Self::collect_and_remove_finished_tasks(&mut handles);
+        self.remove_cleanup_info_for_tasks(finished_ids).await;
+    }
+
+    /// Collects finished task IDs and removes their handles from the map.
+    ///
+    /// Returns the list of removed task IDs so their cleanup info can be removed.
+    fn collect_and_remove_finished_tasks(
+        handles: &mut HashMap<Uuid, JoinHandle<ExecutionResult>>,
+    ) -> Vec<Uuid> {
         let finished_ids: Vec<Uuid> = handles
             .iter()
             .filter(|(_, h)| h.is_finished())
@@ -266,10 +262,14 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             handles.remove(id);
         }
 
-        // Also clean up cleanup info for finished tasks
-        if !finished_ids.is_empty() {
+        finished_ids
+    }
+
+    /// Removes cleanup info for the specified task IDs.
+    async fn remove_cleanup_info_for_tasks(&self, task_ids: Vec<Uuid>) {
+        if !task_ids.is_empty() {
             let mut cleanup_info = self.task_cleanup_info.write().await;
-            for id in finished_ids {
+            for id in task_ids {
                 cleanup_info.remove(&id);
             }
         }
@@ -467,6 +467,12 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         }
     }
 
+    /// Returns the number of cleanup info entries (for testing).
+    #[cfg(test)]
+    pub async fn cleanup_info_count(&self) -> usize {
+        self.task_cleanup_info.read().await.len()
+    }
+
     /// Emits a task status changed event.
     pub fn emit_status_changed(
         &self,
@@ -596,5 +602,153 @@ mod tests {
 
         let manager = executor.tty_request_manager();
         assert_eq!(manager.pending_count().await, 0);
+    }
+
+    #[test]
+    fn test_collect_and_remove_finished_tasks_empty() {
+        let mut handles: HashMap<Uuid, JoinHandle<ExecutionResult>> = HashMap::new();
+        let finished = TaskExecutor::<NoOpEventEmitter>::collect_and_remove_finished_tasks(&mut handles);
+        assert!(finished.is_empty());
+        assert!(handles.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_collect_and_remove_finished_tasks_with_finished() {
+        let mut handles: HashMap<Uuid, JoinHandle<ExecutionResult>> = HashMap::new();
+        let task_id = Uuid::new_v4();
+
+        // Create a task that finishes immediately
+        let handle = tokio::spawn(async { ExecutionResult::Cancelled });
+
+        // Wait for it to finish
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        handles.insert(task_id, handle);
+
+        let finished = TaskExecutor::<NoOpEventEmitter>::collect_and_remove_finished_tasks(&mut handles);
+        assert_eq!(finished.len(), 1);
+        assert!(finished.contains(&task_id));
+        assert!(handles.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_remove_cleanup_info_for_tasks() {
+        let temp_dir = TempDir::new().unwrap();
+        let emitter = Arc::new(NoOpEventEmitter::new());
+        let executor = TaskExecutor::new(temp_dir.path(), emitter);
+
+        // Manually insert cleanup info
+        {
+            let mut cleanup_info = executor.task_cleanup_info.write().await;
+            cleanup_info.insert(
+                Uuid::new_v4(),
+                TaskCleanupInfo {
+                    remote_url: "https://github.com/test/repo".to_string(),
+                    branch_name: "test-branch".to_string(),
+                },
+            );
+            cleanup_info.insert(
+                Uuid::new_v4(),
+                TaskCleanupInfo {
+                    remote_url: "https://github.com/test/repo2".to_string(),
+                    branch_name: "test-branch2".to_string(),
+                },
+            );
+        }
+
+        assert_eq!(executor.cleanup_info_count().await, 2);
+
+        // Remove one task
+        let task_ids: Vec<Uuid> = executor.task_cleanup_info.read().await.keys().take(1).cloned().collect();
+        executor.remove_cleanup_info_for_tasks(task_ids).await;
+
+        assert_eq!(executor.cleanup_info_count().await, 1);
+
+        // Remove empty list should not change anything
+        executor.remove_cleanup_info_for_tasks(vec![]).await;
+        assert_eq!(executor.cleanup_info_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_execution_removes_cleanup_info() {
+        let temp_dir = TempDir::new().unwrap();
+        let emitter = Arc::new(NoOpEventEmitter::new());
+        let executor = TaskExecutor::new(temp_dir.path(), emitter);
+
+        let task_id = Uuid::new_v4();
+
+        // Manually set up a task handle and cleanup info
+        {
+            let mut handles = executor.execution_handles.write().await;
+            // Create a long-running task
+            let handle = tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_secs(100)).await;
+                ExecutionResult::Cancelled
+            });
+            handles.insert(task_id, handle);
+        }
+
+        {
+            let mut cleanup_info = executor.task_cleanup_info.write().await;
+            cleanup_info.insert(
+                task_id,
+                TaskCleanupInfo {
+                    remote_url: "https://github.com/test/repo".to_string(),
+                    branch_name: "test-branch".to_string(),
+                },
+            );
+        }
+
+        // Verify cleanup info exists
+        assert_eq!(executor.cleanup_info_count().await, 1);
+
+        // Cancel the task
+        let cancelled = executor.cancel_execution(task_id).await;
+        assert!(cancelled);
+
+        // Verify cleanup info was removed
+        assert_eq!(executor.cleanup_info_count().await, 0);
+
+        // Verify task is no longer executing
+        assert!(!executor.is_executing(task_id).await);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_finished_handles_removes_cleanup_info() {
+        let temp_dir = TempDir::new().unwrap();
+        let emitter = Arc::new(NoOpEventEmitter::new());
+        let executor = TaskExecutor::new(temp_dir.path(), emitter);
+
+        let task_id = Uuid::new_v4();
+
+        // Manually set up a task handle that finishes immediately
+        {
+            let mut handles = executor.execution_handles.write().await;
+            let handle = tokio::spawn(async { ExecutionResult::Cancelled });
+            handles.insert(task_id, handle);
+        }
+
+        {
+            let mut cleanup_info = executor.task_cleanup_info.write().await;
+            cleanup_info.insert(
+                task_id,
+                TaskCleanupInfo {
+                    remote_url: "https://github.com/test/repo".to_string(),
+                    branch_name: "test-branch".to_string(),
+                },
+            );
+        }
+
+        // Wait for the task to finish
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        // Verify cleanup info exists
+        assert_eq!(executor.cleanup_info_count().await, 1);
+
+        // Clean up finished handles
+        executor.cleanup_finished_handles().await;
+
+        // Verify cleanup info was removed
+        assert_eq!(executor.cleanup_info_count().await, 0);
     }
 }
