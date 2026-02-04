@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -78,8 +78,23 @@ export function Onboarding() {
     }
   };
 
+  // Handle Cmd+Enter (macOS) / Ctrl+Enter (Windows/Linux) to submit the form
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (step === 1 && tokenValid) {
+          handleNext();
+        } else if (step === 2 && repoValidated && !addRepository.isPending) {
+          handleGetStarted();
+        }
+      }
+    },
+    [step, tokenValid, repoValidated, addRepository.isPending, handleNext, handleGetStarted]
+  );
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-8">
+    <div className="flex min-h-screen flex-col items-center justify-center p-8" onKeyDown={handleKeyDown}>
       <div className="w-full max-w-lg space-y-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold">Welcome to DeliDev</h1>

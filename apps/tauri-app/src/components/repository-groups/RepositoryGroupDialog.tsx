@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
@@ -66,9 +66,22 @@ export function RepositoryGroupDialog({
     }
   };
 
+  // Handle Cmd+Enter (macOS) / Ctrl+Enter (Windows/Linux) to submit the form
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (selectedRepoIds.length > 0 && !isPending) {
+          handleSubmit();
+        }
+      }
+    },
+    [selectedRepoIds.length, isPending, handleSubmit]
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onKeyDown={handleKeyDown}>
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit Repository Group" : "Create Repository Group"}

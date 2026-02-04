@@ -626,6 +626,16 @@ The review interface is built from the following components:
 | `Cmd+1` / `Ctrl+1` | Dashboard |
 | `Escape` | Close Dialog |
 
+### Form Shortcuts
+
+Forms with multiple inputs support `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux) to submit. This applies to:
+
+| Form | Location | Submit Action |
+|------|----------|---------------|
+| Task Creation | `/create-task` | Create Task |
+| Repository Group Dialog | Repository Groups page | Create/Save Group |
+| Onboarding Wizard | Step 1: Next, Step 2: Get Started |
+
 ### Review Interface
 
 | Shortcut | Action |

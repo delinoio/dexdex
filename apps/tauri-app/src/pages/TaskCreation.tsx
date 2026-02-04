@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -193,6 +193,20 @@ export function TaskCreation() {
 
   const isPending = createUnitTask.isPending || createCompositeTask.isPending || createRepositoryGroup.isPending;
 
+  // Handle Cmd+Enter (macOS) / Ctrl+Enter (Windows/Linux) to submit the form
+  const handleFormKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (selection && prompt && !isPending) {
+          const formEvent = new Event("submit", { bubbles: true, cancelable: true }) as unknown as React.FormEvent;
+          handleSubmit(formEvent);
+        }
+      }
+    },
+    [selection, prompt, isPending, handleSubmit]
+  );
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-[hsl(var(--border))] px-6 py-4">
@@ -200,7 +214,7 @@ export function TaskCreation() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-6">
+        <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="mx-auto max-w-2xl space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Repository</CardTitle>
