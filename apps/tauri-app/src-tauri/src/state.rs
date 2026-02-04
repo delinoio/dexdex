@@ -15,6 +15,7 @@ use crate::{
     },
     error::{AppError, AppResult},
     mobile::platform::supports_local_mode,
+    remote_client::RemoteClient,
 };
 
 /// Shared application state.
@@ -30,6 +31,10 @@ pub struct AppState {
     pub local_runtime: Option<SingleProcessRuntime>,
     /// Remote server URL (only used in remote mode).
     pub remote_server_url: Option<String>,
+    /// JWT authentication token for remote mode.
+    /// This is obtained after successful OIDC authentication with the server.
+    /// See `docs/design.md` for authentication flow details.
+    pub auth_token: Option<String>,
     /// HTTP client for remote mode.
     pub http_client: reqwest::Client,
 }
@@ -71,6 +76,7 @@ impl AppState {
             #[cfg(desktop)]
             local_runtime,
             remote_server_url,
+            auth_token: None,
             http_client: reqwest::Client::new(),
         })
     }
@@ -115,10 +121,47 @@ impl AppState {
         let base_url = self
             .remote_server_url
             .as_ref()
-            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+            .ok_or_else(|| AppError::Config(ERR_REMOTE_URL_NOT_CONFIGURED.to_string()))?;
         Ok(format!("{}{}", base_url.trim_end_matches('/'), path))
     }
+
+    /// Creates a RemoteClient configured with the current auth token.
+    ///
+    /// This is the recommended way to create a RemoteClient for making API
+    /// calls in remote mode. It automatically handles authentication if a
+    /// token is available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the remote server URL is not configured.
+    pub fn get_remote_client(&self) -> AppResult<RemoteClient> {
+        let base_url = self
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config(ERR_REMOTE_URL_NOT_CONFIGURED.to_string()))?;
+
+        let mut client = RemoteClient::new(self.http_client.clone(), base_url.clone());
+        if let Some(ref token) = self.auth_token {
+            client = client.with_auth_token(token.clone());
+        }
+        Ok(client)
+    }
+
+    /// Sets the authentication token for remote mode.
+    ///
+    /// This should be called after successful OIDC authentication with the
+    /// server.
+    #[allow(dead_code)]
+    pub fn set_auth_token(&mut self, token: Option<String>) {
+        self.auth_token = token;
+    }
 }
+
+/// Error message constant for remote server URL not configured.
+pub const ERR_REMOTE_URL_NOT_CONFIGURED: &str = "Remote server URL not configured";
+
+/// Error message constant for local mode not supported on platform.
+pub const ERR_LOCAL_MODE_NOT_SUPPORTED: &str = "Local mode is not supported on this platform";
 
 /// Type alias for shared state in Tauri commands.
 pub type SharedState = Arc<tokio::sync::RwLock<AppState>>;

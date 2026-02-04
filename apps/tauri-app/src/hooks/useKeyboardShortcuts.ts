@@ -22,6 +22,8 @@ export function useKeyboardShortcuts() {
     setTaskCreationOpen,
     setSettingsOpen,
     toggleCommandPalette,
+    toggleKeyboardShortcuts,
+    setKeyboardShortcutsOpen,
     tabs,
     activeTabId,
     addTab,
@@ -66,6 +68,24 @@ export function useKeyboardShortcuts() {
         navigate("/");
       },
       description: "Dashboard",
+    },
+
+    // Quick shortcuts (no modifier)
+    {
+      key: "?",
+      shift: true,
+      handler: () => {
+        toggleKeyboardShortcuts();
+      },
+      description: "Show Keyboard Shortcuts",
+    },
+    {
+      key: "c",
+      handler: () => {
+        setTaskCreationOpen(true);
+        navigate("/tasks/new");
+      },
+      description: "Create Task",
     },
 
     // Tab navigation
@@ -129,13 +149,14 @@ export function useKeyboardShortcuts() {
       description: "Open Chat",
     },
 
-    // Dialog close
+    // Dialog close - Escape should work regardless of modifiers
     {
       key: "Escape",
       handler: () => {
         setTaskCreationOpen(false);
         setSettingsOpen(false);
         setChatOpen(false);
+        setKeyboardShortcutsOpen(false);
       },
       description: "Close Dialog",
     },
@@ -144,6 +165,8 @@ export function useKeyboardShortcuts() {
     setTaskCreationOpen,
     setSettingsOpen,
     toggleCommandPalette,
+    toggleKeyboardShortcuts,
+    setKeyboardShortcutsOpen,
     toggleChat,
     setChatOpen,
     tabs,
@@ -162,10 +185,13 @@ export function useKeyboardShortcuts() {
         const keyMatches =
           event.key.toLowerCase() === shortcut.key.toLowerCase();
         // mod: true means Cmd on Mac, Ctrl on Windows/Linux
-        // When modifier is undefined, we don't care about its state
-        const modMatches = shortcut.mod === undefined ? true : (shortcut.mod ? modKey : !modKey);
-        const altMatches = shortcut.alt === undefined ? true : (shortcut.alt ? event.altKey : !event.altKey);
-        const shiftMatches = shortcut.shift === undefined ? true : (shortcut.shift ? event.shiftKey : !event.shiftKey);
+        // When modifier is undefined, require that modifier to NOT be pressed
+        // This prevents conflicts with system shortcuts (e.g., Cmd+C for copy)
+        // Exception: Escape key works regardless of modifiers for better UX
+        const isEscape = shortcut.key === "Escape";
+        const modMatches = isEscape || (shortcut.mod === undefined ? !modKey : (shortcut.mod ? modKey : !modKey));
+        const altMatches = isEscape || (shortcut.alt === undefined ? !event.altKey : (shortcut.alt ? event.altKey : !event.altKey));
+        const shiftMatches = isEscape || (shortcut.shift === undefined ? !event.shiftKey : (shortcut.shift ? event.shiftKey : !event.shiftKey));
 
         if (keyMatches && modMatches && altMatches && shiftMatches) {
           // Don't trigger shortcuts when typing in inputs
@@ -201,6 +227,8 @@ export function useKeyboardShortcuts() {
 // Export shortcut definitions for display in UI
 export const KEYBOARD_SHORTCUTS = {
   global: [
+    { keys: ["?"], description: "Show Keyboard Shortcuts" },
+    { keys: ["c"], description: "Create Task" },
     { keys: ["⌥/Alt", "Z"], description: "Open Chat" },
     { keys: ["⌘/Ctrl", "N"], description: "New Task" },
     { keys: ["⌘/Ctrl", ","], description: "Settings" },
