@@ -3,13 +3,14 @@
 //! This module provides the `LocalExecutor` which wraps the core `TaskExecutor`
 //! from the `coding_agents` crate with platform-specific event emission.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
 use coding_agents::executor::{EventEmitter, TaskExecutionConfig, TaskExecutor};
 use entities::{AgentSession, AiAgentType, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
+use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -30,6 +31,9 @@ pub struct LocalExecutor<E: EventEmitter> {
     /// Data directory path (kept for potential future use).
     #[allow(dead_code)]
     data_dir: PathBuf,
+    /// Active execution handles keyed by task ID.
+    /// This stores handles for spawned tasks so they can be cancelled.
+    execution_handles: Arc<RwLock<HashMap<Uuid, JoinHandle<()>>>>,
 }
 
 impl<E: EventEmitter + 'static> LocalExecutor<E> {
@@ -42,6 +46,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             executor,
             emitter,
             data_dir,
+            execution_handles: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -138,9 +143,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         // Reuse the existing repo_cache to avoid redundant clones
         let repo_cache = self.executor.repo_cache().clone();
         let executor = TaskExecutor::with_repo_cache(repo_cache, emitter);
+        let execution_handles = self.execution_handles.clone();
 
-        // Spawn the execution task
-        tokio::spawn(async move {
+        // Spawn the execution task and store the handle for cancellation support
+        let handle = tokio::spawn(async move {
             let result = executor.execute_and_wait(config).await;
 
             // Persist logs to the database before updating task status
@@ -198,7 +204,13 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     }
                 }
             }
+
+            // Remove handle from the map after completion
+            execution_handles.write().await.remove(&task_id);
         });
+
+        // Store the handle so it can be cancelled later
+        self.execution_handles.write().await.insert(task_id, handle);
 
         Ok(())
     }
@@ -256,12 +268,31 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
     /// Checks if a task is currently being executed.
     pub async fn is_executing(&self, task_id: Uuid) -> bool {
-        self.executor.is_executing(task_id).await
+        let handles = self.execution_handles.read().await;
+        if let Some(handle) = handles.get(&task_id) {
+            !handle.is_finished()
+        } else {
+            false
+        }
     }
 
     /// Cancels execution of a task.
+    ///
+    /// Returns `true` if the task was found and aborted, `false` if it wasn't
+    /// running.
     pub async fn cancel_execution(&self, task_id: Uuid) -> bool {
-        self.executor.cancel_execution(task_id).await
+        let mut handles = self.execution_handles.write().await;
+        if let Some(handle) = handles.remove(&task_id) {
+            info!("Aborting execution of task {}", task_id);
+            handle.abort();
+            true
+        } else {
+            warn!(
+                "Task {} not found in execution handles, may have already completed",
+                task_id
+            );
+            false
+        }
     }
 }
 
