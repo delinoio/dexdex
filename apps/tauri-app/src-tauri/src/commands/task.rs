@@ -1242,6 +1242,88 @@ pub async fn get_task_logs(
     ))
 }
 
+/// Cancels a running task.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn cancel_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the executor and cancel the execution
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+    let was_cancelled = executor.cancel_execution(id).await;
+
+    if was_cancelled {
+        // Update task status to cancelled
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            // Only update status if the task is still in progress
+            // This prevents race conditions where the task completes just before
+            // cancellation
+            if task.status == UnitTaskStatus::InProgress {
+                task.status = UnitTaskStatus::Cancelled;
+                task.updated_at = chrono::Utc::now();
+                if let Err(e) = runtime.task_store_arc().update_unit_task(task).await {
+                    tracing::error!("Failed to update task status after cancellation: {}", e);
+                    return Err(e.into());
+                }
+            } else {
+                tracing::warn!(
+                    "Task {} was cancelled but status was already {:?}, not updating",
+                    id,
+                    task.status
+                );
+            }
+        } else {
+            tracing::warn!("Task {} was cancelled but not found in store", id);
+        }
+        info!("Cancelled task: {}", id);
+    } else {
+        info!("Task {} was not running or already completed", id);
+    }
+
+    Ok(())
+}
+
+/// Cancels a running task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn cancel_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Responds to a TTY input request from an agent.
 #[cfg(desktop)]
 #[tauri::command]
@@ -1430,6 +1512,7 @@ fn parse_unit_status(s: &str) -> AppResult<UnitTaskStatus> {
         "done" => Ok(UnitTaskStatus::Done),
         "rejected" => Ok(UnitTaskStatus::Rejected),
         "failed" => Ok(UnitTaskStatus::Failed),
+        "cancelled" => Ok(UnitTaskStatus::Cancelled),
         _ => Err(AppError::InvalidRequest(format!(
             "Unknown unit task status: {}",
             s
@@ -1532,6 +1615,14 @@ mod tests {
         assert!(matches!(
             parse_unit_status("rejected"),
             Ok(UnitTaskStatus::Rejected)
+        ));
+        assert!(matches!(
+            parse_unit_status("failed"),
+            Ok(UnitTaskStatus::Failed)
+        ));
+        assert!(matches!(
+            parse_unit_status("cancelled"),
+            Ok(UnitTaskStatus::Cancelled)
         ));
     }
 

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { UnitTaskStatus } from "@/api/types";
@@ -22,6 +22,7 @@ export function UnitTaskDetail() {
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
   const requestChangesMutation = useRequestChanges();
+  const cancelMutation = useCancelTask();
 
   const task = data?.unitTask;
 
@@ -46,11 +47,16 @@ export function UnitTaskDetail() {
     setShowLog((prev) => !prev);
   }, []);
 
-  const handleStop = useCallback(() => {
-    // TODO(#99): Implement stop execution when stop API is available
-    // eslint-disable-next-line no-console
-    console.log("Stop execution requested for task:", task?.id);
-  }, [task?.id]);
+  const handleStop = useCallback(async () => {
+    if (task?.id && !cancelMutation.isPending) {
+      try {
+        await cancelMutation.mutateAsync(task.id);
+      } catch (error) {
+        console.error("Failed to cancel task:", error);
+        // Error is handled by React Query, user will see the mutation state
+      }
+    }
+  }, [task?.id, cancelMutation]);
 
   // Register keyboard shortcuts
   useTaskDetailShortcuts({
@@ -108,6 +114,8 @@ export function UnitTaskDetail() {
       case UnitTaskStatus.InReview:
         return "secondary";
       case UnitTaskStatus.Rejected:
+      case UnitTaskStatus.Failed:
+      case UnitTaskStatus.Cancelled:
         return "destructive";
       default:
         return "outline";
@@ -128,6 +136,10 @@ export function UnitTaskDetail() {
         return "Rejected";
       case UnitTaskStatus.Approved:
         return "Approved";
+      case UnitTaskStatus.Failed:
+        return "Failed";
+      case UnitTaskStatus.Cancelled:
+        return "Cancelled";
       default:
         return status;
     }
@@ -169,6 +181,43 @@ export function UnitTaskDetail() {
               <p className="whitespace-pre-wrap text-sm">{task.prompt}</p>
             </CardContent>
           </Card>
+
+          {task.status === UnitTaskStatus.InProgress && (
+            <Card className="border-[hsl(var(--warning))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="animate-spin text-[hsl(var(--primary))]"
+                  >
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  <CardTitle>Agent Running</CardTitle>
+                </div>
+                <CardDescription>
+                  The AI agent is working on your task. You can stop it at any time.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  variant="destructive"
+                  onClick={handleStop}
+                  disabled={cancelMutation.isPending}
+                  title="Stop execution (S)"
+                >
+                  {cancelMutation.isPending ? "Stopping..." : "Stop Agent"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {task.status === UnitTaskStatus.InReview && (
             <Card className="border-[hsl(var(--primary))]">

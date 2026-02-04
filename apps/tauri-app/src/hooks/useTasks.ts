@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveTask,
+  cancelTask,
   createCompositeTask,
   createUnitTask,
   getCompositeTaskNodes,
@@ -108,6 +109,18 @@ export function useRequestChanges() {
     mutationFn: ({ taskId, feedback }: { taskId: string; feedback: string }) =>
       requestChanges(taskId, feedback),
     onSuccess: (_data, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useCancelTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: string) => cancelTask(taskId),
+    onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },

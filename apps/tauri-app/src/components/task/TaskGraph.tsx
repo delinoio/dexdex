@@ -77,6 +77,11 @@ const STATUS_COLORS: Record<
     border: "hsl(0 84% 60%)",
     text: "hsl(0 84% 45%)",
   },
+  [UnitTaskStatus.Cancelled]: {
+    bg: "hsl(0 84% 60% / 0.1)",
+    border: "hsl(0 84% 60%)",
+    text: "hsl(0 84% 45%)",
+  },
 };
 
 interface TaskNodeData extends Record<string, unknown> {

@@ -310,6 +310,7 @@ enum UnitTaskStatus {
   done          // PR merged
   rejected      // Rejected and discarded
   failed        // Task failed with error
+  cancelled     // Task was cancelled by user
 }
 ```
 
@@ -632,6 +633,10 @@ Human review ──┬──► Commit to repo (done)
                ├──► Create PR (pr_open → done)
                ├──► Request changes (back to in_progress)
                └──► Reject (rejected)
+
+Note: While in `in_progress`, the user can cancel the task at any time,
+which transitions the status to `cancelled`. The agent execution is
+aborted and any partial work is preserved in the worktree.
 ```
 
 ### Repository Caching
