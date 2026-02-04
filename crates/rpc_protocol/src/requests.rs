@@ -139,6 +139,11 @@ pub struct ListRepositoryGroupsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetRepositoryGroupRequest {
+    pub group_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateRepositoryGroupRequest {
     pub group_id: String,
     pub name: Option<String>,

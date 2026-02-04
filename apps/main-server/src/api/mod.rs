@@ -60,6 +60,10 @@ pub fn create_router<S: TaskStore + 'static>() -> Router<Arc<AppState<S>>> {
             post(repository::create_repository_group),
         )
         .route(
+            "/api/repository-group/get",
+            post(repository::get_repository_group),
+        )
+        .route(
             "/api/repository-group/list",
             post(repository::list_repository_groups),
         )
