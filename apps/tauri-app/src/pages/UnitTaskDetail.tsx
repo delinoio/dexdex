@@ -5,11 +5,14 @@ import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
+import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
+import { useTaskLogs } from "@/hooks/useTaskLogs";
+import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +28,25 @@ export function UnitTaskDetail() {
   const cancelMutation = useCancelTask();
 
   const task = data?.unitTask;
+
+  // Fetch task logs to extract token usage from session_end events
+  const { events } = useTaskLogs({
+    taskId: task?.id ?? "",
+    taskStatus: task?.status ?? UnitTaskStatus.Unspecified,
+    enabled: !!task?.id,
+  });
+
+  // Extract token usage from session_end events
+  const tokenUsage = useMemo<TokenUsage | null>(() => {
+    const sessionEndEvents = events
+      .filter((e): e is { id: number | string; timestamp: string; event: SessionEndEvent } =>
+        e.event.type === "session_end"
+      )
+      .map((e) => e.event.token_usage)
+      .filter((tu): tu is TokenUsage => tu !== null && tu !== undefined);
+
+    return aggregateTokenUsage(sessionEndEvents);
+  }, [events]);
 
   // Set dynamic tab title with task context
   const tabTitle = task?.title ? `Task: ${task.title}` : "Task";
@@ -181,6 +203,10 @@ export function UnitTaskDetail() {
               <p className="whitespace-pre-wrap text-sm">{task.prompt}</p>
             </CardContent>
           </Card>
+
+          {tokenUsage && (
+            <TokenUsageCard tokenUsage={tokenUsage} />
+          )}
 
           {task.status === UnitTaskStatus.InProgress && (
             <Card className="border-[hsl(var(--warning))]">

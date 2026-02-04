@@ -4,10 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
+import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
-import type { CompositeTaskNodeWithUnitTask } from "@/api/types";
+import { useTaskLogs } from "@/hooks/useTaskLogs";
+import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
+import { useMemo } from "react";
         
 interface ProgressSectionProps {
   nodes: CompositeTaskNodeWithUnitTask[];
@@ -46,6 +49,27 @@ export function CompositeTaskDetail() {
   const rejectMutation = useRejectTask();
 
   const task = data?.compositeTask;
+
+  // Fetch planning task logs to get token usage for the planning phase
+  const { events: planningEvents } = useTaskLogs({
+    taskId: task?.planningTaskId ?? "",
+    taskStatus: task?.status === CompositeTaskStatus.Planning
+      ? UnitTaskStatus.InProgress
+      : UnitTaskStatus.Done,
+    enabled: !!task?.planningTaskId,
+  });
+
+  // Extract token usage from planning task session_end events
+  const planningTokenUsage = useMemo<TokenUsage | null>(() => {
+    const sessionEndEvents = planningEvents
+      .filter((e): e is { id: number | string; timestamp: string; event: SessionEndEvent } =>
+        e.event.type === "session_end"
+      )
+      .map((e) => e.event.token_usage)
+      .filter((tu): tu is TokenUsage => tu !== null && tu !== undefined);
+
+    return aggregateTokenUsage(sessionEndEvents);
+  }, [planningEvents]);
 
   // Set dynamic tab title with task context
   // Must be called before any early returns to follow React's Rules of Hooks
@@ -185,6 +209,12 @@ export function CompositeTaskDetail() {
               <p className="whitespace-pre-wrap text-sm">{task.prompt}</p>
             </CardContent>
           </Card>
+
+          <TokenUsageCard
+            tokenUsage={planningTokenUsage}
+            title="Planning Token Usage"
+            description="Token usage for the planning phase. View individual sub-tasks for execution usage."
+          />
 
           {task.status === CompositeTaskStatus.PendingApproval && (
             <Card className="border-[hsl(var(--primary))]">

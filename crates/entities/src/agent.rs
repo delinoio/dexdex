@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::TokenUsage;
+
 /// Type of version control system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -88,6 +90,8 @@ pub struct AgentSession {
     pub completed_at: Option<DateTime<Utc>>,
     /// Output log from the agent.
     pub output_log: Option<String>,
+    /// Token usage statistics from the session.
+    pub token_usage: Option<TokenUsage>,
     /// When this record was created.
     pub created_at: DateTime<Utc>,
 }
@@ -103,6 +107,7 @@ impl AgentSession {
             started_at: None,
             completed_at: None,
             output_log: None,
+            token_usage: None,
             created_at: Utc::now(),
         }
     }
@@ -110,6 +115,12 @@ impl AgentSession {
     /// Sets the model for this session.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.ai_agent_model = Some(model.into());
+        self
+    }
+
+    /// Sets the token usage for this session.
+    pub fn with_token_usage(mut self, token_usage: TokenUsage) -> Self {
+        self.token_usage = Some(token_usage);
         self
     }
 }
