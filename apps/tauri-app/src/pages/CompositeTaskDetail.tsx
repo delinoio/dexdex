@@ -45,6 +45,13 @@ export function CompositeTaskDetail() {
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
 
+  const task = data?.compositeTask;
+
+  // Set dynamic tab title with task context
+  // Must be called before any early returns to follow React's Rules of Hooks
+  const tabTitle = task?.title ? `Composite Task: ${task.title}` : "Composite Task";
+  useTabTitle(tabTitle);
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -53,7 +60,7 @@ export function CompositeTaskDetail() {
     );
   }
 
-  if (error || !data?.compositeTask) {
+  if (error || !task) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
@@ -69,12 +76,6 @@ export function CompositeTaskDetail() {
       </div>
     );
   }
-
-  const task = data.compositeTask;
-
-  // Set dynamic tab title with task context
-  const tabTitle = task?.title ? `Composite Task: ${task.title}` : "Composite Task";
-  useTabTitle(tabTitle);
 
   const handleApprovePlan = async () => {
     await approveMutation.mutateAsync(task.id);
