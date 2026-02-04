@@ -393,6 +393,162 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         }
     }
 
+    /// Executes the planning phase of a composite task asynchronously.
+    ///
+    /// This spawns a background task that:
+    /// 1. Creates a git worktree for the planning task
+    /// 2. Runs the planning AI agent with the composite task prompt
+    /// 3. Streams output events to the frontend
+    /// 4. The planning agent will generate task graph nodes
+    pub async fn execute_composite_task(&self, composite_task_id: Uuid) -> Result<(), String> {
+        info!(
+            "Starting planning execution for composite task: {}",
+            composite_task_id
+        );
+
+        // Get the composite task from the store
+        let composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        // Get the repository group to find repositories
+        let repo_group = self
+            .task_store
+            .get_repository_group(composite_task.repository_group_id)
+            .await
+            .map_err(|e| format!("Failed to get repository group: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Repository group not found: {}",
+                    composite_task.repository_group_id
+                )
+            })?;
+
+        // Get the first repository (for now, we only support single-repo tasks)
+        let repo_id = repo_group
+            .repository_ids
+            .first()
+            .ok_or_else(|| "Repository group has no repositories".to_string())?;
+
+        let repository = self
+            .task_store
+            .get_repository(*repo_id)
+            .await
+            .map_err(|e| format!("Failed to get repository: {}", e))?
+            .ok_or_else(|| format!("Repository not found: {}", repo_id))?;
+
+        // Get the planning agent task
+        let agent_task = self
+            .task_store
+            .get_agent_task(composite_task.planning_task_id)
+            .await
+            .map_err(|e| format!("Failed to get planning agent task: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Planning agent task not found: {}",
+                    composite_task.planning_task_id
+                )
+            })?;
+
+        let agent_type = agent_task.ai_agent_type.unwrap_or(AiAgentType::ClaudeCode);
+        let agent_model = agent_task.ai_agent_model.clone();
+
+        // Create an agent session for the planning task
+        let mut session = AgentSession::new(composite_task.planning_task_id, agent_type);
+        if let Some(model) = &agent_model {
+            session = session.with_model(model.clone());
+        }
+        session.started_at = Some(Utc::now());
+
+        let session = self
+            .task_store
+            .create_agent_session(session)
+            .await
+            .map_err(|e| format!("Failed to create agent session: {}", e))?;
+
+        let session_id = session.id;
+
+        // Use a branch name for the composite planning
+        let branch_name = format!("delidev/composite/{}", composite_task_id);
+
+        // Create the execution config using the composite task's prompt
+        let config = TaskExecutionConfig {
+            task_id: composite_task_id,
+            session_id,
+            remote_url: repository.remote_url.clone(),
+            branch_name: branch_name.clone(),
+            agent_type,
+            agent_model,
+            prompt: composite_task.prompt.clone(),
+        };
+
+        // Clone values needed for the spawned task
+        let task_store = self.task_store.clone();
+        let emitter = self.emitter.clone();
+        let repo_cache = self.executor.repo_cache().clone();
+
+        // Create a persisting emitter for the planning session
+        let persisting_emitter = Arc::new(PersistingEventEmitter::new(
+            emitter,
+            task_store.clone(),
+            session_id,
+        ));
+        let executor = TaskExecutor::with_repo_cache(repo_cache, persisting_emitter.clone());
+        let execution_handles = self.execution_handles.clone();
+
+        // Spawn the planning execution task
+        let handle = tokio::spawn(async move {
+            let result = executor.execute_and_wait(config).await;
+
+            // Final persist of all logs
+            persisting_emitter.persist_logs().await;
+
+            // Update session completed_at
+            if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+                session.completed_at = Some(Utc::now());
+                if let Err(e) = task_store.update_agent_session(session).await {
+                    warn!("Failed to update planning agent session: {}", e);
+                }
+            }
+
+            // Log the result (planning agent status is tracked separately)
+            match &result {
+                ExecutionResult::Success { .. } => {
+                    info!(
+                        "Planning for composite task {} completed successfully",
+                        composite_task_id
+                    );
+                }
+                ExecutionResult::Failed { error, .. } => {
+                    error!(
+                        "Planning for composite task {} failed: {}",
+                        composite_task_id, error
+                    );
+                }
+                ExecutionResult::Cancelled => {
+                    info!(
+                        "Planning for composite task {} was cancelled",
+                        composite_task_id
+                    );
+                }
+            }
+
+            // Remove handle from the map after completion
+            execution_handles.write().await.remove(&composite_task_id);
+        });
+
+        // Store the handle so it can be cancelled later
+        self.execution_handles
+            .write()
+            .await
+            .insert(composite_task_id, handle);
+
+        Ok(())
+    }
+
     /// Cancels execution of a task.
     ///
     /// Returns `true` if the task was found and aborted, `false` if it wasn't

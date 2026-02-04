@@ -539,6 +539,26 @@ pub async fn create_composite_task(
 
     let created = runtime.task_store_arc().create_composite_task(task).await?;
     info!("Created composite task: {}", created.id);
+
+    // Trigger planning task execution if executor is initialized
+    if let Some(executor) = runtime.executor().await {
+        let composite_task_id = created.id;
+        tokio::spawn(async move {
+            if let Err(e) = executor.execute_composite_task(composite_task_id).await {
+                tracing::error!(
+                    "Failed to start planning execution for composite task {}: {}",
+                    composite_task_id,
+                    e
+                );
+            }
+        });
+    } else {
+        tracing::warn!(
+            "Executor not initialized, composite task {} planning will not be executed",
+            created.id
+        );
+    }
+
     Ok(created)
 }
 
