@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use entities::Workspace;
+use rpc_protocol::requests;
 use serde::{Deserialize, Serialize};
 use task_store::{TaskStore, WorkspaceFilter};
 use tauri::State;
@@ -13,6 +14,7 @@ use uuid::Uuid;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
+    remote_client::{rpc_to_entity_workspace, RemoteClient},
     state::AppState,
 };
 
@@ -113,6 +115,25 @@ pub async fn create_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let base_url = state
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+
+        let request = requests::CreateWorkspaceRequest {
+            name: params.name,
+            description: params.description,
+        };
+
+        let response = client.create_workspace(request).await?;
+        let workspace = rpc_to_entity_workspace(response.workspace);
+        info!("Created workspace via remote: {} ({})", workspace.name, workspace.id);
+        return Ok(workspace);
+    }
+
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
         // Validate and sanitize input
@@ -141,10 +162,11 @@ pub async fn create_workspace(
         return Ok(created);
     }
 
+    #[cfg(not(desktop))]
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        "Local mode is not supported on this platform".to_string(),
     ))
 }
 
@@ -155,6 +177,30 @@ pub async fn list_workspaces(
     params: ListWorkspacesParams,
 ) -> AppResult<ListWorkspacesResult> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let base_url = state
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+
+        let request = requests::ListWorkspacesRequest {
+            limit: params.limit.unwrap_or(100),
+            offset: params.offset.unwrap_or(0),
+        };
+
+        let response = client.list_workspaces(request).await?;
+        return Ok(ListWorkspacesResult {
+            workspaces: response
+                .workspaces
+                .into_iter()
+                .map(rpc_to_entity_workspace)
+                .collect(),
+            total_count: response.total_count,
+        });
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -177,10 +223,11 @@ pub async fn list_workspaces(
         });
     }
 
+    #[cfg(not(desktop))]
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        "Local mode is not supported on this platform".to_string(),
     ))
 }
 
@@ -191,6 +238,22 @@ pub async fn get_workspace(
     workspace_id: String,
 ) -> AppResult<Workspace> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let base_url = state
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+
+        let request = requests::GetWorkspaceRequest {
+            workspace_id: workspace_id.clone(),
+        };
+
+        let response = client.get_workspace(request).await?;
+        return Ok(rpc_to_entity_workspace(response.workspace));
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -211,10 +274,11 @@ pub async fn get_workspace(
         return Ok(workspace);
     }
 
+    #[cfg(not(desktop))]
     let _ = &workspace_id;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        "Local mode is not supported on this platform".to_string(),
     ))
 }
 
@@ -226,6 +290,26 @@ pub async fn update_workspace(
     params: UpdateWorkspaceParams,
 ) -> AppResult<Workspace> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let base_url = state
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+
+        let request = requests::UpdateWorkspaceRequest {
+            workspace_id: workspace_id.clone(),
+            name: params.name,
+            description: params.description,
+        };
+
+        let response = client.update_workspace(request).await?;
+        let workspace = rpc_to_entity_workspace(response.workspace);
+        info!("Updated workspace via remote: {} ({})", workspace.name, workspace.id);
+        return Ok(workspace);
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -256,10 +340,11 @@ pub async fn update_workspace(
         return Ok(updated);
     }
 
+    #[cfg(not(desktop))]
     let _ = (&workspace_id, &params);
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        "Local mode is not supported on this platform".to_string(),
     ))
 }
 
@@ -270,6 +355,23 @@ pub async fn delete_workspace(
     workspace_id: String,
 ) -> AppResult<()> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let base_url = state
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+
+        let request = requests::DeleteWorkspaceRequest {
+            workspace_id: workspace_id.clone(),
+        };
+
+        client.delete_workspace(request).await?;
+        info!("Deleted workspace via remote: {}", workspace_id);
+        return Ok(());
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -286,10 +388,11 @@ pub async fn delete_workspace(
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
     let _ = &workspace_id;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        "Local mode is not supported on this platform".to_string(),
     ))
 }
 
@@ -299,6 +402,33 @@ pub async fn get_default_workspace_id(
     state: State<'_, Arc<RwLock<AppState>>>,
 ) -> AppResult<String> {
     let state = state.read().await;
+
+    // Remote mode: get the first workspace from the server as default
+    if state.mode == AppMode::Remote {
+        let base_url = state
+            .remote_server_url
+            .as_ref()
+            .ok_or_else(|| AppError::Config("Remote server URL not configured".to_string()))?;
+        let client = RemoteClient::new(state.http_client.clone(), base_url.clone());
+
+        let request = requests::ListWorkspacesRequest {
+            limit: 1,
+            offset: 0,
+        };
+
+        let response = client.list_workspaces(request).await?;
+        if let Some(workspace) = response.workspaces.into_iter().next() {
+            return Ok(workspace.id);
+        }
+
+        // No workspace exists yet, create a default one
+        let create_request = requests::CreateWorkspaceRequest {
+            name: "Default Workspace".to_string(),
+            description: Some("Default workspace created automatically".to_string()),
+        };
+        let create_response = client.create_workspace(create_request).await?;
+        return Ok(create_response.workspace.id);
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -311,6 +441,6 @@ pub async fn get_default_workspace_id(
     }
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        "Local mode is not supported on this platform".to_string(),
     ))
 }

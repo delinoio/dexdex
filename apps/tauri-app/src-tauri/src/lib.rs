@@ -9,6 +9,7 @@ pub mod error;
 pub mod events;
 pub mod mobile;
 pub mod notifications;
+pub mod remote_client;
 #[cfg(desktop)]
 pub mod single_process;
 pub mod state;
