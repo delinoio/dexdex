@@ -227,7 +227,7 @@ export function CompositeTaskDetail() {
               </CardHeader>
               <CardContent>
                 <AgentLogViewer
-                  taskId={task.planningTaskId}
+                  taskId={task.id}
                   taskStatus={UnitTaskStatus.InProgress}
                   className="min-h-64 max-h-[500px]"
                 />

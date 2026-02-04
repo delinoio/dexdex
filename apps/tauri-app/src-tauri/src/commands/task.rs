@@ -1140,21 +1140,28 @@ pub async fn get_task_logs(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Try to get logs by unit task ID first, then fall back to agent task ID
-    // This supports both regular unit tasks and planning tasks (which only have
-    // agent task IDs)
-    let (agent_task_id, task_is_complete) =
-        if let Some(task) = runtime.task_store_arc().get_unit_task(id).await? {
-            // Found a unit task - use its agent_task_id
-            let is_complete = task.status != UnitTaskStatus::InProgress;
-            (task.agent_task_id, is_complete)
-        } else if runtime.task_store_arc().get_agent_task(id).await?.is_some() {
-            // ID is an agent task ID directly (e.g., planning task)
-            // For agent tasks, we determine completion from the session
-            (id, false)
-        } else {
-            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
-        };
+    // Try to get logs by unit task ID first, then composite task ID, then agent
+    // task ID. This supports:
+    // - Regular unit tasks (unit task ID -> agent_task_id)
+    // - Composite task planning (composite task ID -> planning_task_id)
+    // - Direct agent task lookups (agent task ID)
+    let (agent_task_id, task_is_complete) = if let Some(task) =
+        runtime.task_store_arc().get_unit_task(id).await?
+    {
+        // Found a unit task - use its agent_task_id
+        let is_complete = task.status != UnitTaskStatus::InProgress;
+        (task.agent_task_id, is_complete)
+    } else if let Some(composite_task) = runtime.task_store_arc().get_composite_task(id).await? {
+        // Found a composite task - use its planning_task_id for logs
+        let is_complete = composite_task.status != CompositeTaskStatus::Planning;
+        (composite_task.planning_task_id, is_complete)
+    } else if runtime.task_store_arc().get_agent_task(id).await?.is_some() {
+        // ID is an agent task ID directly
+        // For agent tasks, we determine completion from the session
+        (id, false)
+    } else {
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    };
 
     // Get the sessions for the agent task
     let mut sessions = runtime
