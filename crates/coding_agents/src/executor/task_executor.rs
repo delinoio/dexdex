@@ -76,6 +76,15 @@ pub struct TaskExecutionConfig {
     pub prompt: String,
 }
 
+/// Information needed to clean up a task's resources.
+#[derive(Debug, Clone)]
+struct TaskCleanupInfo {
+    /// The remote repository URL.
+    remote_url: String,
+    /// The branch name.
+    branch_name: String,
+}
+
 /// Task executor that runs AI agents with platform-agnostic event emission.
 ///
 /// This struct provides the core execution logic for running AI coding agents.
@@ -90,6 +99,8 @@ pub struct TaskExecutor<E: EventEmitter> {
     tty_request_manager: Arc<TtyInputRequestManager>,
     /// Active execution handles keyed by task ID.
     execution_handles: Arc<RwLock<HashMap<Uuid, JoinHandle<ExecutionResult>>>>,
+    /// Cleanup info for active tasks, used for worktree cleanup on cancellation.
+    task_cleanup_info: Arc<RwLock<HashMap<Uuid, TaskCleanupInfo>>>,
 }
 
 impl<E: EventEmitter + 'static> TaskExecutor<E> {
@@ -105,6 +116,7 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             emitter,
             tty_request_manager: Arc::new(TtyInputRequestManager::new()),
             execution_handles: Arc::new(RwLock::new(HashMap::new())),
+            task_cleanup_info: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -115,6 +127,7 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             emitter,
             tty_request_manager: Arc::new(TtyInputRequestManager::new()),
             execution_handles: Arc::new(RwLock::new(HashMap::new())),
+            task_cleanup_info: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -149,8 +162,23 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         // lock.
         let mut handles = self.execution_handles.write().await;
 
-        // Clean up finished handles to prevent memory leaks
-        handles.retain(|_id, h| !h.is_finished());
+        // Clean up finished handles and their cleanup info to prevent memory leaks
+        let finished_ids: Vec<Uuid> = handles
+            .iter()
+            .filter(|(_, h)| h.is_finished())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &finished_ids {
+            handles.remove(id);
+        }
+
+        // Also clean up cleanup info for finished tasks
+        if !finished_ids.is_empty() {
+            let mut cleanup_info = self.task_cleanup_info.write().await;
+            for id in finished_ids {
+                cleanup_info.remove(&id);
+            }
+        }
 
         // Check if a task with this ID is already running
         if handles.contains_key(&task_id) {
@@ -164,6 +192,18 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             ));
         }
 
+        // Store cleanup info for this task (needed for worktree cleanup on cancellation)
+        {
+            let mut cleanup_info = self.task_cleanup_info.write().await;
+            cleanup_info.insert(
+                task_id,
+                TaskCleanupInfo {
+                    remote_url: config.remote_url.clone(),
+                    branch_name: config.branch_name.clone(),
+                },
+            );
+        }
+
         // Clone values needed for the spawned task
         let emitter = self.emitter.clone();
         let tty_manager = self.tty_request_manager.clone();
@@ -173,10 +213,17 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             .parent()
             .ok_or_else(|| "Invalid cache directory path: no parent directory".to_string())?;
         let repo_cache = RepositoryCache::new(cache_parent);
+        let task_cleanup_info = self.task_cleanup_info.clone();
 
         // Spawn the execution task
         let handle = tokio::spawn(async move {
-            Self::run_agent_task(config, emitter, tty_manager, repo_cache).await
+            let result = Self::run_agent_task(config, emitter, tty_manager, repo_cache).await;
+
+            // Clean up the cleanup info after task completion
+            let mut cleanup_info = task_cleanup_info.write().await;
+            cleanup_info.remove(&task_id);
+
+            result
         });
 
         // Store the handle (we still hold the write lock, so no race can occur)
@@ -209,7 +256,23 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
     /// Cleans up finished execution handles to prevent memory leaks.
     pub async fn cleanup_finished_handles(&self) {
         let mut handles = self.execution_handles.write().await;
-        handles.retain(|_task_id, handle| !handle.is_finished());
+        let finished_ids: Vec<Uuid> = handles
+            .iter()
+            .filter(|(_, h)| h.is_finished())
+            .map(|(id, _)| *id)
+            .collect();
+
+        for id in &finished_ids {
+            handles.remove(id);
+        }
+
+        // Also clean up cleanup info for finished tasks
+        if !finished_ids.is_empty() {
+            let mut cleanup_info = self.task_cleanup_info.write().await;
+            for id in finished_ids {
+                cleanup_info.remove(&id);
+            }
+        }
     }
 
     /// Runs the agent task (internal implementation).
@@ -371,11 +434,33 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         }
     }
 
-    /// Cancels execution of a task.
+    /// Cancels execution of a task and cleans up its worktree.
     pub async fn cancel_execution(&self, task_id: Uuid) -> bool {
         let mut handles = self.execution_handles.write().await;
         if let Some(handle) = handles.remove(&task_id) {
             handle.abort();
+
+            // Clean up the worktree for the cancelled task
+            let cleanup_info = {
+                let mut info = self.task_cleanup_info.write().await;
+                info.remove(&task_id)
+            };
+
+            if let Some(info) = cleanup_info {
+                if let Err(e) = self.repo_cache.remove_worktree_for_task(
+                    &info.remote_url,
+                    &task_id.to_string(),
+                    &info.branch_name,
+                ) {
+                    warn!(
+                        "Failed to cleanup worktree for cancelled task {}: {}. Manual cleanup may be required.",
+                        task_id, e
+                    );
+                } else {
+                    info!("Cleaned up worktree for cancelled task {}", task_id);
+                }
+            }
+
             true
         } else {
             false
