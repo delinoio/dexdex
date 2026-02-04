@@ -99,7 +99,8 @@ pub struct TaskExecutor<E: EventEmitter> {
     tty_request_manager: Arc<TtyInputRequestManager>,
     /// Active execution handles keyed by task ID.
     execution_handles: Arc<RwLock<HashMap<Uuid, JoinHandle<ExecutionResult>>>>,
-    /// Cleanup info for active tasks, used for worktree cleanup on cancellation.
+    /// Cleanup info for active tasks, used for worktree cleanup on
+    /// cancellation.
     task_cleanup_info: Arc<RwLock<HashMap<Uuid, TaskCleanupInfo>>>,
 }
 
@@ -178,7 +179,19 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             ));
         }
 
-        // Store cleanup info for this task (needed for worktree cleanup on cancellation)
+        // Clone values needed for the spawned task
+        let emitter = self.emitter.clone();
+        let tty_manager = self.tty_request_manager.clone();
+        let cache_parent = self
+            .repo_cache
+            .cache_dir()
+            .parent()
+            .ok_or_else(|| "Invalid cache directory path: no parent directory".to_string())?;
+        let repo_cache = RepositoryCache::new(cache_parent);
+
+        // Store cleanup info for this task (needed for worktree cleanup on
+        // cancellation). This is done AFTER validation to prevent memory leaks
+        // if the validation fails.
         {
             let mut cleanup_info = self.task_cleanup_info.write().await;
             cleanup_info.insert(
@@ -189,16 +202,6 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
                 },
             );
         }
-
-        // Clone values needed for the spawned task
-        let emitter = self.emitter.clone();
-        let tty_manager = self.tty_request_manager.clone();
-        let cache_parent = self
-            .repo_cache
-            .cache_dir()
-            .parent()
-            .ok_or_else(|| "Invalid cache directory path: no parent directory".to_string())?;
-        let repo_cache = RepositoryCache::new(cache_parent);
         let task_cleanup_info = self.task_cleanup_info.clone();
 
         // Spawn the execution task
@@ -248,7 +251,8 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
 
     /// Collects finished task IDs and removes their handles from the map.
     ///
-    /// Returns the list of removed task IDs so their cleanup info can be removed.
+    /// Returns the list of removed task IDs so their cleanup info can be
+    /// removed.
     fn collect_and_remove_finished_tasks(
         handles: &mut HashMap<Uuid, JoinHandle<ExecutionResult>>,
     ) -> Vec<Uuid> {
@@ -453,7 +457,8 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
                     &info.branch_name,
                 ) {
                     warn!(
-                        "Failed to cleanup worktree for cancelled task {}: {}. Manual cleanup may be required.",
+                        "Failed to cleanup worktree for cancelled task {}: {}. Manual cleanup may \
+                         be required.",
                         task_id, e
                     );
                 } else {
@@ -607,7 +612,8 @@ mod tests {
     #[test]
     fn test_collect_and_remove_finished_tasks_empty() {
         let mut handles: HashMap<Uuid, JoinHandle<ExecutionResult>> = HashMap::new();
-        let finished = TaskExecutor::<NoOpEventEmitter>::collect_and_remove_finished_tasks(&mut handles);
+        let finished =
+            TaskExecutor::<NoOpEventEmitter>::collect_and_remove_finished_tasks(&mut handles);
         assert!(finished.is_empty());
         assert!(handles.is_empty());
     }
@@ -625,7 +631,8 @@ mod tests {
 
         handles.insert(task_id, handle);
 
-        let finished = TaskExecutor::<NoOpEventEmitter>::collect_and_remove_finished_tasks(&mut handles);
+        let finished =
+            TaskExecutor::<NoOpEventEmitter>::collect_and_remove_finished_tasks(&mut handles);
         assert_eq!(finished.len(), 1);
         assert!(finished.contains(&task_id));
         assert!(handles.is_empty());
@@ -659,7 +666,14 @@ mod tests {
         assert_eq!(executor.cleanup_info_count().await, 2);
 
         // Remove one task
-        let task_ids: Vec<Uuid> = executor.task_cleanup_info.read().await.keys().take(1).cloned().collect();
+        let task_ids: Vec<Uuid> = executor
+            .task_cleanup_info
+            .read()
+            .await
+            .keys()
+            .take(1)
+            .cloned()
+            .collect();
         executor.remove_cleanup_info_for_tasks(task_ids).await;
 
         assert_eq!(executor.cleanup_info_count().await, 1);
