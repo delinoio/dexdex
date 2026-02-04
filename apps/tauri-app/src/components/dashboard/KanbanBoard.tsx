@@ -44,9 +44,9 @@ const columns: {
   },
   {
     id: "rejected",
-    title: "Rejected",
-    unitStatuses: [UnitTaskStatus.Rejected],
-    compositeStatuses: [CompositeTaskStatus.Rejected],
+    title: "Rejected / Failed",
+    unitStatuses: [UnitTaskStatus.Rejected, UnitTaskStatus.Failed],
+    compositeStatuses: [CompositeTaskStatus.Rejected, CompositeTaskStatus.Failed],
   },
 ];
 

@@ -118,6 +118,7 @@ export function CompositeTaskDetail() {
       case CompositeTaskStatus.PendingApproval:
         return "secondary";
       case CompositeTaskStatus.Rejected:
+      case CompositeTaskStatus.Failed:
         return "destructive";
       default:
         return "outline";
@@ -136,6 +137,8 @@ export function CompositeTaskDetail() {
         return "Done";
       case CompositeTaskStatus.Rejected:
         return "Rejected";
+      case CompositeTaskStatus.Failed:
+        return "Failed";
       default:
         return status;
     }

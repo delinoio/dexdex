@@ -523,6 +523,7 @@ pub fn rpc_to_entity_composite_status(
         RpcCompositeTaskStatus::InProgress => entities::CompositeTaskStatus::InProgress,
         RpcCompositeTaskStatus::Done => entities::CompositeTaskStatus::Done,
         RpcCompositeTaskStatus::Rejected => entities::CompositeTaskStatus::Rejected,
+        RpcCompositeTaskStatus::Failed => entities::CompositeTaskStatus::Failed,
     }
 }
 
@@ -536,6 +537,7 @@ pub fn entity_to_rpc_composite_status(
         entities::CompositeTaskStatus::InProgress => RpcCompositeTaskStatus::InProgress,
         entities::CompositeTaskStatus::Done => RpcCompositeTaskStatus::Done,
         entities::CompositeTaskStatus::Rejected => RpcCompositeTaskStatus::Rejected,
+        entities::CompositeTaskStatus::Failed => RpcCompositeTaskStatus::Failed,
     }
 }
 
@@ -872,6 +874,10 @@ mod tests {
             rpc_to_entity_composite_status(RpcCompositeTaskStatus::InProgress),
             entities::CompositeTaskStatus::InProgress
         ));
+        assert!(matches!(
+            rpc_to_entity_composite_status(RpcCompositeTaskStatus::Failed),
+            entities::CompositeTaskStatus::Failed
+        ));
         // Unspecified defaults to Planning
         assert!(matches!(
             rpc_to_entity_composite_status(RpcCompositeTaskStatus::Unspecified),
@@ -892,6 +898,10 @@ mod tests {
         assert!(matches!(
             entity_to_rpc_composite_status(entities::CompositeTaskStatus::Rejected),
             RpcCompositeTaskStatus::Rejected
+        ));
+        assert!(matches!(
+            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Failed),
+            RpcCompositeTaskStatus::Failed
         ));
     }
 }

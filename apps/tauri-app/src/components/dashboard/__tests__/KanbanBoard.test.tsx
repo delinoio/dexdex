@@ -38,7 +38,7 @@ describe("KanbanBoard", () => {
     expect(screen.getByText("In Review")).toBeInTheDocument();
     expect(screen.getByText("PR Open")).toBeInTheDocument();
     expect(screen.getByText("Done")).toBeInTheDocument();
-    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    expect(screen.getByText("Rejected / Failed")).toBeInTheDocument();
   });
 
   it("places unit tasks in correct columns based on status", () => {

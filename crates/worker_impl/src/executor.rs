@@ -14,7 +14,7 @@ use coding_agents::{
         TaskStatusChangedEvent, TtyInputRequestEvent,
     },
 };
-use entities::{AgentSession, AiAgentType, UnitTaskStatus};
+use entities::{AgentSession, AiAgentType, CompositeTaskStatus, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -514,25 +514,49 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             }
 
-            // Log the result (planning agent status is tracked separately)
+            // Update composite task status based on planning result
             match &result {
                 ExecutionResult::Success { .. } => {
                     info!(
                         "Planning for composite task {} completed successfully",
                         composite_task_id
                     );
+                    // Update composite task status to PendingApproval
+                    if let Ok(Some(mut composite_task)) =
+                        task_store.get_composite_task(composite_task_id).await
+                    {
+                        composite_task.status = CompositeTaskStatus::PendingApproval;
+                        composite_task.updated_at = Utc::now();
+                        if let Err(e) = task_store.update_composite_task(composite_task).await {
+                            error!(
+                                "Failed to update composite task status to PendingApproval: {}",
+                                e
+                            );
+                        }
+                    }
                 }
                 ExecutionResult::Failed { error, .. } => {
                     error!(
                         "Planning for composite task {} failed: {}",
                         composite_task_id, error
                     );
+                    // Update composite task status to Failed
+                    if let Ok(Some(mut composite_task)) =
+                        task_store.get_composite_task(composite_task_id).await
+                    {
+                        composite_task.status = CompositeTaskStatus::Failed;
+                        composite_task.updated_at = Utc::now();
+                        if let Err(e) = task_store.update_composite_task(composite_task).await {
+                            error!("Failed to update composite task status to Failed: {}", e);
+                        }
+                    }
                 }
                 ExecutionResult::Cancelled => {
                     info!(
                         "Planning for composite task {} was cancelled",
                         composite_task_id
                     );
+                    // Keep the status as Planning for potential retry
                 }
             }
 

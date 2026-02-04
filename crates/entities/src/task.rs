@@ -110,6 +110,8 @@ pub enum CompositeTaskStatus {
     Done,
     /// User rejected the plan.
     Rejected,
+    /// Planning or execution failed.
+    Failed,
 }
 
 /// A node in a CompositeTask graph.

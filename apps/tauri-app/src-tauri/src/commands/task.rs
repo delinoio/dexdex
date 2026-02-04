@@ -1554,6 +1554,7 @@ fn parse_composite_status(s: &str) -> AppResult<CompositeTaskStatus> {
         "in_progress" => Ok(CompositeTaskStatus::InProgress),
         "done" => Ok(CompositeTaskStatus::Done),
         "rejected" => Ok(CompositeTaskStatus::Rejected),
+        "failed" => Ok(CompositeTaskStatus::Failed),
         _ => Err(AppError::InvalidRequest(format!(
             "Unknown composite task status: {}",
             s
@@ -1700,6 +1701,10 @@ mod tests {
         assert!(matches!(
             parse_composite_status("rejected"),
             Ok(CompositeTaskStatus::Rejected)
+        ));
+        assert!(matches!(
+            parse_composite_status("failed"),
+            Ok(CompositeTaskStatus::Failed)
         ));
     }
 
