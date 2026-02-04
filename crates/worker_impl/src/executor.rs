@@ -383,6 +383,218 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         Ok(())
     }
 
+    /// Executes the planning task for a composite task.
+    ///
+    /// This spawns a background task that:
+    /// 1. Creates a git worktree for the planning task
+    /// 2. Runs the AI agent to generate a PLAN.yaml
+    /// 3. Streams output events to the frontend
+    /// 4. Updates the composite task status on completion
+    pub async fn execute_composite_task_planning(
+        &self,
+        composite_task_id: Uuid,
+    ) -> Result<(), String> {
+        info!(
+            "Starting planning execution for composite task: {}",
+            composite_task_id
+        );
+
+        // Get the composite task from the store
+        let composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        // Get the repository group to find repositories
+        let repo_group = self
+            .task_store
+            .get_repository_group(composite_task.repository_group_id)
+            .await
+            .map_err(|e| format!("Failed to get repository group: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Repository group not found: {}",
+                    composite_task.repository_group_id
+                )
+            })?;
+
+        // Get the first repository (for now, we only support single-repo tasks)
+        let repo_id = repo_group
+            .repository_ids
+            .first()
+            .ok_or_else(|| "Repository group has no repositories".to_string())?;
+
+        let repository = self
+            .task_store
+            .get_repository(*repo_id)
+            .await
+            .map_err(|e| format!("Failed to get repository: {}", e))?
+            .ok_or_else(|| format!("Repository not found: {}", repo_id))?;
+
+        // Get the planning agent task
+        let planning_task = self
+            .task_store
+            .get_agent_task(composite_task.planning_task_id)
+            .await
+            .map_err(|e| format!("Failed to get planning task: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Planning task not found: {}",
+                    composite_task.planning_task_id
+                )
+            })?;
+
+        let agent_type = planning_task
+            .ai_agent_type
+            .unwrap_or(AiAgentType::ClaudeCode);
+        let agent_model = planning_task.ai_agent_model.clone();
+
+        // Create an agent session for the planning task
+        let mut session = AgentSession::new(composite_task.planning_task_id, agent_type);
+        if let Some(model) = &agent_model {
+            session = session.with_model(model.clone());
+        }
+        session.started_at = Some(Utc::now());
+
+        let session = self
+            .task_store
+            .create_agent_session(session)
+            .await
+            .map_err(|e| format!("Failed to create agent session: {}", e))?;
+
+        let session_id = session.id;
+
+        // Use a dedicated branch name for planning
+        let branch_name = format!("delidev/planning-{}", composite_task_id);
+
+        // Build the planning prompt that instructs the agent to create a PLAN.yaml
+        let planning_prompt = format!(
+            "You are a planning agent. Your task is to analyze the following request and create a \
+             PLAN.yaml file that breaks it down into smaller, manageable tasks.\n\nCreate a file \
+             named `PLAN-{}.yaml` in the repository root with a list of tasks.\n\nEach task in \
+             the PLAN.yaml should have:\n- id: A unique identifier for the task\n- title: A \
+             human-readable title (optional)\n- prompt: A detailed description of what the AI \
+             agent should do\n- branchName: A custom git branch name (optional)\n- dependsOn: \
+             List of task IDs that must complete first (optional)\n\nUser's \
+             request:\n{}\n\nPlease create tasks that can be executed by AI coding agents. \
+             Consider dependencies between tasks and which tasks can be run in parallel.",
+            &composite_task_id.to_string()[..8],
+            composite_task.prompt
+        );
+
+        // Create the execution config
+        let config = TaskExecutionConfig {
+            task_id: composite_task_id,
+            session_id,
+            remote_url: repository.remote_url.clone(),
+            branch_name: branch_name.clone(),
+            agent_type,
+            agent_model,
+            prompt: planning_prompt,
+        };
+
+        // Clone values needed for the spawned task
+        let task_store = self.task_store.clone();
+        let emitter = self.emitter.clone();
+        let repo_cache = self.executor.repo_cache().clone();
+
+        // Create a persisting emitter
+        let persisting_emitter = Arc::new(PersistingEventEmitter::new(
+            emitter,
+            task_store.clone(),
+            session_id,
+        ));
+        let executor = TaskExecutor::with_repo_cache(repo_cache, persisting_emitter.clone());
+        let execution_handles = self.execution_handles.clone();
+
+        // Spawn the execution task
+        let handle = tokio::spawn(async move {
+            let result = executor.execute_and_wait(config).await;
+
+            // Final persist of all logs
+            persisting_emitter.persist_logs().await;
+
+            // Update composite task status based on result
+            match &result {
+                ExecutionResult::Success { .. } => {
+                    info!("Planning task {} completed successfully", composite_task_id);
+                    // Update to pending_approval status
+                    if let Err(e) = Self::update_composite_task_status(
+                        &task_store,
+                        composite_task_id,
+                        session_id,
+                        entities::CompositeTaskStatus::PendingApproval,
+                    )
+                    .await
+                    {
+                        error!("Failed to update composite task status: {}", e);
+                    }
+                }
+                ExecutionResult::Failed { error, .. } => {
+                    error!("Planning task {} failed: {}", composite_task_id, error);
+                    // Keep it in Planning status but mark the session as completed
+                    if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+                        session.completed_at = Some(Utc::now());
+                        if let Err(e) = task_store.update_agent_session(session).await {
+                            warn!("Failed to update agent session: {}", e);
+                        }
+                    }
+                }
+                ExecutionResult::Cancelled => {
+                    info!("Planning task {} was cancelled", composite_task_id);
+                    // Mark the session as completed
+                    if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+                        session.completed_at = Some(Utc::now());
+                        if let Err(e) = task_store.update_agent_session(session).await {
+                            warn!("Failed to update agent session: {}", e);
+                        }
+                    }
+                }
+            }
+
+            // Remove handle from the map after completion
+            execution_handles.write().await.remove(&composite_task_id);
+        });
+
+        // Store the handle so it can be cancelled later
+        self.execution_handles
+            .write()
+            .await
+            .insert(composite_task_id, handle);
+
+        Ok(())
+    }
+
+    /// Updates a composite task's status.
+    async fn update_composite_task_status(
+        task_store: &Arc<SqliteTaskStore>,
+        task_id: Uuid,
+        session_id: Uuid,
+        new_status: entities::CompositeTaskStatus,
+    ) -> Result<(), WorkerError> {
+        let mut task = task_store
+            .get_composite_task(task_id)
+            .await?
+            .ok_or_else(|| WorkerError::TaskNotFound(task_id.to_string()))?;
+
+        task.status = new_status;
+        task.updated_at = Utc::now();
+
+        task_store.update_composite_task(task).await?;
+
+        // Update session completed_at
+        if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+            session.completed_at = Some(Utc::now());
+            if let Err(e) = task_store.update_agent_session(session).await {
+                warn!("Failed to update agent session: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Checks if a task is currently being executed.
     pub async fn is_executing(&self, task_id: Uuid) -> bool {
         let handles = self.execution_handles.read().await;

@@ -539,6 +539,22 @@ pub async fn create_composite_task(
 
     let created = runtime.task_store_arc().create_composite_task(task).await?;
     info!("Created composite task: {}", created.id);
+
+    // Trigger planning task execution if executor is initialized
+    if let Some(executor) = runtime.executor().await {
+        let task_id = created.id;
+        tokio::spawn(async move {
+            if let Err(e) = executor.execute_composite_task_planning(task_id).await {
+                tracing::error!("Failed to start planning execution for {}: {}", task_id, e);
+            }
+        });
+    } else {
+        tracing::warn!(
+            "Executor not initialized, composite task {} planning will not be executed",
+            created.id
+        );
+    }
+
     Ok(created)
 }
 
@@ -1089,6 +1105,7 @@ pub async fn request_changes(
 /// Gets logs for a task.
 ///
 /// Returns normalized events from the agent session output.
+/// Supports both unit tasks and composite tasks (for planning logs).
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task_logs(
@@ -1119,26 +1136,35 @@ pub async fn get_task_logs(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Get the unit task
-    let task = runtime
-        .task_store_arc()
-        .get_unit_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+    // Try to get the unit task first
+    let (agent_task_id, is_unit_task_in_progress) = if let Some(task) =
+        runtime.task_store_arc().get_unit_task(id).await?
+    {
+        (
+            task.agent_task_id,
+            task.status == UnitTaskStatus::InProgress,
+        )
+    } else if let Some(composite_task) = runtime.task_store_arc().get_composite_task(id).await? {
+        // For composite tasks, use the planning task ID to get logs
+        (
+            composite_task.planning_task_id,
+            composite_task.status == CompositeTaskStatus::Planning,
+        )
+    } else {
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    };
 
     // Get the agent task (verifies it exists)
     let _agent_task = runtime
         .task_store_arc()
-        .get_agent_task(task.agent_task_id)
+        .get_agent_task(agent_task_id)
         .await?
-        .ok_or_else(|| {
-            AppError::NotFound(format!("Agent task not found: {}", task.agent_task_id))
-        })?;
+        .ok_or_else(|| AppError::NotFound(format!("Agent task not found: {}", agent_task_id)))?;
 
     // Get the sessions
     let mut sessions = runtime
         .task_store_arc()
-        .list_agent_sessions(task.agent_task_id)
+        .list_agent_sessions(agent_task_id)
         .await?;
 
     // Sort sessions by created_at to ensure we get the latest one
@@ -1146,10 +1172,9 @@ pub async fn get_task_logs(
 
     // If no sessions, return empty
     if sessions.is_empty() {
-        let is_complete = task.status != UnitTaskStatus::InProgress;
         return Ok(TaskLogsResponse {
             events: Vec::new(),
-            is_complete,
+            is_complete: !is_unit_task_in_progress,
             last_event_id: None,
         });
     }
@@ -1161,11 +1186,11 @@ pub async fn get_task_logs(
         .ok_or_else(|| AppError::Internal("Sessions list became empty unexpectedly".to_string()))?;
 
     // Determine completion based on the latest agent session when available,
-    // falling back to the unit task status otherwise.
+    // falling back to the task status otherwise.
     let is_complete = if session.completed_at.is_some() {
         true
     } else {
-        task.status != UnitTaskStatus::InProgress
+        !is_unit_task_in_progress
     };
     let mut events = Vec::new();
     let mut last_event_id: Option<i64> = None;

@@ -658,7 +658,11 @@ This approach:
 ```
 User creates CompositeTask
         ▼
+Planning task execution starts immediately
+        ▼
 planningTask generates PLAN.yaml
+        ▼
+Status changes to pending_approval
         ▼
 User reviews and approves
         ▼
@@ -666,6 +670,8 @@ Execute tasks (parallel where possible)
         ▼
 All tasks done
 ```
+
+**Note:** The planning task starts executing automatically when the CompositeTask is created. The agent logs are streamed to the frontend in real-time, allowing users to monitor the planning progress.
 
 ### PR Auto-Management
 
