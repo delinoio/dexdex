@@ -42,6 +42,11 @@ interface UiState {
   isSettingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
 
+  // Keyboard shortcuts dialog
+  isKeyboardShortcutsOpen: boolean;
+  setKeyboardShortcutsOpen: (open: boolean) => void;
+  toggleKeyboardShortcuts: () => void;
+
   // Selected panel
   selectedPanel: "dashboard" | "repositories" | "settings";
   setSelectedPanel: (panel: "dashboard" | "repositories" | "settings") => void;
@@ -123,6 +128,12 @@ export const useUiStore = create<UiState>()(
   // Settings
   isSettingsOpen: false,
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
+
+  // Keyboard shortcuts
+  isKeyboardShortcutsOpen: false,
+  setKeyboardShortcutsOpen: (open) => set({ isKeyboardShortcutsOpen: open }),
+  toggleKeyboardShortcuts: () =>
+    set((state) => ({ isKeyboardShortcutsOpen: !state.isKeyboardShortcutsOpen })),
 
       // Panel selection
       selectedPanel: "dashboard",
