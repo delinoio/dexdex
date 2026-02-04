@@ -621,7 +621,7 @@ The review interface is built from the following components:
 | Shortcut | Action |
 |----------|--------|
 | `?` | Show Keyboard Shortcuts |
-| `C` | Create Task |
+| `c` | Create Task |
 | `Cmd+N` / `Ctrl+N` | New Task |
 | `Cmd+,` / `Ctrl+,` | Settings |
 | `Cmd+K` / `Ctrl+K` | Command Palette |
