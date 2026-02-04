@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use entities::{Repository, RepositoryGroup, VcsProviderType};
+use rpc_protocol::requests;
 use serde::{Deserialize, Serialize};
 use task_store::{RepositoryFilter, RepositoryGroupFilter, TaskStore};
 use tauri::State;
@@ -13,7 +14,8 @@ use uuid::Uuid;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
-    state::AppState,
+    remote_client::{rpc_to_entity_repository, rpc_to_entity_repository_group},
+    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
 };
 
 /// Parameters for adding a repository.
@@ -50,6 +52,26 @@ pub async fn add_repository(
     params: AddRepositoryParams,
 ) -> AppResult<Repository> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::AddRepositoryRequest {
+            workspace_id: params.workspace_id.unwrap_or_default(),
+            remote_url: params.remote_url,
+            name: params.name,
+            default_branch: params.default_branch,
+        };
+
+        let response = client.add_repository(request).await?;
+        let repository = rpc_to_entity_repository(response.repository)?;
+        info!(
+            "Added repository via remote: {} ({})",
+            repository.name, repository.id
+        );
+        return Ok(repository);
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -91,10 +113,11 @@ pub async fn add_repository(
     }
 
     // Suppress unused variable warnings on non-desktop platforms
+    #[cfg(not(desktop))]
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -105,6 +128,28 @@ pub async fn list_repositories(
     params: ListRepositoriesParams,
 ) -> AppResult<ListRepositoriesResult> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::ListRepositoriesRequest {
+            workspace_id: params.workspace_id,
+            limit: params.limit.unwrap_or(100),
+            offset: params.offset.unwrap_or(0),
+        };
+
+        let response = client.list_repositories(request).await?;
+        let repositories: crate::error::AppResult<Vec<_>> = response
+            .repositories
+            .into_iter()
+            .map(rpc_to_entity_repository)
+            .collect();
+        return Ok(ListRepositoriesResult {
+            repositories: repositories?,
+            total_count: response.total_count,
+        });
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -147,10 +192,11 @@ pub async fn list_repositories(
         });
     }
 
+    #[cfg(not(desktop))]
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -161,6 +207,19 @@ pub async fn remove_repository(
     repository_id: String,
 ) -> AppResult<()> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::RemoveRepositoryRequest {
+            repository_id: repository_id.clone(),
+        };
+
+        client.remove_repository(request).await?;
+        info!("Removed repository via remote: {}", repository_id);
+        return Ok(());
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -177,10 +236,11 @@ pub async fn remove_repository(
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
     let _ = &repository_id;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -317,6 +377,26 @@ pub async fn create_repository_group(
 ) -> AppResult<RepositoryGroup> {
     let state = state.read().await;
 
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::CreateRepositoryGroupRequest {
+            workspace_id: params.workspace_id.unwrap_or_default(),
+            name: params.name,
+            repository_ids: params.repository_ids,
+        };
+
+        let response = client.create_repository_group(request).await?;
+        let group = rpc_to_entity_repository_group(response.group)?;
+        info!(
+            "Created repository group via remote: {} ({})",
+            group.name.as_deref().unwrap_or("unnamed"),
+            group.id
+        );
+        return Ok(group);
+    }
+
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
         let runtime = state
@@ -383,10 +463,11 @@ pub async fn create_repository_group(
         return Ok(created);
     }
 
+    #[cfg(not(desktop))]
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -397,6 +478,28 @@ pub async fn list_repository_groups(
     params: ListRepositoryGroupsParams,
 ) -> AppResult<ListRepositoryGroupsResult> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::ListRepositoryGroupsRequest {
+            workspace_id: params.workspace_id,
+            limit: params.limit.unwrap_or(100),
+            offset: params.offset.unwrap_or(0),
+        };
+
+        let response = client.list_repository_groups(request).await?;
+        let groups: crate::error::AppResult<Vec<_>> = response
+            .groups
+            .into_iter()
+            .map(rpc_to_entity_repository_group)
+            .collect();
+        return Ok(ListRepositoryGroupsResult {
+            groups: groups?,
+            total_count: response.total_count,
+        });
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -444,10 +547,11 @@ pub async fn list_repository_groups(
         });
     }
 
+    #[cfg(not(desktop))]
     let _ = &params;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -458,6 +562,40 @@ pub async fn get_repository_group(
     group_id: String,
 ) -> AppResult<RepositoryGroup> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    // Note: The server doesn't have a dedicated get_repository_group endpoint yet,
+    // so we list all groups and find the one we need.
+    //
+    // PERFORMANCE WARNING: This fetches up to 1000 groups just to find one,
+    // causing:
+    // - O(n) search through potentially hundreds of groups
+    // - Unnecessary data transfer over the network
+    // - Performance degradation as groups increase
+    //
+    // TODO(perf): Add a dedicated get_repository_group endpoint to the server API
+    // to avoid this inefficient lookup. See: https://github.com/delinoio/delidev/issues/142
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::ListRepositoryGroupsRequest {
+            workspace_id: None,
+            limit: 1000,
+            offset: 0,
+        };
+
+        let response = client.list_repository_groups(request).await?;
+        for group in response.groups {
+            if group.id == group_id {
+                return rpc_to_entity_repository_group(group);
+            }
+        }
+
+        return Err(AppError::NotFound(format!(
+            "Repository group not found: {}",
+            group_id
+        )));
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -476,10 +614,11 @@ pub async fn get_repository_group(
             .ok_or_else(|| AppError::NotFound(format!("Repository group not found: {}", id)));
     }
 
+    #[cfg(not(desktop))]
     let _ = &group_id;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -491,6 +630,26 @@ pub async fn update_repository_group(
     params: UpdateRepositoryGroupParams,
 ) -> AppResult<RepositoryGroup> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::UpdateRepositoryGroupRequest {
+            group_id: group_id.clone(),
+            name: params.name,
+            repository_ids: params.repository_ids,
+        };
+
+        let response = client.update_repository_group(request).await?;
+        let group = rpc_to_entity_repository_group(response.group)?;
+        info!(
+            "Updated repository group via remote: {} ({})",
+            group.name.as_deref().unwrap_or("unnamed"),
+            group.id
+        );
+        return Ok(group);
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -555,10 +714,11 @@ pub async fn update_repository_group(
         return Ok(updated);
     }
 
+    #[cfg(not(desktop))]
     let _ = (&group_id, &params);
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
@@ -569,6 +729,19 @@ pub async fn delete_repository_group(
     group_id: String,
 ) -> AppResult<()> {
     let state = state.read().await;
+
+    // Remote mode: make API call to main server
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::DeleteRepositoryGroupRequest {
+            group_id: group_id.clone(),
+        };
+
+        client.delete_repository_group(request).await?;
+        info!("Deleted repository group via remote: {}", group_id);
+        return Ok(());
+    }
 
     #[cfg(desktop)]
     if state.mode == AppMode::Local {
@@ -585,10 +758,11 @@ pub async fn delete_repository_group(
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
     let _ = &group_id;
 
     Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
