@@ -1063,12 +1063,10 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown agent type")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown agent type"));
     }
 
     // =========================================================================
@@ -1119,12 +1117,10 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown unit task status")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown unit task status"));
     }
 
     // =========================================================================
@@ -1171,11 +1167,9 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown composite task status")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown composite task status"));
     }
 }

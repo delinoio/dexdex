@@ -8,9 +8,9 @@ use std::path::Path;
 use async_trait::async_trait;
 use entities::{
     AgentSession, AgentTask, CompositeTask, CompositeTaskNode, Repository, RepositoryGroup,
-    TodoItem, TokenUsage, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace,
+    TodoItem, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace,
 };
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use tracing::info;
 use uuid::Uuid;
 
@@ -973,7 +973,7 @@ impl TaskStore for SqliteTaskStore {
         let token_usage_json = session
             .token_usage
             .as_ref()
-            .map(|t| serde_json::to_string(t))
+            .map(serde_json::to_string)
             .transpose()?;
         sqlx::query(
             "INSERT INTO agent_sessions (id, agent_task_id, ai_agent_type, ai_agent_model, \
@@ -1094,7 +1094,7 @@ impl TaskStore for SqliteTaskStore {
         let token_usage_json = session
             .token_usage
             .as_ref()
-            .map(|t| serde_json::to_string(t))
+            .map(serde_json::to_string)
             .transpose()?;
         let result = sqlx::query(
             "UPDATE agent_sessions SET agent_task_id = ?, ai_agent_type = ?, ai_agent_model = ?, \
@@ -1962,6 +1962,7 @@ impl TaskStore for SqliteTaskStore {
 
 #[cfg(test)]
 mod tests {
+    use entities::TokenUsage;
     use tempfile::TempDir;
 
     use super::*;
