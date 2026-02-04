@@ -49,7 +49,8 @@ impl ClaudeCodeAgent {
                     let subtype = value.get("subtype").and_then(|v| v.as_str());
 
                     if subtype == Some("init") {
-                        // Init event contains session metadata (cwd, session_id, tools, model, etc.)
+                        // Init event contains session metadata (cwd, session_id, tools, model,
+                        // etc.)
                         events.push(NormalizedEvent::session_start(
                             "claude_code",
                             value
@@ -158,8 +159,10 @@ impl ClaudeCodeAgent {
                     // User message - extract content from the message field
                     // Content can be:
                     // 1. A string: {"message":{"content":"text"}}
-                    // 2. An array of text blocks: {"message":{"content":[{"type":"text","text":"..."}]}}
-                    // 3. An array of tool_result blocks: {"message":{"content":[{"type":"tool_result","content":"..."}]}}
+                    // 2. An array of text blocks:
+                    //    {"message":{"content":[{"type":"text","text":"..."}]}}
+                    // 3. An array of tool_result blocks:
+                    //    {"message":{"content":[{"type":"tool_result","content":"..."}]}}
                     let mut found_content = false;
                     if let Some(message) = value.get("message") {
                         if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
@@ -173,7 +176,8 @@ impl ClaudeCodeAgent {
                                 let item_type = item.get("type").and_then(|v| v.as_str());
                                 match item_type {
                                     Some("text") => {
-                                        if let Some(text) = item.get("text").and_then(|v| v.as_str())
+                                        if let Some(text) =
+                                            item.get("text").and_then(|v| v.as_str())
                                         {
                                             events.push(NormalizedEvent::user_response(text));
                                             found_content = true;
@@ -193,8 +197,9 @@ impl ClaudeCodeAgent {
                                             .get("is_error")
                                             .and_then(|v| v.as_bool())
                                             .unwrap_or(false);
-                                        // Use tool_use_id as a placeholder for tool_name since it's not available
-                                        // The tool result event will show the output
+                                        // Use tool_use_id as a placeholder for tool_name since it's
+                                        // not available The
+                                        // tool result event will show the output
                                         events.push(NormalizedEvent::tool_result(
                                             tool_use_id,
                                             output,
@@ -204,7 +209,8 @@ impl ClaudeCodeAgent {
                                     }
                                     _ => {
                                         // Other content types - try to extract as text
-                                        if let Some(text) = item.get("text").and_then(|v| v.as_str())
+                                        if let Some(text) =
+                                            item.get("text").and_then(|v| v.as_str())
                                         {
                                             events.push(NormalizedEvent::user_response(text));
                                             found_content = true;
@@ -659,7 +665,7 @@ mod tests {
         assert!(!events.is_empty());
         assert!(matches!(
             events.first(),
-            Some(NormalizedEvent::ToolResult { tool_name, is_error, .. }) if tool_name == "tool123" && *is_error == false
+            Some(NormalizedEvent::ToolResult { tool_name, is_error, .. }) if tool_name == "tool123" && !*is_error
         ));
     }
 }

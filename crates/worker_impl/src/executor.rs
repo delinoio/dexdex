@@ -383,29 +383,6 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         Ok(())
     }
 
-    /// Persists the output logs to the agent session in the database.
-    async fn persist_session_logs(
-        task_store: &Arc<SqliteTaskStore>,
-        session_id: Uuid,
-        output_log: &str,
-    ) -> Result<(), String> {
-        if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
-            session.output_log = Some(output_log.to_string());
-            task_store
-                .update_agent_session(session)
-                .await
-                .map_err(|e| format!("Failed to update agent session with logs: {}", e))?;
-            info!(
-                "Persisted {} bytes of logs for session {}",
-                output_log.len(),
-                session_id
-            );
-        } else {
-            warn!("Could not find session {} to persist logs", session_id);
-        }
-        Ok(())
-    }
-
     /// Checks if a task is currently being executed.
     pub async fn is_executing(&self, task_id: Uuid) -> bool {
         let handles = self.execution_handles.read().await;
