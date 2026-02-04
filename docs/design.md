@@ -351,6 +351,7 @@ enum CompositeTaskStatus {
   in_progress        // Tasks are executing
   done               // All tasks completed
   rejected           // User rejected the plan
+  failed             // Planning or execution failed
 }
 ```
 
@@ -673,14 +674,37 @@ This approach:
 ```
 User creates CompositeTask
         ▼
-planningTask generates PLAN.yaml
+System creates planningTask (AgentTask) and session
         ▼
-User reviews and approves
+Planning agent starts immediately (status: planning)
         ▼
-Execute tasks (parallel where possible)
+┌────────────────────────────────────────────────────┐
+│ Planning agent generates PLAN.yaml                 │
+│ - Real-time logs streamed to UI via AgentLogViewer │
+│ - Logs persisted incrementally to database         │
+└────────────────────────────────────────────────────┘
         ▼
-All tasks done
+┌──────────────────────────────────────┐
+│ Success         │ Failure            │
+│ pending_approval│ failed             │
+└────────┬────────┴────────┬───────────┘
+         ▼                 │
+User reviews and approves  │ (User can retry or discard)
+         ▼                 │
+Status: in_progress        │
+         ▼                 │
+Execute tasks (parallel    │
+where possible)            │
+         ▼                 │
+All tasks done             │
+(status: done)             │
 ```
+
+The planning agent execution is handled by `LocalExecutor::execute_composite_task()`, which:
+1. Creates an agent session for the planning task
+2. Spawns a background task for execution
+3. Uses `PersistingEventEmitter` for real-time streaming and incremental log persistence
+4. Updates composite task status to `pending_approval` on success or `failed` on error
 
 ### PR Auto-Management
 

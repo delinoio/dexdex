@@ -328,6 +328,7 @@ pub enum CompositeTaskStatus {
     InProgress,
     Done,
     Rejected,
+    Failed,
 }
 
 /// TTY input type.

@@ -539,6 +539,26 @@ pub async fn create_composite_task(
 
     let created = runtime.task_store_arc().create_composite_task(task).await?;
     info!("Created composite task: {}", created.id);
+
+    // Trigger planning task execution if executor is initialized
+    if let Some(executor) = runtime.executor().await {
+        let composite_task_id = created.id;
+        tokio::spawn(async move {
+            if let Err(e) = executor.execute_composite_task(composite_task_id).await {
+                tracing::error!(
+                    "Failed to start planning execution for composite task {}: {}",
+                    composite_task_id,
+                    e
+                );
+            }
+        });
+    } else {
+        tracing::warn!(
+            "Executor not initialized, composite task {} planning will not be executed",
+            created.id
+        );
+    }
+
     Ok(created)
 }
 
@@ -1089,6 +1109,7 @@ pub async fn request_changes(
 /// Gets logs for a task.
 ///
 /// Returns normalized events from the agent session output.
+/// Supports both unit task IDs and agent task IDs (for planning tasks).
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task_logs(
@@ -1119,26 +1140,33 @@ pub async fn get_task_logs(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Get the unit task
-    let task = runtime
-        .task_store_arc()
-        .get_unit_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+    // Try to get logs by unit task ID first, then composite task ID, then agent
+    // task ID. This supports:
+    // - Regular unit tasks (unit task ID -> agent_task_id)
+    // - Composite task planning (composite task ID -> planning_task_id)
+    // - Direct agent task lookups (agent task ID)
+    let (agent_task_id, task_is_complete) = if let Some(task) =
+        runtime.task_store_arc().get_unit_task(id).await?
+    {
+        // Found a unit task - use its agent_task_id
+        let is_complete = task.status != UnitTaskStatus::InProgress;
+        (task.agent_task_id, is_complete)
+    } else if let Some(composite_task) = runtime.task_store_arc().get_composite_task(id).await? {
+        // Found a composite task - use its planning_task_id for logs
+        let is_complete = composite_task.status != CompositeTaskStatus::Planning;
+        (composite_task.planning_task_id, is_complete)
+    } else if runtime.task_store_arc().get_agent_task(id).await?.is_some() {
+        // ID is an agent task ID directly
+        // For agent tasks, we determine completion from the session
+        (id, false)
+    } else {
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    };
 
-    // Get the agent task (verifies it exists)
-    let _agent_task = runtime
-        .task_store_arc()
-        .get_agent_task(task.agent_task_id)
-        .await?
-        .ok_or_else(|| {
-            AppError::NotFound(format!("Agent task not found: {}", task.agent_task_id))
-        })?;
-
-    // Get the sessions
+    // Get the sessions for the agent task
     let mut sessions = runtime
         .task_store_arc()
-        .list_agent_sessions(task.agent_task_id)
+        .list_agent_sessions(agent_task_id)
         .await?;
 
     // Sort sessions by created_at to ensure we get the latest one
@@ -1146,10 +1174,9 @@ pub async fn get_task_logs(
 
     // If no sessions, return empty
     if sessions.is_empty() {
-        let is_complete = task.status != UnitTaskStatus::InProgress;
         return Ok(TaskLogsResponse {
             events: Vec::new(),
-            is_complete,
+            is_complete: task_is_complete,
             last_event_id: None,
         });
     }
@@ -1161,11 +1188,11 @@ pub async fn get_task_logs(
         .ok_or_else(|| AppError::Internal("Sessions list became empty unexpectedly".to_string()))?;
 
     // Determine completion based on the latest agent session when available,
-    // falling back to the unit task status otherwise.
+    // falling back to the task status otherwise.
     let is_complete = if session.completed_at.is_some() {
         true
     } else {
-        task.status != UnitTaskStatus::InProgress
+        task_is_complete
     };
     let mut events = Vec::new();
     let mut last_event_id: Option<i64> = None;
@@ -1527,6 +1554,7 @@ fn parse_composite_status(s: &str) -> AppResult<CompositeTaskStatus> {
         "in_progress" => Ok(CompositeTaskStatus::InProgress),
         "done" => Ok(CompositeTaskStatus::Done),
         "rejected" => Ok(CompositeTaskStatus::Rejected),
+        "failed" => Ok(CompositeTaskStatus::Failed),
         _ => Err(AppError::InvalidRequest(format!(
             "Unknown composite task status: {}",
             s
@@ -1673,6 +1701,10 @@ mod tests {
         assert!(matches!(
             parse_composite_status("rejected"),
             Ok(CompositeTaskStatus::Rejected)
+        ));
+        assert!(matches!(
+            parse_composite_status("failed"),
+            Ok(CompositeTaskStatus::Failed)
         ));
     }
 

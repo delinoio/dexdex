@@ -56,6 +56,7 @@ fn to_entity_composite_status(status: CompositeTaskStatus) -> EntityCompositeTas
         CompositeTaskStatus::InProgress => EntityCompositeTaskStatus::InProgress,
         CompositeTaskStatus::Done => EntityCompositeTaskStatus::Done,
         CompositeTaskStatus::Rejected => EntityCompositeTaskStatus::Rejected,
+        CompositeTaskStatus::Failed => EntityCompositeTaskStatus::Failed,
     }
 }
 
@@ -67,6 +68,7 @@ fn to_rpc_composite_status(status: EntityCompositeTaskStatus) -> CompositeTaskSt
         EntityCompositeTaskStatus::InProgress => CompositeTaskStatus::InProgress,
         EntityCompositeTaskStatus::Done => CompositeTaskStatus::Done,
         EntityCompositeTaskStatus::Rejected => CompositeTaskStatus::Rejected,
+        EntityCompositeTaskStatus::Failed => CompositeTaskStatus::Failed,
     }
 }
 

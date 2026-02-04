@@ -50,6 +50,8 @@ function formatStatus(status: UnitTaskStatus | CompositeTaskStatus): string {
       return "Rejected";
     case "approved":
       return "Approved";
+    case "failed":
+      return "Failed";
     default:
       return status;
   }

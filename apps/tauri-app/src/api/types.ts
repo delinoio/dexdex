@@ -43,6 +43,7 @@ export enum CompositeTaskStatus {
   InProgress = "in_progress",
   Done = "done",
   Rejected = "rejected",
+  Failed = "failed",
 }
 
 export enum TtyInputType {

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
+import { AgentLogViewer } from "@/components/task/AgentLogViewer";
 import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
@@ -117,6 +118,7 @@ export function CompositeTaskDetail() {
       case CompositeTaskStatus.PendingApproval:
         return "secondary";
       case CompositeTaskStatus.Rejected:
+      case CompositeTaskStatus.Failed:
         return "destructive";
       default:
         return "outline";
@@ -135,6 +137,8 @@ export function CompositeTaskDetail() {
         return "Done";
       case CompositeTaskStatus.Rejected:
         return "Rejected";
+      case CompositeTaskStatus.Failed:
+        return "Failed";
       default:
         return status;
     }
@@ -215,6 +219,24 @@ export function CompositeTaskDetail() {
             title="Planning Token Usage"
             description="Token usage for the planning phase. View individual sub-tasks for execution usage."
           />
+
+          {task.status === CompositeTaskStatus.Planning && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Planning Agent</CardTitle>
+                <CardDescription>
+                  The AI is analyzing your request and generating a task plan.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AgentLogViewer
+                  taskId={task.id}
+                  taskStatus={UnitTaskStatus.InProgress}
+                  className="min-h-64 max-h-[500px]"
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {task.status === CompositeTaskStatus.PendingApproval && (
             <Card className="border-[hsl(var(--primary))]">
