@@ -81,6 +81,18 @@ export interface BaseRemote {
   gitBranchName: string;
 }
 
+// Token usage information from an AI agent session
+export interface TokenUsage {
+  // Number of input tokens consumed
+  inputTokens: number;
+  // Number of output tokens generated
+  outputTokens: number;
+  // Number of cache read tokens (if applicable)
+  cacheReadTokens?: number;
+  // Number of cache creation tokens (if applicable)
+  cacheCreationTokens?: number;
+}
+
 export interface AgentSession {
   id: string;
   agentTaskId: string;
@@ -90,6 +102,8 @@ export interface AgentSession {
   completedAt?: string;
   outputLog?: string;
   createdAt: string;
+  // Token usage for this session
+  tokenUsage?: TokenUsage;
 }
 
 export interface AgentTask {

@@ -5,11 +5,13 @@ import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges } from "@/hooks/useTasks";
+import { TokenUsageDisplay } from "@/components/task/TokenUsageDisplay";
+import { useTask, useApproveTask, useRejectTask, useRequestChanges, useAgentTask } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { UnitTaskStatus } from "@/api/types";
-import { useState, useCallback } from "react";
+import type { TokenUsage } from "@/api/types";
+import { useState, useCallback, useMemo } from "react";
 
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +26,40 @@ export function UnitTaskDetail() {
   const requestChangesMutation = useRequestChanges();
 
   const task = data?.unitTask;
+
+  // Fetch agent task to get token usage
+  const { data: agentTaskData } = useAgentTask(task?.agentTaskId);
+
+  // Calculate total token usage from all sessions
+  const totalTokenUsage = useMemo((): TokenUsage | undefined => {
+    if (!agentTaskData?.agentSessions || agentTaskData.agentSessions.length === 0) {
+      return undefined;
+    }
+
+    const totals = agentTaskData.agentSessions.reduce(
+      (acc, session) => {
+        if (session.tokenUsage) {
+          acc.inputTokens += session.tokenUsage.inputTokens;
+          acc.outputTokens += session.tokenUsage.outputTokens;
+          if (session.tokenUsage.cacheReadTokens) {
+            acc.cacheReadTokens = (acc.cacheReadTokens || 0) + session.tokenUsage.cacheReadTokens;
+          }
+          if (session.tokenUsage.cacheCreationTokens) {
+            acc.cacheCreationTokens = (acc.cacheCreationTokens || 0) + session.tokenUsage.cacheCreationTokens;
+          }
+        }
+        return acc;
+      },
+      { inputTokens: 0, outputTokens: 0 } as TokenUsage
+    );
+
+    // Only return if there's actual usage
+    if (totals.inputTokens === 0 && totals.outputTokens === 0) {
+      return undefined;
+    }
+
+    return totals;
+  }, [agentTaskData]);
 
   // Set dynamic tab title with task context
   const tabTitle = task?.title ? `Task: ${task.title}` : "Task";
@@ -278,6 +314,10 @@ export function UnitTaskDetail() {
               </CardContent>
             )}
           </Card>
+
+          {totalTokenUsage && (
+            <TokenUsageDisplay tokenUsage={totalTokenUsage} />
+          )}
 
           {task.status !== UnitTaskStatus.InProgress &&
             task.status !== UnitTaskStatus.Unspecified && (

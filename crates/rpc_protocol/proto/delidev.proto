@@ -81,6 +81,18 @@ message BaseRemote {
   string git_branch_name = 2;
 }
 
+// Token usage information from an AI agent session.
+message TokenUsage {
+  // Number of input tokens consumed.
+  int64 input_tokens = 1;
+  // Number of output tokens generated.
+  int64 output_tokens = 2;
+  // Number of cache read tokens (if applicable).
+  optional int64 cache_read_tokens = 3;
+  // Number of cache creation tokens (if applicable).
+  optional int64 cache_creation_tokens = 4;
+}
+
 message AgentSession {
   string id = 1;
   string agent_task_id = 2;
@@ -90,6 +102,8 @@ message AgentSession {
   optional google.protobuf.Timestamp completed_at = 6;
   optional string output_log = 7;
   google.protobuf.Timestamp created_at = 8;
+  // Token usage for this session.
+  optional TokenUsage token_usage = 9;
 }
 
 message AgentTask {

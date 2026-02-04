@@ -261,6 +261,17 @@ enum AIAgentType {
 }
 ```
 
+### TokenUsage
+
+Token usage information from an AI agent session.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| inputTokens | number | Y | Number of input tokens consumed |
+| outputTokens | number | Y | Number of output tokens generated |
+| cacheReadTokens | number | N | Number of cache read tokens (if applicable) |
+| cacheCreationTokens | number | N | Number of cache creation tokens (if applicable) |
+
 ### AgentSession
 
 A single AI coding agent session.
@@ -270,6 +281,7 @@ A single AI coding agent session.
 | id | string | Y | Unique identifier |
 | aiAgentType | AIAgentType | Y | Agent type |
 | aiAgentModel | string | N | Model to use |
+| tokenUsage | TokenUsage | N | Token usage statistics for this session |
 
 ### AgentTask
 

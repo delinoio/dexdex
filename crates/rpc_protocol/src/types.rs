@@ -369,6 +369,36 @@ pub struct BaseRemote {
     pub git_branch_name: String,
 }
 
+/// Token usage information from an AI agent session.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenUsage {
+    /// Number of input tokens consumed.
+    pub input_tokens: i64,
+    /// Number of output tokens generated.
+    pub output_tokens: i64,
+    /// Number of cache read tokens (if applicable).
+    pub cache_read_tokens: Option<i64>,
+    /// Number of cache creation tokens (if applicable).
+    pub cache_creation_tokens: Option<i64>,
+}
+
+impl TokenUsage {
+    /// Creates a new TokenUsage instance.
+    pub fn new(input_tokens: i64, output_tokens: i64) -> Self {
+        Self {
+            input_tokens,
+            output_tokens,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+        }
+    }
+
+    /// Returns the total number of tokens (input + output).
+    pub fn total_tokens(&self) -> i64 {
+        self.input_tokens + self.output_tokens
+    }
+}
+
 /// Agent session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSession {
@@ -380,6 +410,8 @@ pub struct AgentSession {
     pub completed_at: Option<DateTime<Utc>>,
     pub output_log: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Token usage for this session.
+    pub token_usage: Option<TokenUsage>,
 }
 
 /// Agent task.

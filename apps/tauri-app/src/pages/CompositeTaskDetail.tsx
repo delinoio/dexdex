@@ -1,11 +1,13 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
-import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
-import type { CompositeTaskNodeWithUnitTask } from "@/api/types";
+import { TokenUsageDisplay } from "@/components/task/TokenUsageDisplay";
+import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes, useAgentTask } from "@/hooks/useTasks";
+import type { CompositeTaskNodeWithUnitTask, TokenUsage } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
         
@@ -44,6 +46,41 @@ export function CompositeTaskDetail() {
   const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useCompositeTaskNodes(id ?? "");
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
+
+  // Get the planning agent task for token usage
+  const planningTaskId = data?.compositeTask?.planningTaskId;
+  const { data: planningAgentTask } = useAgentTask(planningTaskId);
+
+  // Calculate total token usage from the planning task
+  const planningTokenUsage = useMemo((): TokenUsage | undefined => {
+    if (!planningAgentTask?.agentSessions || planningAgentTask.agentSessions.length === 0) {
+      return undefined;
+    }
+
+    const totals = planningAgentTask.agentSessions.reduce(
+      (acc, session) => {
+        if (session.tokenUsage) {
+          acc.inputTokens += session.tokenUsage.inputTokens;
+          acc.outputTokens += session.tokenUsage.outputTokens;
+          if (session.tokenUsage.cacheReadTokens) {
+            acc.cacheReadTokens = (acc.cacheReadTokens || 0) + session.tokenUsage.cacheReadTokens;
+          }
+          if (session.tokenUsage.cacheCreationTokens) {
+            acc.cacheCreationTokens = (acc.cacheCreationTokens || 0) + session.tokenUsage.cacheCreationTokens;
+          }
+        }
+        return acc;
+      },
+      { inputTokens: 0, outputTokens: 0 } as TokenUsage
+    );
+
+    // Only return if there's actual usage
+    if (totals.inputTokens === 0 && totals.outputTokens === 0) {
+      return undefined;
+    }
+
+    return totals;
+  }, [planningAgentTask]);
 
   if (isLoading) {
     return (
@@ -302,6 +339,20 @@ export function CompositeTaskDetail() {
             nodes={nodesData?.nodes || []}
             totalCount={task.nodeIds.length}
           />
+
+          {planningTokenUsage && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Planning Token Usage</CardTitle>
+                <CardDescription>
+                  Tokens used by the AI agent during task planning
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TokenUsageDisplay tokenUsage={planningTokenUsage} />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

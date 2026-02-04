@@ -4,6 +4,7 @@ import {
   approveTask,
   createCompositeTask,
   createUnitTask,
+  getAgentTask,
   getCompositeTaskNodes,
   getTask,
   listTasks,
@@ -25,6 +26,8 @@ export const taskKeys = {
   detail: (id: string) => [...taskKeys.details(), id] as const,
   compositeNodes: (compositeTaskId: string) =>
     [...taskKeys.all, "compositeNodes", compositeTaskId] as const,
+  agentTask: (agentTaskId: string) =>
+    [...taskKeys.all, "agentTask", agentTaskId] as const,
 };
 
 // Query hooks
@@ -49,6 +52,14 @@ export function useCompositeTaskNodes(compositeTaskId: string) {
     queryKey: taskKeys.compositeNodes(compositeTaskId),
     queryFn: () => getCompositeTaskNodes(compositeTaskId),
     enabled: !!compositeTaskId,
+  });
+}
+
+export function useAgentTask(agentTaskId: string | undefined) {
+  return useQuery({
+    queryKey: taskKeys.agentTask(agentTaskId ?? ""),
+    queryFn: () => getAgentTask(agentTaskId!),
+    enabled: !!agentTaskId,
   });
 }
 
