@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CommandPalette } from "@/components/CommandPalette";
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { ChatWindow } from "@/components/chat";
 import {
   CompositeTaskDetail,
@@ -36,6 +37,7 @@ function AppRoutes() {
   return (
     <>
       <CommandPalette />
+      <KeyboardShortcutsDialog />
       <ChatWindow />
       <Routes>
         {/* Standalone pages (no sidebar) */}

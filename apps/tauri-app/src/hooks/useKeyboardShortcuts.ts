@@ -22,6 +22,8 @@ export function useKeyboardShortcuts() {
     setTaskCreationOpen,
     setSettingsOpen,
     toggleCommandPalette,
+    toggleKeyboardShortcuts,
+    setKeyboardShortcutsOpen,
     tabs,
     activeTabId,
     addTab,
@@ -66,6 +68,24 @@ export function useKeyboardShortcuts() {
         navigate("/");
       },
       description: "Dashboard",
+    },
+
+    // Quick shortcuts (no modifier)
+    {
+      key: "?",
+      shift: true,
+      handler: () => {
+        toggleKeyboardShortcuts();
+      },
+      description: "Show Keyboard Shortcuts",
+    },
+    {
+      key: "c",
+      handler: () => {
+        setTaskCreationOpen(true);
+        navigate("/tasks/new");
+      },
+      description: "Create Task",
     },
 
     // Tab navigation
@@ -136,6 +156,7 @@ export function useKeyboardShortcuts() {
         setTaskCreationOpen(false);
         setSettingsOpen(false);
         setChatOpen(false);
+        setKeyboardShortcutsOpen(false);
       },
       description: "Close Dialog",
     },
@@ -144,6 +165,8 @@ export function useKeyboardShortcuts() {
     setTaskCreationOpen,
     setSettingsOpen,
     toggleCommandPalette,
+    toggleKeyboardShortcuts,
+    setKeyboardShortcutsOpen,
     toggleChat,
     setChatOpen,
     tabs,
@@ -201,6 +224,8 @@ export function useKeyboardShortcuts() {
 // Export shortcut definitions for display in UI
 export const KEYBOARD_SHORTCUTS = {
   global: [
+    { keys: ["?"], description: "Show Keyboard Shortcuts" },
+    { keys: ["C"], description: "Create Task" },
     { keys: ["⌥/Alt", "Z"], description: "Open Chat" },
     { keys: ["⌘/Ctrl", "N"], description: "New Task" },
     { keys: ["⌘/Ctrl", ","], description: "Settings" },
