@@ -1,8 +1,8 @@
 //! Task-related Tauri commands.
 
+use std::sync::Arc;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 #[cfg(desktop)]
 use coding_agents::{NormalizedEvent, TimestampedEvent};
@@ -41,11 +41,21 @@ const MAX_TITLE_LENGTH: usize = 500;
 
 /// Minimum time between task creations in milliseconds.
 /// This provides basic rate limiting to prevent resource exhaustion.
+///
+/// # Limitations
+/// This rate limiter uses a global atomic variable, which is appropriate for
+/// single-user desktop applications. For multi-user scenarios, a per-user
+/// rate limiter with a shared backend (e.g., Redis) would be required.
 #[cfg(desktop)]
-const MIN_TASK_CREATION_INTERVAL_MS: u64 = 1000;
+const MIN_TASK_CREATION_INTERVAL_MS: u64 = 500;
 
 /// Global rate limiter for task creation (tracks last creation timestamp in ms
 /// since epoch).
+///
+/// # Note
+/// This is a simple global rate limiter suitable for single-user desktop apps.
+/// In a multi-user environment, this would need to be replaced with per-user
+/// rate limiting using a distributed cache or database.
 #[cfg(desktop)]
 static LAST_TASK_CREATION_TIME: AtomicU64 = AtomicU64::new(0);
 
@@ -1152,10 +1162,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -1206,10 +1218,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -1256,9 +1270,142 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
+    }
+
+    // =========================================================================
+    // Prompt Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_prompt_valid() {
+        assert!(validate_prompt("A simple prompt").is_ok());
+        assert!(validate_prompt("Fix the bug in the login page").is_ok());
+        assert!(validate_prompt("a").is_ok()); // Minimum valid prompt
+    }
+
+    #[test]
+    fn test_validate_prompt_empty() {
+        let result = validate_prompt("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_validate_prompt_whitespace_only() {
+        let result = validate_prompt("   ");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_validate_prompt_too_long() {
+        let long_prompt = "a".repeat(MAX_PROMPT_LENGTH + 1);
+        let result = validate_prompt(&long_prompt);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("maximum length"));
+    }
+
+    #[test]
+    fn test_validate_prompt_max_length() {
+        let max_prompt = "a".repeat(MAX_PROMPT_LENGTH);
+        assert!(validate_prompt(&max_prompt).is_ok());
+    }
+
+    #[test]
+    fn test_validate_prompt_null_byte() {
+        let result = validate_prompt("Hello\0World");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("null bytes"));
+    }
+
+    // =========================================================================
+    // Title Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_title_valid() {
+        assert!(validate_title("Fix login bug").is_ok());
+        assert!(validate_title("").is_ok()); // Empty is allowed for title
+        assert!(validate_title("Add new feature for user authentication").is_ok());
+    }
+
+    #[test]
+    fn test_validate_title_too_long() {
+        let long_title = "a".repeat(MAX_TITLE_LENGTH + 1);
+        let result = validate_title(&long_title);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("maximum length"));
+    }
+
+    #[test]
+    fn test_validate_title_max_length() {
+        let max_title = "a".repeat(MAX_TITLE_LENGTH);
+        assert!(validate_title(&max_title).is_ok());
+    }
+
+    #[test]
+    fn test_validate_title_null_byte() {
+        let result = validate_title("Title\0with null");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("null bytes"));
+    }
+
+    // =========================================================================
+    // Rate Limiting Tests
+    // =========================================================================
+
+    #[cfg(desktop)]
+    #[test]
+    fn test_check_rate_limit_allows_first_call() {
+        // Reset the rate limiter to ensure clean state
+        LAST_TASK_CREATION_TIME.store(0, Ordering::SeqCst);
+        // First call should always succeed
+        assert!(check_rate_limit().is_ok());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn test_check_rate_limit_blocks_rapid_calls() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Set the last creation time to now
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        LAST_TASK_CREATION_TIME.store(now, Ordering::SeqCst);
+
+        // Immediate second call should be blocked
+        let result = check_rate_limit();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Please wait at least")
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn test_check_rate_limit_allows_after_interval() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Set the last creation time to more than MIN_TASK_CREATION_INTERVAL_MS ago
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let past = now.saturating_sub(MIN_TASK_CREATION_INTERVAL_MS + 100);
+        LAST_TASK_CREATION_TIME.store(past, Ordering::SeqCst);
+
+        // Call should succeed after interval has passed
+        assert!(check_rate_limit().is_ok());
     }
 }
