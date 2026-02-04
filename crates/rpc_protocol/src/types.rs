@@ -111,6 +111,8 @@ pub enum NormalizedEvent {
         success: bool,
         /// Error message if the session failed.
         error: Option<String>,
+        /// Token usage statistics from the session.
+        token_usage: Option<TokenUsage>,
     },
 
     /// Agent is thinking/reasoning.
@@ -152,7 +154,24 @@ impl NormalizedEvent {
 
     /// Creates a new session end event.
     pub fn session_end(success: bool, error: Option<String>) -> Self {
-        Self::SessionEnd { success, error }
+        Self::SessionEnd {
+            success,
+            error,
+            token_usage: None,
+        }
+    }
+
+    /// Creates a new session end event with token usage.
+    pub fn session_end_with_usage(
+        success: bool,
+        error: Option<String>,
+        token_usage: Option<TokenUsage>,
+    ) -> Self {
+        Self::SessionEnd {
+            success,
+            error,
+            token_usage,
+        }
     }
 
     /// Creates a new thinking event.
@@ -380,6 +399,7 @@ pub struct AgentSession {
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub output_log: Option<String>,
+    pub token_usage: Option<TokenUsage>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -546,4 +566,24 @@ pub struct TodoItem {
 pub struct Secret {
     pub key: String,
     pub value: String,
+}
+
+/// Token usage statistics from an AI coding agent session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    /// Number of input tokens (excluding cache).
+    pub input_tokens: u64,
+    /// Number of output tokens generated.
+    pub output_tokens: u64,
+    /// Number of tokens read from cache.
+    pub cache_read_input_tokens: u64,
+    /// Number of tokens written to cache.
+    pub cache_creation_input_tokens: u64,
+    /// Total cost in USD for this session.
+    pub total_cost_usd: f64,
+    /// Duration of the session in milliseconds.
+    pub duration_ms: u64,
+    /// Number of conversation turns (API round-trips).
+    pub num_turns: u32,
 }

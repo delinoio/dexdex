@@ -261,6 +261,20 @@ enum AIAgentType {
 }
 ```
 
+### TokenUsage
+
+Token usage statistics from an AI coding agent session.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| inputTokens | number | Y | Number of input tokens (excluding cache) |
+| outputTokens | number | Y | Number of output tokens generated |
+| cacheReadInputTokens | number | Y | Number of tokens read from cache |
+| cacheCreationInputTokens | number | Y | Number of tokens written to cache |
+| totalCostUsd | number | Y | Total cost in USD for this session |
+| durationMs | number | Y | Duration of the session in milliseconds |
+| numTurns | number | Y | Number of conversation turns (API round-trips) |
+
 ### AgentSession
 
 A single AI coding agent session.
@@ -270,6 +284,7 @@ A single AI coding agent session.
 | id | string | Y | Unique identifier |
 | aiAgentType | AIAgentType | Y | Agent type |
 | aiAgentModel | string | N | Model to use |
+| tokenUsage | TokenUsage | N | Token usage statistics from the session |
 
 ### AgentTask
 
