@@ -57,7 +57,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Initialize tracing for logging.
 fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tauri=warn"));
@@ -150,6 +150,7 @@ pub fn run() {
             commands::task::approve_task,
             commands::task::reject_task,
             commands::task::request_changes,
+            commands::task::cancel_task,
             commands::task::get_task_logs,
             commands::task::respond_tty_input,
             commands::task::get_composite_task_nodes,

@@ -1242,6 +1242,72 @@ pub async fn get_task_logs(
     ))
 }
 
+/// Cancels a running task.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn cancel_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the executor and cancel the execution
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+    let was_cancelled = executor.cancel_execution(id).await;
+
+    if was_cancelled {
+        // Update task status to failed
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            task.status = UnitTaskStatus::Failed;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+        }
+        info!("Cancelled task: {}", id);
+    } else {
+        info!("Task {} was not running or already completed", id);
+    }
+
+    Ok(())
+}
+
+/// Cancels a running task (mobile stub - local mode not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn cancel_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Remote mode not yet implemented".to_string(),
+        ));
+    }
+
+    Err(AppError::InvalidRequest(
+        "Local mode is not supported on this platform".to_string(),
+    ))
+}
+
 /// Responds to a TTY input request from an agent.
 #[cfg(desktop)]
 #[tauri::command]
@@ -1497,10 +1563,12 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown agent type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown agent type")
+        );
     }
 
     // =========================================================================
@@ -1551,10 +1619,12 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown unit task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown unit task status")
+        );
     }
 
     // =========================================================================
@@ -1601,10 +1671,12 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown composite task status"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown composite task status")
+        );
     }
 
     // =========================================================================
