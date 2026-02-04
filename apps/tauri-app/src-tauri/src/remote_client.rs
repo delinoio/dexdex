@@ -485,6 +485,7 @@ pub fn rpc_to_entity_unit_status(status: RpcUnitTaskStatus) -> entities::UnitTas
         RpcUnitTaskStatus::Done => entities::UnitTaskStatus::Done,
         RpcUnitTaskStatus::Rejected => entities::UnitTaskStatus::Rejected,
         RpcUnitTaskStatus::Failed => entities::UnitTaskStatus::Failed,
+        RpcUnitTaskStatus::Cancelled => entities::UnitTaskStatus::Cancelled,
     }
 }
 
@@ -498,6 +499,7 @@ pub fn entity_to_rpc_unit_status(status: entities::UnitTaskStatus) -> RpcUnitTas
         entities::UnitTaskStatus::Done => RpcUnitTaskStatus::Done,
         entities::UnitTaskStatus::Rejected => RpcUnitTaskStatus::Rejected,
         entities::UnitTaskStatus::Failed => RpcUnitTaskStatus::Failed,
+        entities::UnitTaskStatus::Cancelled => RpcUnitTaskStatus::Cancelled,
     }
 }
 
