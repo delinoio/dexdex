@@ -127,7 +127,9 @@ impl ClaudeCodeAgent {
                     if let Some(message) = value.get("message") {
                         if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
                             events.push(NormalizedEvent::user_response(content));
-                        } else if let Some(content_arr) = message.get("content").and_then(|v| v.as_array()) {
+                        } else if let Some(content_arr) =
+                            message.get("content").and_then(|v| v.as_array())
+                        {
                             // Content can also be an array of content blocks
                             for item in content_arr {
                                 if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
