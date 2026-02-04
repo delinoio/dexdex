@@ -776,7 +776,7 @@ Task creation is rate-limited to prevent resource exhaustion:
 
 | Limit | Value |
 |-------|-------|
-| Minimum interval | 1 second between task creations |
+| Minimum interval | 500 milliseconds between task creations |
 
 ### Path Sanitization
 

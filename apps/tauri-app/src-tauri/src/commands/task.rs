@@ -122,6 +122,11 @@ fn validate_title(title: &str) -> AppResult<()> {
 /// - Resource exhaustion from rapid task creation
 /// - Disk space exhaustion from too many worktrees
 /// - CPU exhaustion from running too many agents
+///
+/// # Thread Safety
+/// Uses `compare_exchange` to atomically check and update the timestamp,
+/// preventing race conditions where concurrent requests could both pass
+/// the rate limit check.
 #[cfg(desktop)]
 fn check_rate_limit() -> AppResult<()> {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -131,17 +136,32 @@ fn check_rate_limit() -> AppResult<()> {
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    let last = LAST_TASK_CREATION_TIME.load(Ordering::SeqCst);
+    loop {
+        let last = LAST_TASK_CREATION_TIME.load(Ordering::SeqCst);
 
-    if now.saturating_sub(last) < MIN_TASK_CREATION_INTERVAL_MS {
-        return Err(AppError::RateLimitExceeded(format!(
-            "Please wait at least {} ms between task creations",
-            MIN_TASK_CREATION_INTERVAL_MS
-        )));
+        if now.saturating_sub(last) < MIN_TASK_CREATION_INTERVAL_MS {
+            return Err(AppError::RateLimitExceeded(format!(
+                "Please wait at least {} ms between task creations",
+                MIN_TASK_CREATION_INTERVAL_MS
+            )));
+        }
+
+        // Atomic check-and-set to prevent race condition where multiple
+        // concurrent requests pass the rate limit check before any updates
+        // the timestamp.
+        match LAST_TASK_CREATION_TIME.compare_exchange(
+            last,
+            now,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => return Ok(()),
+            Err(_) => {
+                // Another thread updated the timestamp, retry the check
+                continue;
+            }
+        }
     }
-
-    LAST_TASK_CREATION_TIME.store(now, Ordering::SeqCst);
-    Ok(())
 }
 
 /// Parameters for creating a unit task.
