@@ -13,11 +13,11 @@ import type {
 // Query keys for task logs
 export const taskLogsKeys = {
   all: ["taskLogs"] as const,
-  logs: (taskId: string) => [...taskLogsKeys.all, taskId] as const,
+  logs: (agentTaskId: string) => [...taskLogsKeys.all, agentTaskId] as const,
 };
 
 interface UseTaskLogsOptions {
-  taskId: string;
+  agentTaskId: string;
   taskStatus: UnitTaskStatus;
   enabled?: boolean;
   pollingInterval?: number;
@@ -88,7 +88,7 @@ const MAX_FINGERPRINTS = 10000;
  * rare cases for very long-running tasks, but prevents unbounded memory growth.
  */
 export function useTaskLogs({
-  taskId,
+  agentTaskId,
   taskStatus,
   enabled = true,
   pollingInterval = 2000,
@@ -106,9 +106,9 @@ export function useTaskLogs({
 
   // Poll for logs
   const { data, isLoading, error } = useQuery({
-    queryKey: [...taskLogsKeys.logs(taskId), lastEventId],
-    queryFn: () => getTaskLogs(taskId, lastEventId),
-    enabled: enabled && !!taskId,
+    queryKey: [...taskLogsKeys.logs(agentTaskId), lastEventId],
+    queryFn: () => getTaskLogs(agentTaskId, lastEventId),
+    enabled: enabled && !!agentTaskId,
     refetchInterval: isComplete ? false : pollingInterval,
   });
 
@@ -147,13 +147,13 @@ export function useTaskLogs({
 
   // Listen for real-time agent output events
   useEffect(() => {
-    if (!enabled || !taskId) return;
+    if (!enabled || !agentTaskId) return;
 
     let unlisten: UnlistenFn | undefined;
 
     const setupListener = async () => {
       unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
-        if (event.payload.taskId === taskId) {
+        if (event.payload.taskId === agentTaskId) {
           // Check if we've already seen this event (from polling)
           const fingerprint = getEventFingerprint(event.payload.event);
           if (seenFingerprints.current.has(fingerprint)) {
@@ -172,7 +172,7 @@ export function useTaskLogs({
           // Create a new event entry for real-time events
           // Use a string prefix "rt-" to distinguish from polled event IDs
           const newEntry: NormalizedEventEntry = {
-            id: `rt-${taskId}-${++eventIdCounter.current}`,
+            id: `rt-${agentTaskId}-${++eventIdCounter.current}`,
             timestamp: new Date().toISOString(),
             event: event.payload.event,
           };
@@ -191,15 +191,15 @@ export function useTaskLogs({
         unlisten();
       }
     };
-  }, [taskId, enabled]);
+  }, [agentTaskId, enabled]);
 
-  // Reset events when task changes
+  // Reset events when agent task changes
   useEffect(() => {
     setEvents([]);
     setLastEventId(undefined);
     seenFingerprints.current = new Set();
     eventIdCounter.current = 0;
-  }, [taskId]);
+  }, [agentTaskId]);
 
   // Clean up fingerprint set when task completes to free memory
   useEffect(() => {
