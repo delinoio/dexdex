@@ -731,6 +731,64 @@ When user requests changes on a task:
 
 ---
 
+## Security
+
+### Input Validation
+
+All user inputs are validated to prevent security vulnerabilities:
+
+#### Repository URL Validation
+
+| Check | Description |
+|-------|-------------|
+| Allowed schemes | Only `https://`, `http://`, `git@`, `ssh://` are allowed |
+| Dangerous characters | Blocks `$`, `` ` ``, `|`, `;`, `&`, newlines |
+| Shell injection | Blocks `$(`, `${` patterns |
+| Length limit | Maximum 2048 characters |
+
+#### Branch Name Validation
+
+| Check | Description |
+|-------|-------------|
+| Path traversal | Blocks `..` sequences |
+| Special characters | Blocks `$`, `` ` ``, `|`, `;`, `&`, `~`, `^`, `:`, etc. |
+| Git patterns | Blocks `.lock` suffix, leading/trailing dots, `@{` |
+| Length limit | Maximum 256 characters |
+
+#### Prompt Validation
+
+| Check | Description |
+|-------|-------------|
+| Minimum length | At least 1 character |
+| Maximum length | 100,000 characters |
+| Null bytes | Not allowed |
+
+#### Title Validation
+
+| Check | Description |
+|-------|-------------|
+| Maximum length | 500 characters |
+| Null bytes | Not allowed |
+
+### Rate Limiting
+
+Task creation is rate-limited to prevent resource exhaustion:
+
+| Limit | Value |
+|-------|-------|
+| Minimum interval | 500 milliseconds between task creations |
+
+### Path Sanitization
+
+Task IDs and branch names are sanitized when used in file system paths:
+
+| Input | Sanitization |
+|-------|--------------|
+| Task ID | Only alphanumeric and hyphens allowed |
+| Branch name | Slashes and special characters converted to hyphens |
+
+---
+
 ## Chat Interface
 
 The chat interface provides a global communication channel with AI agents.

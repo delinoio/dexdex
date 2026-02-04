@@ -1,5 +1,7 @@
 //! Task-related Tauri commands.
 
+#[cfg(desktop)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 #[cfg(desktop)]
@@ -21,6 +23,146 @@ use crate::{
     error::{AppError, AppResult},
     state::AppState,
 };
+
+// =============================================================================
+// Security Constants
+// =============================================================================
+
+/// Maximum allowed prompt length in characters.
+/// This prevents memory exhaustion and potential DoS attacks from very large
+/// prompts.
+const MAX_PROMPT_LENGTH: usize = 100_000;
+
+/// Minimum prompt length to be useful.
+const MIN_PROMPT_LENGTH: usize = 1;
+
+/// Maximum allowed title length in characters.
+const MAX_TITLE_LENGTH: usize = 500;
+
+/// Minimum time between task creations in milliseconds.
+/// This provides basic rate limiting to prevent resource exhaustion.
+///
+/// # Limitations
+/// This rate limiter uses a global atomic variable, which is appropriate for
+/// single-user desktop applications. For multi-user scenarios, a per-user
+/// rate limiter with a shared backend (e.g., Redis) would be required.
+#[cfg(desktop)]
+const MIN_TASK_CREATION_INTERVAL_MS: u64 = 500;
+
+/// Global rate limiter for task creation (tracks last creation timestamp in ms
+/// since epoch).
+///
+/// # Note
+/// This is a simple global rate limiter suitable for single-user desktop apps.
+/// In a multi-user environment, this would need to be replaced with per-user
+/// rate limiting using a distributed cache or database.
+#[cfg(desktop)]
+static LAST_TASK_CREATION_TIME: AtomicU64 = AtomicU64::new(0);
+
+// =============================================================================
+// Validation Functions
+// =============================================================================
+
+/// Validates a task prompt for security and sanity.
+///
+/// # Security
+/// This prevents:
+/// - Memory exhaustion from very large prompts
+/// - Empty prompts that waste resources
+/// - Prompts with null bytes or other dangerous characters
+fn validate_prompt(prompt: &str) -> AppResult<()> {
+    // Check minimum length
+    if prompt.trim().len() < MIN_PROMPT_LENGTH {
+        return Err(AppError::InvalidRequest(
+            "Prompt cannot be empty".to_string(),
+        ));
+    }
+
+    // Check maximum length
+    if prompt.len() > MAX_PROMPT_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Prompt exceeds maximum length of {} characters (got {} characters)",
+            MAX_PROMPT_LENGTH,
+            prompt.len()
+        )));
+    }
+
+    // Check for null bytes which could cause issues in string handling
+    if prompt.contains('\0') {
+        return Err(AppError::InvalidRequest(
+            "Prompt cannot contain null bytes".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validates a task title.
+fn validate_title(title: &str) -> AppResult<()> {
+    if title.len() > MAX_TITLE_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Title exceeds maximum length of {} characters",
+            MAX_TITLE_LENGTH
+        )));
+    }
+
+    if title.contains('\0') {
+        return Err(AppError::InvalidRequest(
+            "Title cannot contain null bytes".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Checks rate limiting for task creation.
+///
+/// # Security
+/// This prevents:
+/// - Resource exhaustion from rapid task creation
+/// - Disk space exhaustion from too many worktrees
+/// - CPU exhaustion from running too many agents
+///
+/// # Thread Safety
+/// Uses `compare_exchange` to atomically check and update the timestamp,
+/// preventing race conditions where concurrent requests could both pass
+/// the rate limit check.
+#[cfg(desktop)]
+fn check_rate_limit() -> AppResult<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    loop {
+        let last = LAST_TASK_CREATION_TIME.load(Ordering::SeqCst);
+
+        if now.saturating_sub(last) < MIN_TASK_CREATION_INTERVAL_MS {
+            return Err(AppError::RateLimitExceeded(format!(
+                "Please wait at least {} ms between task creations",
+                MIN_TASK_CREATION_INTERVAL_MS
+            )));
+        }
+
+        // Atomic check-and-set to prevent race condition where multiple
+        // concurrent requests pass the rate limit check before any updates
+        // the timestamp.
+        match LAST_TASK_CREATION_TIME.compare_exchange(
+            last,
+            now,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => return Ok(()),
+            Err(_) => {
+                // Another thread updated the timestamp, retry the check
+                continue;
+            }
+        }
+    }
+}
 
 /// Parameters for creating a unit task.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,12 +271,29 @@ pub struct RespondTtyInputParams {
 }
 
 /// Creates a new unit task.
+///
+/// # Security
+/// This command includes:
+/// - Rate limiting to prevent resource exhaustion
+/// - Prompt validation to prevent oversized inputs
+/// - Title validation for sanity
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn create_unit_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     params: CreateUnitTaskParams,
 ) -> AppResult<UnitTask> {
+    // SECURITY: Check rate limit before processing
+    check_rate_limit()?;
+
+    // SECURITY: Validate prompt to prevent oversized inputs
+    validate_prompt(&params.prompt)?;
+
+    // SECURITY: Validate title if provided
+    if let Some(ref title) = params.title {
+        validate_title(title)?;
+    }
+
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
@@ -218,12 +377,29 @@ pub async fn create_unit_task(
 }
 
 /// Creates a new composite task.
+///
+/// # Security
+/// This command includes:
+/// - Rate limiting to prevent resource exhaustion
+/// - Prompt validation to prevent oversized inputs
+/// - Title validation for sanity
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn create_composite_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     params: CreateCompositeTaskParams,
 ) -> AppResult<CompositeTask> {
+    // SECURITY: Check rate limit before processing
+    check_rate_limit()?;
+
+    // SECURITY: Validate prompt to prevent oversized inputs
+    validate_prompt(&params.prompt)?;
+
+    // SECURITY: Validate title if provided
+    if let Some(ref title) = params.title {
+        validate_title(title)?;
+    }
+
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
@@ -1114,5 +1290,134 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Unknown composite task status"));
+    }
+
+    // =========================================================================
+    // Prompt Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_prompt_valid() {
+        assert!(validate_prompt("A simple prompt").is_ok());
+        assert!(validate_prompt("Fix the bug in the login page").is_ok());
+        assert!(validate_prompt("a").is_ok()); // Minimum valid prompt
+    }
+
+    #[test]
+    fn test_validate_prompt_empty() {
+        let result = validate_prompt("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_validate_prompt_whitespace_only() {
+        let result = validate_prompt("   ");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_validate_prompt_too_long() {
+        let long_prompt = "a".repeat(MAX_PROMPT_LENGTH + 1);
+        let result = validate_prompt(&long_prompt);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("maximum length"));
+    }
+
+    #[test]
+    fn test_validate_prompt_max_length() {
+        let max_prompt = "a".repeat(MAX_PROMPT_LENGTH);
+        assert!(validate_prompt(&max_prompt).is_ok());
+    }
+
+    #[test]
+    fn test_validate_prompt_null_byte() {
+        let result = validate_prompt("Hello\0World");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("null bytes"));
+    }
+
+    // =========================================================================
+    // Title Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_title_valid() {
+        assert!(validate_title("Fix login bug").is_ok());
+        assert!(validate_title("").is_ok()); // Empty is allowed for title
+        assert!(validate_title("Add new feature for user authentication").is_ok());
+    }
+
+    #[test]
+    fn test_validate_title_too_long() {
+        let long_title = "a".repeat(MAX_TITLE_LENGTH + 1);
+        let result = validate_title(&long_title);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("maximum length"));
+    }
+
+    #[test]
+    fn test_validate_title_max_length() {
+        let max_title = "a".repeat(MAX_TITLE_LENGTH);
+        assert!(validate_title(&max_title).is_ok());
+    }
+
+    #[test]
+    fn test_validate_title_null_byte() {
+        let result = validate_title("Title\0with null");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("null bytes"));
+    }
+
+    // =========================================================================
+    // Rate Limiting Tests
+    // =========================================================================
+
+    #[cfg(desktop)]
+    #[test]
+    fn test_check_rate_limit_allows_first_call() {
+        // Reset the rate limiter to ensure clean state
+        LAST_TASK_CREATION_TIME.store(0, Ordering::SeqCst);
+        // First call should always succeed
+        assert!(check_rate_limit().is_ok());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn test_check_rate_limit_blocks_rapid_calls() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Set the last creation time to now
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        LAST_TASK_CREATION_TIME.store(now, Ordering::SeqCst);
+
+        // Immediate second call should be blocked
+        let result = check_rate_limit();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Please wait at least"));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn test_check_rate_limit_allows_after_interval() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        // Set the last creation time to more than MIN_TASK_CREATION_INTERVAL_MS ago
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let past = now.saturating_sub(MIN_TASK_CREATION_INTERVAL_MS + 100);
+        LAST_TASK_CREATION_TIME.store(past, Ordering::SeqCst);
+
+        // Call should succeed after interval has passed
+        assert!(check_rate_limit().is_ok());
     }
 }

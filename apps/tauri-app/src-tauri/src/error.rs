@@ -27,6 +27,9 @@ pub enum AppError {
     #[error("Platform error: {0}")]
     PlatformError(String),
 
+    #[error("Rate limit exceeded: {0}")]
+    RateLimitExceeded(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
