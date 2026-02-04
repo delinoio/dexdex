@@ -45,8 +45,21 @@ impl ClaudeCodeAgent {
         if let Some(event_type) = value.get("type").and_then(|v| v.as_str()) {
             match event_type {
                 "system" => {
-                    // System message - session start
-                    if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
+                    // System message - can be init (session start) or other system events
+                    let subtype = value.get("subtype").and_then(|v| v.as_str());
+
+                    if subtype == Some("init") {
+                        // Init event contains session metadata (cwd, session_id, tools, model,
+                        // etc.)
+                        events.push(NormalizedEvent::session_start(
+                            "claude_code",
+                            value
+                                .get("model")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                        ));
+                    } else if let Some(msg) = value.get("message").and_then(|v| v.as_str()) {
+                        // System event with a message field
                         events.push(NormalizedEvent::session_start(
                             "claude_code",
                             value
@@ -55,16 +68,28 @@ impl ClaudeCodeAgent {
                                 .map(String::from),
                         ));
                         events.push(NormalizedEvent::text(msg, false));
+                    } else {
+                        // Other system events - include as raw for visibility
+                        debug!("System event without recognized format: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "assistant" => {
-                    // Assistant message with content
-                    if let Some(content) = value.get("content")
-                        && let Some(content_arr) = content.as_array()
-                    {
+                    // Assistant message with content - can be either:
+                    // 1. {"type":"assistant","content":[...]} - older format
+                    // 2. {"type":"assistant","message":{"content":[...]}} - newer format
+                    let content = value
+                        .get("content")
+                        .or_else(|| value.get("message").and_then(|m| m.get("content")));
+
+                    if let Some(content_arr) = content.and_then(|c| c.as_array()) {
                         for item in content_arr {
                             self.parse_content_item(item, &mut events);
                         }
+                    } else {
+                        // Assistant event without expected format, include as raw
+                        debug!("Assistant event without content array: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "tool_use" => {
@@ -102,12 +127,20 @@ impl ClaudeCodeAgent {
                     // Extended thinking
                     if let Some(thinking) = value.get("thinking").and_then(|v| v.as_str()) {
                         events.push(NormalizedEvent::thinking(thinking));
+                    } else {
+                        // Thinking event without expected format, include as raw
+                        debug!("Thinking event without thinking field: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "error" => {
                     // Error
                     if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
                         events.push(NormalizedEvent::error(error));
+                    } else {
+                        // Error event without expected format, include as raw
+                        debug!("Error event without error field: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "result" => {
@@ -124,19 +157,73 @@ impl ClaudeCodeAgent {
                 }
                 "user" => {
                     // User message - extract content from the message field
+                    // Content can be:
+                    // 1. A string: {"message":{"content":"text"}}
+                    // 2. An array of text blocks:
+                    //    {"message":{"content":[{"type":"text","text":"..."}]}}
+                    // 3. An array of tool_result blocks:
+                    //    {"message":{"content":[{"type":"tool_result","content":"..."}]}}
+                    let mut found_content = false;
                     if let Some(message) = value.get("message") {
                         if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
                             events.push(NormalizedEvent::user_response(content));
+                            found_content = true;
                         } else if let Some(content_arr) =
                             message.get("content").and_then(|v| v.as_array())
                         {
-                            // Content can also be an array of content blocks
+                            // Content can be an array of content blocks
                             for item in content_arr {
-                                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                                    events.push(NormalizedEvent::user_response(text));
+                                let item_type = item.get("type").and_then(|v| v.as_str());
+                                match item_type {
+                                    Some("text") => {
+                                        if let Some(text) =
+                                            item.get("text").and_then(|v| v.as_str())
+                                        {
+                                            events.push(NormalizedEvent::user_response(text));
+                                            found_content = true;
+                                        }
+                                    }
+                                    Some("tool_result") => {
+                                        // Tool result from user - this is the result of a tool call
+                                        let tool_use_id = item
+                                            .get("tool_use_id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown");
+                                        let output = item
+                                            .get("content")
+                                            .cloned()
+                                            .unwrap_or(serde_json::Value::Null);
+                                        let is_error = item
+                                            .get("is_error")
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(false);
+                                        // Use tool_use_id as a placeholder for tool_name since it's
+                                        // not available The
+                                        // tool result event will show the output
+                                        events.push(NormalizedEvent::tool_result(
+                                            tool_use_id,
+                                            output,
+                                            is_error,
+                                        ));
+                                        found_content = true;
+                                    }
+                                    _ => {
+                                        // Other content types - try to extract as text
+                                        if let Some(text) =
+                                            item.get("text").and_then(|v| v.as_str())
+                                        {
+                                            events.push(NormalizedEvent::user_response(text));
+                                            found_content = true;
+                                        }
+                                    }
                                 }
                             }
                         }
+                    }
+                    if !found_content {
+                        // User event without expected format, include as raw
+                        debug!("User event without extractable content: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 _ => {
@@ -523,6 +610,62 @@ mod tests {
         assert!(matches!(
             events.first(),
             Some(NormalizedEvent::UserResponse { response }) if response == "Hello from array"
+        ));
+    }
+
+    #[test]
+    fn test_parse_system_init_event() {
+        let agent = ClaudeCodeAgent::new();
+        // System init event from Claude Code stream-json format
+        let line = r#"{"type":"system","subtype":"init","cwd":"/workspace","session_id":"abc123","tools":["Bash","Read"],"model":"claude-opus-4-5-20251101"}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::SessionStart { agent_type, model }) if agent_type == "claude_code" && model == &Some("claude-opus-4-5-20251101".to_string())
+        ));
+    }
+
+    #[test]
+    fn test_parse_assistant_nested_message_content() {
+        let agent = ClaudeCodeAgent::new();
+        // Assistant event with nested message.content format
+        let line = r#"{"type":"assistant","message":{"model":"claude-opus-4-5-20251101","content":[{"type":"text","text":"Hello from nested message"}]}}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::TextOutput { content, .. }) if content == "Hello from nested message"
+        ));
+    }
+
+    #[test]
+    fn test_parse_assistant_nested_tool_use() {
+        let agent = ClaudeCodeAgent::new();
+        // Assistant event with nested tool_use in message.content
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool123","name":"Bash","input":{"command":"pwd"}}]}}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::ToolUse { tool_name, .. }) if tool_name == "Bash"
+        ));
+    }
+
+    #[test]
+    fn test_parse_user_tool_result() {
+        let agent = ClaudeCodeAgent::new();
+        // User event with tool_result content
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tool123","type":"tool_result","content":"/workspace","is_error":false}]}}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::ToolResult { tool_name, is_error, .. }) if tool_name == "tool123" && !*is_error
         ));
     }
 }
