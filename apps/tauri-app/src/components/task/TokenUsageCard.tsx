@@ -1,9 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import type { TokenUsage } from "@/api/types";
 
 interface TokenUsageCardProps {
   tokenUsage: TokenUsage | null | undefined;
   className?: string;
+  title?: string;
+  description?: string;
 }
 
 function formatNumber(n: number): string {
@@ -30,7 +32,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
-export function TokenUsageCard({ tokenUsage, className }: TokenUsageCardProps) {
+export function TokenUsageCard({ tokenUsage, className, title = "Token Usage", description }: TokenUsageCardProps) {
   if (!tokenUsage) return null;
 
   const hasCacheTokens =
@@ -40,7 +42,8 @@ export function TokenUsageCard({ tokenUsage, className }: TokenUsageCardProps) {
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle className="text-base">Token Usage</CardTitle>
+        <CardTitle className="text-base">{title}</CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">

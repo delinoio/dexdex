@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
-import { aggregateTokenUsage } from "@/components/task/TokenUsageCard";
+import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
@@ -210,46 +210,11 @@ export function CompositeTaskDetail() {
             </CardContent>
           </Card>
 
-          {planningTokenUsage && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Planning Token Usage</CardTitle>
-                <CardDescription>
-                  Token usage for the planning phase. View individual sub-tasks for execution usage.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-                  <div>
-                    <div className="text-[hsl(var(--muted-foreground))]">Cost</div>
-                    <div className="font-medium text-[hsl(var(--primary))]">
-                      ${planningTokenUsage.totalCostUsd < 0.01
-                        ? planningTokenUsage.totalCostUsd.toFixed(4)
-                        : planningTokenUsage.totalCostUsd.toFixed(2)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[hsl(var(--muted-foreground))]">Duration</div>
-                    <div className="font-medium">
-                      {planningTokenUsage.durationMs < 1000
-                        ? `${planningTokenUsage.durationMs}ms`
-                        : planningTokenUsage.durationMs < 60000
-                          ? `${(planningTokenUsage.durationMs / 1000).toFixed(1)}s`
-                          : `${Math.floor(planningTokenUsage.durationMs / 60000)}m ${Math.round((planningTokenUsage.durationMs % 60000) / 1000)}s`}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[hsl(var(--muted-foreground))]">Input Tokens</div>
-                    <div className="font-medium">{planningTokenUsage.inputTokens.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <div className="text-[hsl(var(--muted-foreground))]">Output Tokens</div>
-                    <div className="font-medium">{planningTokenUsage.outputTokens.toLocaleString()}</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <TokenUsageCard
+            tokenUsage={planningTokenUsage}
+            title="Planning Token Usage"
+            description="Token usage for the planning phase. View individual sub-tasks for execution usage."
+          />
 
           {task.status === CompositeTaskStatus.PendingApproval && (
             <Card className="border-[hsl(var(--primary))]">
