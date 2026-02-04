@@ -21,6 +21,7 @@ import {
   MessageSquareIcon,
   BrainIcon,
 } from "@/components/ui/Icons";
+import { AgentMessageRenderer } from "@/components/agent-message";
 
 interface AgentLogViewerProps {
   taskId: string;
@@ -194,114 +195,7 @@ function EventIcon({ event }: { event: NormalizedEvent }) {
 }
 
 function EventContent({ event }: { event: NormalizedEvent }) {
-  switch (event.type) {
-    case "text_output":
-      return <pre className="whitespace-pre-wrap break-words">{event.content}</pre>;
-
-    case "error_output":
-      return (
-        <pre className="whitespace-pre-wrap break-words text-destructive">
-          {event.content}
-        </pre>
-      );
-
-    case "tool_use":
-      return (
-        <div>
-          <span className="text-blue-500 font-medium">{event.tool_name}</span>
-          <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
-            {JSON.stringify(event.input, null, 2)}
-          </pre>
-        </div>
-      );
-
-    case "tool_result":
-      return (
-        <div>
-          <span className={cn("font-medium", event.is_error ? "text-destructive" : "text-green-500")}>
-            {event.tool_name} {event.is_error ? "(error)" : "(success)"}
-          </span>
-          <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {typeof event.output === "string" ? event.output : JSON.stringify(event.output, null, 2)}
-          </pre>
-        </div>
-      );
-
-    case "file_change":
-      const changeType = typeof event.change_type === "string" ? event.change_type : "rename";
-      return (
-        <div>
-          <span className="text-green-500 font-medium">{changeType}</span>
-          <span className="ml-2 text-foreground">{event.path}</span>
-        </div>
-      );
-
-    case "command_execution":
-      return (
-        <div>
-          <code className="text-yellow-500">{event.command}</code>
-          {event.exit_code !== undefined && (
-            <span className={cn("ml-2 text-xs", event.exit_code === 0 ? "text-green-500" : "text-destructive")}>
-              (exit: {event.exit_code})
-            </span>
-          )}
-          {event.output && (
-            <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
-              {event.output}
-            </pre>
-          )}
-        </div>
-      );
-
-    case "ask_user_question":
-      return (
-        <div className="text-purple-500">
-          <span className="font-medium">Question:</span> {event.question}
-          {event.options && event.options.length > 0 && (
-            <div className="mt-1 text-xs">
-              Options: {event.options.join(", ")}
-            </div>
-          )}
-        </div>
-      );
-
-    case "user_response":
-      return (
-        <div>
-          <span className="text-purple-500 font-medium">Response:</span>{" "}
-          <span>{event.response}</span>
-        </div>
-      );
-
-    case "session_start":
-      return (
-        <div className="text-muted-foreground">
-          Session started ({event.agent_type}
-          {event.model && `, ${event.model}`})
-        </div>
-      );
-
-    case "session_end":
-      return (
-        <div className={event.success ? "text-green-500" : "text-destructive"}>
-          Session {event.success ? "completed successfully" : `failed: ${event.error}`}
-        </div>
-      );
-
-    case "thinking":
-      return (
-        <details className="text-cyan-500">
-          <summary className="cursor-pointer">Thinking...</summary>
-          <pre className="mt-1 text-xs whitespace-pre-wrap opacity-70">{event.content}</pre>
-        </details>
-      );
-
-    case "raw":
-      return <pre className="whitespace-pre-wrap break-words opacity-70">{event.content}</pre>;
-
-    default:
-      return <span className="text-muted-foreground">Unknown event</span>;
-  }
+  return <AgentMessageRenderer event={event} />;
 }
 
 function getEventStyles(event: NormalizedEvent): string {
