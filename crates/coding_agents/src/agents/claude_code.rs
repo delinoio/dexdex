@@ -15,7 +15,8 @@ use tokio::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TtyInputHandler,
+    Agent, AgentConfig, AgentError, AgentResult, FileChangeType, NormalizedEvent, TokenUsage,
+    TtyInputHandler,
 };
 
 /// Claude Code agent.
@@ -144,7 +145,7 @@ impl ClaudeCodeAgent {
                     }
                 }
                 "result" => {
-                    // Final result
+                    // Final result - may contain token usage information
                     let success = value
                         .get("success")
                         .and_then(|v| v.as_bool())
@@ -153,7 +154,16 @@ impl ClaudeCodeAgent {
                         .get("error")
                         .and_then(|v| v.as_str())
                         .map(String::from);
-                    events.push(NormalizedEvent::session_end(success, error));
+
+                    // Extract token usage if available
+                    // Claude Code reports usage in the result event
+                    let token_usage = self.parse_token_usage(&value);
+
+                    events.push(NormalizedEvent::session_end_with_usage(
+                        success,
+                        error,
+                        token_usage,
+                    ));
                 }
                 "user" => {
                     // User message - extract content from the message field
@@ -267,6 +277,45 @@ impl ClaudeCodeAgent {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Parses token usage from Claude Code result event.
+    ///
+    /// Claude Code reports token usage in the result event with the following
+    /// format: ```json
+    /// {
+    ///   "type": "result",
+    ///   "total_cost_usd": 0.123,
+    ///   "total_duration_ms": 12345,
+    ///   "total_duration_api_ms": 10000,
+    ///   "input_tokens": 1000,
+    ///   "output_tokens": 500,
+    ///   "cache_creation_tokens": 100,
+    ///   "cache_read_tokens": 50
+    /// }
+    /// ```
+    fn parse_token_usage(&self, value: &serde_json::Value) -> Option<TokenUsage> {
+        // Try to extract token usage fields from the result event
+        let input_tokens = value.get("input_tokens").and_then(|v| v.as_u64());
+        let output_tokens = value.get("output_tokens").and_then(|v| v.as_u64());
+
+        // Only return token usage if at least input or output tokens are present
+        if input_tokens.is_some() || output_tokens.is_some() {
+            Some(TokenUsage {
+                input_tokens: input_tokens.unwrap_or(0),
+                output_tokens: output_tokens.unwrap_or(0),
+                cache_creation_tokens: value
+                    .get("cache_creation_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+                cache_read_tokens: value
+                    .get("cache_read_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+            })
+        } else {
+            None
         }
     }
 
@@ -667,5 +716,53 @@ mod tests {
             events.first(),
             Some(NormalizedEvent::ToolResult { tool_name, is_error, .. }) if tool_name == "tool123" && !*is_error
         ));
+    }
+
+    #[test]
+    fn test_parse_result_with_token_usage() {
+        let agent = ClaudeCodeAgent::new();
+        // Result event with token usage
+        let line = r#"{"type":"result","success":true,"total_cost_usd":0.123,"total_duration_ms":12345,"input_tokens":1000,"output_tokens":500,"cache_creation_tokens":100,"cache_read_tokens":50}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        match events.first() {
+            Some(NormalizedEvent::SessionEnd {
+                success,
+                error,
+                token_usage,
+            }) => {
+                assert!(*success);
+                assert!(error.is_none());
+                let usage = token_usage.as_ref().expect("Token usage should be present");
+                assert_eq!(usage.input_tokens, 1000);
+                assert_eq!(usage.output_tokens, 500);
+                assert_eq!(usage.cache_creation_tokens, 100);
+                assert_eq!(usage.cache_read_tokens, 50);
+            }
+            _ => panic!("Expected SessionEnd event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_result_without_token_usage() {
+        let agent = ClaudeCodeAgent::new();
+        // Result event without token usage
+        let line = r#"{"type":"result","success":true}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        match events.first() {
+            Some(NormalizedEvent::SessionEnd {
+                success,
+                error,
+                token_usage,
+            }) => {
+                assert!(*success);
+                assert!(error.is_none());
+                assert!(token_usage.is_none());
+            }
+            _ => panic!("Expected SessionEnd event"),
+        }
     }
 }

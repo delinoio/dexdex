@@ -111,6 +111,8 @@ pub enum NormalizedEvent {
         success: bool,
         /// Error message if the session failed.
         error: Option<String>,
+        /// Token usage statistics from the session.
+        token_usage: Option<TokenUsage>,
     },
 
     /// Agent is thinking/reasoning.
@@ -152,7 +154,24 @@ impl NormalizedEvent {
 
     /// Creates a new session end event.
     pub fn session_end(success: bool, error: Option<String>) -> Self {
-        Self::SessionEnd { success, error }
+        Self::SessionEnd {
+            success,
+            error,
+            token_usage: None,
+        }
+    }
+
+    /// Creates a new session end event with token usage.
+    pub fn session_end_with_usage(
+        success: bool,
+        error: Option<String>,
+        token_usage: Option<TokenUsage>,
+    ) -> Self {
+        Self::SessionEnd {
+            success,
+            error,
+            token_usage,
+        }
     }
 
     /// Creates a new thinking event.
@@ -370,6 +389,19 @@ pub struct BaseRemote {
     pub git_branch_name: String,
 }
 
+/// Token usage statistics for an agent session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// Number of input tokens used.
+    pub input_tokens: u64,
+    /// Number of output tokens generated.
+    pub output_tokens: u64,
+    /// Number of tokens used for caching (if applicable).
+    pub cache_creation_tokens: u64,
+    /// Number of tokens read from cache (if applicable).
+    pub cache_read_tokens: u64,
+}
+
 /// Agent session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSession {
@@ -380,6 +412,7 @@ pub struct AgentSession {
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub output_log: Option<String>,
+    pub token_usage: Option<TokenUsage>,
     pub created_at: DateTime<Utc>,
 }
 

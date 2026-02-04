@@ -70,6 +70,37 @@ impl AiAgentType {
     }
 }
 
+/// Token usage statistics for an agent session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    /// Number of input tokens used.
+    pub input_tokens: u64,
+    /// Number of output tokens generated.
+    pub output_tokens: u64,
+    /// Number of tokens used for caching (if applicable).
+    pub cache_creation_tokens: u64,
+    /// Number of tokens read from cache (if applicable).
+    pub cache_read_tokens: u64,
+}
+
+impl TokenUsage {
+    /// Creates a new token usage with the given values.
+    pub fn new(input: u64, output: u64, cache_creation: u64, cache_read: u64) -> Self {
+        Self {
+            input_tokens: input,
+            output_tokens: output,
+            cache_creation_tokens: cache_creation,
+            cache_read_tokens: cache_read,
+        }
+    }
+
+    /// Returns the total tokens used (input + output).
+    pub fn total(&self) -> u64 {
+        self.input_tokens + self.output_tokens
+    }
+}
+
 /// A single AI coding agent session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +119,8 @@ pub struct AgentSession {
     pub completed_at: Option<DateTime<Utc>>,
     /// Output log from the agent.
     pub output_log: Option<String>,
+    /// Token usage statistics for this session.
+    pub token_usage: Option<TokenUsage>,
     /// When this record was created.
     pub created_at: DateTime<Utc>,
 }
@@ -103,6 +136,7 @@ impl AgentSession {
             started_at: None,
             completed_at: None,
             output_log: None,
+            token_usage: None,
             created_at: Utc::now(),
         }
     }
@@ -110,6 +144,12 @@ impl AgentSession {
     /// Sets the model for this session.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.ai_agent_model = Some(model.into());
+        self
+    }
+
+    /// Sets the token usage for this session.
+    pub fn with_token_usage(mut self, token_usage: TokenUsage) -> Self {
+        self.token_usage = Some(token_usage);
         self
     }
 }

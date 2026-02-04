@@ -270,6 +270,18 @@ A single AI coding agent session.
 | id | string | Y | Unique identifier |
 | aiAgentType | AIAgentType | Y | Agent type |
 | aiAgentModel | string | N | Model to use |
+| tokenUsage | TokenUsage | N | Token usage statistics |
+
+### TokenUsage
+
+Token usage statistics for an agent session.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| inputTokens | number | Y | Number of input tokens used |
+| outputTokens | number | Y | Number of output tokens generated |
+| cacheCreationTokens | number | Y | Number of tokens used for caching |
+| cacheReadTokens | number | Y | Number of tokens read from cache |
 
 ### AgentTask
 

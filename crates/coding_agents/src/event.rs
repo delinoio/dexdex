@@ -6,7 +6,7 @@
 //! These types are defined in `rpc_protocol` and re-exported here for
 //! convenience.
 
-pub use rpc_protocol::{FileChangeType, NormalizedEvent, TimestampedEvent};
+pub use rpc_protocol::{FileChangeType, NormalizedEvent, TimestampedEvent, TokenUsage};
 
 #[cfg(test)]
 mod tests {

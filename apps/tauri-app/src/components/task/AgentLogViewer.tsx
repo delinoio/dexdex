@@ -36,7 +36,7 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const { events, isLoading, isComplete, error } = useTaskLogs({
+  const { events, isLoading, isComplete, error, tokenUsage } = useTaskLogs({
     taskId,
     taskStatus,
     enabled: !!taskId,
@@ -127,7 +127,34 @@ export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewer
 
         {isComplete && events.length > 0 && (
           <div className="pt-2 border-t border-border/50 text-muted-foreground text-xs">
-            Task execution completed
+            <div>Task execution completed</div>
+            {tokenUsage && (
+              <div className="mt-2 flex flex-wrap gap-4">
+                <span>
+                  <strong>Input:</strong> {tokenUsage.inputTokens.toLocaleString()} tokens
+                </span>
+                <span>
+                  <strong>Output:</strong> {tokenUsage.outputTokens.toLocaleString()} tokens
+                </span>
+                <span>
+                  <strong>Total:</strong> {(tokenUsage.inputTokens + tokenUsage.outputTokens).toLocaleString()} tokens
+                </span>
+                {(tokenUsage.cacheCreationTokens > 0 || tokenUsage.cacheReadTokens > 0) && (
+                  <>
+                    {tokenUsage.cacheCreationTokens > 0 && (
+                      <span>
+                        <strong>Cache Write:</strong> {tokenUsage.cacheCreationTokens.toLocaleString()} tokens
+                      </span>
+                    )}
+                    {tokenUsage.cacheReadTokens > 0 && (
+                      <span>
+                        <strong>Cache Read:</strong> {tokenUsage.cacheReadTokens.toLocaleString()} tokens
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

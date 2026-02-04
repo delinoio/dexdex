@@ -1,5 +1,5 @@
 // React hooks for task log streaming
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useQuery } from "@tanstack/react-query";
 import { getTaskLogs } from "@/api/client";
@@ -7,6 +7,8 @@ import type {
   AgentOutputEvent,
   NormalizedEvent,
   NormalizedEventEntry,
+  SessionEndEvent,
+  TokenUsage,
   UnitTaskStatus,
 } from "@/api/types";
 
@@ -28,6 +30,7 @@ interface UseTaskLogsResult {
   isLoading: boolean;
   isComplete: boolean;
   error: Error | null;
+  tokenUsage: TokenUsage | null;
 }
 
 /**
@@ -210,11 +213,32 @@ export function useTaskLogs({
     }
   }, [isComplete]);
 
+  // Extract token usage from session_end event
+  const tokenUsage = useMemo(() => {
+    // Find the last session_end event with token usage
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i].event;
+      if (event.type === "session_end") {
+        const sessionEnd = event as SessionEndEvent;
+        if (sessionEnd.token_usage) {
+          return {
+            inputTokens: sessionEnd.token_usage.input_tokens,
+            outputTokens: sessionEnd.token_usage.output_tokens,
+            cacheCreationTokens: sessionEnd.token_usage.cache_creation_tokens,
+            cacheReadTokens: sessionEnd.token_usage.cache_read_tokens,
+          };
+        }
+      }
+    }
+    return null;
+  }, [events]);
+
   return {
     events,
     isLoading,
     isComplete: isComplete || (data?.isComplete ?? false),
     error: error as Error | null,
+    tokenUsage,
   };
 }
 

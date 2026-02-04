@@ -82,6 +82,13 @@ export interface BaseRemote {
   gitBranchName: string;
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
 export interface AgentSession {
   id: string;
   agentTaskId: string;
@@ -90,6 +97,7 @@ export interface AgentSession {
   startedAt?: string;
   completedAt?: string;
   outputLog?: string;
+  tokenUsage?: TokenUsage;
   createdAt: string;
 }
 
@@ -437,6 +445,12 @@ export interface SessionEndEvent {
   type: "session_end";
   success: boolean;
   error?: string;
+  token_usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_tokens: number;
+    cache_read_tokens: number;
+  };
 }
 
 export interface ThinkingEvent {
