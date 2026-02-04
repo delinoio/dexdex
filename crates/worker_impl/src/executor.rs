@@ -6,11 +6,13 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use chrono::Utc;
-use coding_agents::{AgentResult, TimestampedEvent};
 pub use coding_agents::executor::ExecutionResult;
-use coding_agents::executor::{
-    AgentOutputEvent, EventEmitter, TaskCompletedEvent, TaskExecutionConfig, TaskExecutor,
-    TaskStatusChangedEvent, TtyInputRequestEvent,
+use coding_agents::{
+    AgentResult, TimestampedEvent,
+    executor::{
+        AgentOutputEvent, EventEmitter, TaskCompletedEvent, TaskExecutionConfig, TaskExecutor,
+        TaskStatusChangedEvent, TtyInputRequestEvent,
+    },
 };
 use entities::{AgentSession, AiAgentType, UnitTaskStatus};
 use task_store::{SqliteTaskStore, TaskStore};
@@ -85,20 +87,30 @@ impl<E: EventEmitter> EventEmitter for PersistingEventEmitter<E> {
             timestamp: Utc::now(),
             event: event.event.clone(),
         };
-        if let Ok(json) = serde_json::to_string(&timestamped) {
-            // Use blocking_lock since this is a sync function but we need to access
-            // the async mutex. This is safe because we're running in an async context.
-            let task_store = self.task_store.clone();
-            let session_id = self.session_id;
+        match serde_json::to_string(&timestamped) {
+            Ok(json) => {
+                let task_store = self.task_store.clone();
+                let session_id = self.session_id;
 
-            // Use try_lock to avoid blocking if possible
-            if let Ok(mut logs) = self.logs.try_lock() {
+                // Use try_lock to avoid blocking if possible.
+                // If lock is contended, we use blocking_lock since this is called from
+                // a sync context within an async runtime. The lock should be held briefly.
+                let mut logs = match self.logs.try_lock() {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        // Lock is contended, use blocking approach
+                        // This is safe because we're in an async context and the lock
+                        // holder should release quickly
+                        self.logs.blocking_lock()
+                    }
+                };
                 logs.push(json);
                 let logs_count = logs.len();
 
                 // Spawn incremental persistence every 10 events
                 if logs_count % 10 == 0 {
                     let output_log = logs.join("\n");
+                    drop(logs); // Release lock before spawning
                     tokio::spawn(async move {
                         if let Ok(Some(mut session)) =
                             task_store.get_agent_session(session_id).await
@@ -118,14 +130,12 @@ impl<E: EventEmitter> EventEmitter for PersistingEventEmitter<E> {
                         }
                     });
                 }
-            } else {
-                // Lock is contended - spawn a task to add the log entry
-                // This ensures we don't lose events even under contention
-                let logs = self.logs.clone();
-                tokio::spawn(async move {
-                    let mut logs = logs.lock().await;
-                    logs.push(json);
-                });
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to serialize event for session {}: {}",
+                    self.session_id, e
+                );
             }
         }
 
@@ -284,21 +294,11 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let handle = tokio::spawn(async move {
             let result = executor.execute_and_wait(config).await;
 
-            // Final persist of all logs (in case some were missed during incremental
-            // persistence)
+            // Final persist of all logs
+            // Note: We use PersistingEventEmitter's logs as the source of truth.
+            // result.logs() from TaskExecutor contains the same events, but
+            // PersistingEventEmitter has already been handling incremental persistence.
             persisting_emitter.persist_logs().await;
-
-            // Also persist the collected logs from the result (these include all
-            // events for backwards compatibility)
-            let logs = result.logs();
-            if !logs.is_empty() {
-                let output_log = logs.join("\n");
-                if let Err(e) =
-                    Self::persist_session_logs(&task_store, session_id, &output_log).await
-                {
-                    error!("Failed to persist session logs: {}", e);
-                }
-            }
 
             // Update task status based on result
             match &result {

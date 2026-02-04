@@ -55,6 +55,10 @@ impl ClaudeCodeAgent {
                                 .map(String::from),
                         ));
                         events.push(NormalizedEvent::text(msg, false));
+                    } else {
+                        // System event without expected format, include as raw
+                        debug!("System event without message field: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "assistant" => {
@@ -65,6 +69,10 @@ impl ClaudeCodeAgent {
                         for item in content_arr {
                             self.parse_content_item(item, &mut events);
                         }
+                    } else {
+                        // Assistant event without expected format, include as raw
+                        debug!("Assistant event without content array: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "tool_use" => {
@@ -102,12 +110,20 @@ impl ClaudeCodeAgent {
                     // Extended thinking
                     if let Some(thinking) = value.get("thinking").and_then(|v| v.as_str()) {
                         events.push(NormalizedEvent::thinking(thinking));
+                    } else {
+                        // Thinking event without expected format, include as raw
+                        debug!("Thinking event without thinking field: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "error" => {
                     // Error
                     if let Some(error) = value.get("error").and_then(|v| v.as_str()) {
                         events.push(NormalizedEvent::error(error));
+                    } else {
+                        // Error event without expected format, include as raw
+                        debug!("Error event without error field: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 "result" => {
@@ -124,9 +140,11 @@ impl ClaudeCodeAgent {
                 }
                 "user" => {
                     // User message - extract content from the message field
+                    let mut found_content = false;
                     if let Some(message) = value.get("message") {
                         if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
                             events.push(NormalizedEvent::user_response(content));
+                            found_content = true;
                         } else if let Some(content_arr) =
                             message.get("content").and_then(|v| v.as_array())
                         {
@@ -134,9 +152,15 @@ impl ClaudeCodeAgent {
                             for item in content_arr {
                                 if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
                                     events.push(NormalizedEvent::user_response(text));
+                                    found_content = true;
                                 }
                             }
                         }
+                    }
+                    if !found_content {
+                        // User event without expected format, include as raw
+                        debug!("User event without extractable content: {}", line);
+                        events.push(NormalizedEvent::raw(line));
                     }
                 }
                 _ => {
