@@ -126,7 +126,10 @@ pub async fn create_workspace(
 
         let response = client.create_workspace(request).await?;
         let workspace = rpc_to_entity_workspace(response.workspace)?;
-        info!("Created workspace via remote: {} ({})", workspace.name, workspace.id);
+        info!(
+            "Created workspace via remote: {} ({})",
+            workspace.name, workspace.id
+        );
         return Ok(workspace);
     }
 
@@ -292,7 +295,10 @@ pub async fn update_workspace(
 
         let response = client.update_workspace(request).await?;
         let workspace = rpc_to_entity_workspace(response.workspace)?;
-        info!("Updated workspace via remote: {} ({})", workspace.name, workspace.id);
+        info!(
+            "Updated workspace via remote: {} ({})",
+            workspace.name, workspace.id
+        );
         return Ok(workspace);
     }
 

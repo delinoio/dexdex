@@ -66,7 +66,10 @@ pub async fn add_repository(
 
         let response = client.add_repository(request).await?;
         let repository = rpc_to_entity_repository(response.repository)?;
-        info!("Added repository via remote: {} ({})", repository.name, repository.id);
+        info!(
+            "Added repository via remote: {} ({})",
+            repository.name, repository.id
+        );
         return Ok(repository);
     }
 
@@ -113,7 +116,9 @@ pub async fn add_repository(
     #[cfg(not(desktop))]
     let _ = &params;
 
-    Err(AppError::InvalidRequest(ERR_LOCAL_MODE_NOT_SUPPORTED.to_string()))
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
 }
 
 /// Lists repositories.
@@ -562,7 +567,8 @@ pub async fn get_repository_group(
     // Note: The server doesn't have a dedicated get_repository_group endpoint yet,
     // so we list all groups and find the one we need.
     //
-    // PERFORMANCE WARNING: This fetches up to 1000 groups just to find one, causing:
+    // PERFORMANCE WARNING: This fetches up to 1000 groups just to find one,
+    // causing:
     // - O(n) search through potentially hundreds of groups
     // - Unnecessary data transfer over the network
     // - Performance degradation as groups increase

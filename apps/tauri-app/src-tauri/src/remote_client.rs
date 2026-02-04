@@ -17,17 +17,17 @@ use crate::error::{AppError, AppResult};
 ///
 /// # Authentication
 ///
-/// The remote client supports JWT authentication via the `with_auth_token` method.
-/// According to the design docs, JWT authentication is required when connecting to
-/// a remote DeliDev server in production. The token is obtained after successful
-/// OIDC authentication (see `docs/design.md` for details).
+/// The remote client supports JWT authentication via the `with_auth_token`
+/// method. According to the design docs, JWT authentication is required when
+/// connecting to a remote DeliDev server in production. The token is obtained
+/// after successful OIDC authentication (see `docs/design.md` for details).
 ///
 /// Currently, the auth token is not automatically injected because:
 /// 1. The OIDC authentication flow is not yet implemented in the Tauri client
 /// 2. Development/testing often uses servers with authentication disabled
 ///
-/// Once OIDC authentication is implemented, the AppState should store the JWT token
-/// after login and pass it when creating the RemoteClient:
+/// Once OIDC authentication is implemented, the AppState should store the JWT
+/// token after login and pass it when creating the RemoteClient:
 /// ```ignore
 /// let client = RemoteClient::new(http_client, base_url)
 ///     .with_auth_token(state.auth_token.clone());
@@ -43,7 +43,8 @@ pub struct RemoteClient {
 impl RemoteClient {
     /// Creates a new remote client without authentication.
     ///
-    /// For servers requiring authentication, use `with_auth_token` to set the JWT token.
+    /// For servers requiring authentication, use `with_auth_token` to set the
+    /// JWT token.
     pub fn new(http_client: reqwest::Client, base_url: String) -> Self {
         Self {
             http_client,
@@ -338,12 +339,13 @@ pub fn validate_optional_text(value: Option<&str>, field_name: &str) -> AppResul
     Ok(())
 }
 
-/// Validates that a UUID string is well-formed (for remote mode where we send it as string).
+/// Validates that a UUID string is well-formed (for remote mode where we send
+/// it as string).
 pub fn validate_uuid_string(value: &str, field_name: &str) -> AppResult<()> {
     validate_required_string(value, field_name)?;
-    value.parse::<Uuid>().map_err(|_| {
-        AppError::InvalidRequest(format!("Invalid {} format", field_name))
-    })?;
+    value
+        .parse::<Uuid>()
+        .map_err(|_| AppError::InvalidRequest(format!("Invalid {} format", field_name)))?;
     Ok(())
 }
 
@@ -361,13 +363,11 @@ pub fn validate_optional_uuid_string(value: Option<&str>, field_name: &str) -> A
 // Type conversion helpers
 // ============================================================================
 
-/// Parses a UUID from a string, returning an error with context if parsing fails.
+/// Parses a UUID from a string, returning an error with context if parsing
+/// fails.
 fn parse_uuid(id_str: &str, field_name: &str) -> AppResult<Uuid> {
     id_str.parse().map_err(|e| {
-        warn!(
-            "Failed to parse {} UUID '{}': {}",
-            field_name, id_str, e
-        );
+        warn!("Failed to parse {} UUID '{}': {}", field_name, id_str, e);
         AppError::Remote(format!(
             "Server returned invalid {}: '{}'",
             field_name, id_str
@@ -375,11 +375,12 @@ fn parse_uuid(id_str: &str, field_name: &str) -> AppResult<Uuid> {
     })
 }
 
-/// Parses a list of UUIDs, logging errors for invalid entries and collecting valid ones.
+/// Parses a list of UUIDs, logging errors for invalid entries and collecting
+/// valid ones.
 ///
-/// This is used for list fields where partial results are acceptable (e.g., non-critical
-/// relationships). Invalid UUIDs are logged at error level to help identify potential
-/// server bugs or data corruption issues.
+/// This is used for list fields where partial results are acceptable (e.g.,
+/// non-critical relationships). Invalid UUIDs are logged at error level to help
+/// identify potential server bugs or data corruption issues.
 ///
 /// # Arguments
 ///
@@ -388,7 +389,8 @@ fn parse_uuid(id_str: &str, field_name: &str) -> AppResult<Uuid> {
 ///
 /// # Returns
 ///
-/// A vector of successfully parsed UUIDs. Invalid UUIDs are excluded but logged.
+/// A vector of successfully parsed UUIDs. Invalid UUIDs are excluded but
+/// logged.
 fn parse_uuid_list(ids: &[String], field_name: &str) -> Vec<Uuid> {
     let mut valid_uuids = Vec::with_capacity(ids.len());
     let mut invalid_count = 0;
@@ -530,7 +532,9 @@ pub fn entity_to_rpc_composite_status(
 /// Converts RPC AiAgentType to entity AiAgentType.
 pub fn rpc_to_entity_agent_type(agent_type: RpcAiAgentType) -> entities::AiAgentType {
     match agent_type {
-        RpcAiAgentType::Unspecified | RpcAiAgentType::ClaudeCode => entities::AiAgentType::ClaudeCode,
+        RpcAiAgentType::Unspecified | RpcAiAgentType::ClaudeCode => {
+            entities::AiAgentType::ClaudeCode
+        }
         RpcAiAgentType::OpenCode => entities::AiAgentType::OpenCode,
         RpcAiAgentType::GeminiCli => entities::AiAgentType::GeminiCli,
         RpcAiAgentType::CodexCli => entities::AiAgentType::CodexCli,
@@ -584,15 +588,14 @@ pub fn rpc_to_entity_repository_group(
 ///
 /// Returns an error if required UUID fields cannot be parsed.
 pub fn rpc_to_entity_workspace(rpc: rpc_protocol::Workspace) -> AppResult<entities::Workspace> {
-    // For user_id, log a warning if parsing fails but don't fail the entire conversion
-    // since user_id is optional and may legitimately be missing or invalid in some contexts
-    let user_id = rpc.user_id.as_ref().and_then(|id| {
-        match id.parse() {
-            Ok(uuid) => Some(uuid),
-            Err(e) => {
-                warn!("Failed to parse user_id UUID '{}': {}", id, e);
-                None
-            }
+    // For user_id, log a warning if parsing fails but don't fail the entire
+    // conversion since user_id is optional and may legitimately be missing or
+    // invalid in some contexts
+    let user_id = rpc.user_id.as_ref().and_then(|id| match id.parse() {
+        Ok(uuid) => Some(uuid),
+        Err(e) => {
+            warn!("Failed to parse user_id UUID '{}': {}", id, e);
+            None
         }
     });
 
@@ -698,11 +701,7 @@ mod tests {
 
     #[test]
     fn test_validate_uuid_string_valid() {
-        assert!(validate_uuid_string(
-            "550e8400-e29b-41d4-a716-446655440000",
-            "id"
-        )
-        .is_ok());
+        assert!(validate_uuid_string("550e8400-e29b-41d4-a716-446655440000", "id").is_ok());
     }
 
     #[test]
@@ -718,11 +717,10 @@ mod tests {
 
     #[test]
     fn test_validate_optional_uuid_string_valid() {
-        assert!(validate_optional_uuid_string(
-            Some("550e8400-e29b-41d4-a716-446655440000"),
-            "id"
-        )
-        .is_ok());
+        assert!(
+            validate_optional_uuid_string(Some("550e8400-e29b-41d4-a716-446655440000"), "id")
+                .is_ok()
+        );
     }
 
     #[test]

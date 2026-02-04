@@ -127,9 +127,9 @@ impl AppState {
 
     /// Creates a RemoteClient configured with the current auth token.
     ///
-    /// This is the recommended way to create a RemoteClient for making API calls
-    /// in remote mode. It automatically handles authentication if a token is
-    /// available.
+    /// This is the recommended way to create a RemoteClient for making API
+    /// calls in remote mode. It automatically handles authentication if a
+    /// token is available.
     ///
     /// # Errors
     ///
@@ -149,7 +149,8 @@ impl AppState {
 
     /// Sets the authentication token for remote mode.
     ///
-    /// This should be called after successful OIDC authentication with the server.
+    /// This should be called after successful OIDC authentication with the
+    /// server.
     #[allow(dead_code)]
     pub fn set_auth_token(&mut self, token: Option<String>) {
         self.auth_token = token;

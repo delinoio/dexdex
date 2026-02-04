@@ -17,6 +17,8 @@ use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
 
+#[cfg(not(desktop))]
+use crate::state::ERR_LOCAL_MODE_NOT_SUPPORTED;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
@@ -25,7 +27,7 @@ use crate::{
         rpc_to_entity_composite_task, rpc_to_entity_unit_task, validate_optional_name,
         validate_text, validate_uuid_string,
     },
-    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
+    state::AppState,
 };
 
 /// Parameters for creating a unit task.
@@ -924,7 +926,8 @@ pub async fn get_task_logs(
         // In remote mode on desktop, we currently return minimal data
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
-        // TODO: Implement proper remote log streaming (task_id and after_event_id are unused here)
+        // TODO: Implement proper remote log streaming (task_id and after_event_id are
+        // unused here)
         return Ok(TaskLogsResponse {
             events: Vec::new(),
             is_complete: true,
@@ -1159,8 +1162,9 @@ pub async fn get_composite_task_nodes(
     // In remote mode, return empty result for now as the server doesn't yet
     // have an endpoint for composite task nodes
     if state.mode == AppMode::Remote {
-        // TODO: Implement remote API call when server supports composite task nodes endpoint
-        // (composite_task_id is unused in remote mode until the API is implemented)
+        // TODO: Implement remote API call when server supports composite task nodes
+        // endpoint (composite_task_id is unused in remote mode until the API is
+        // implemented)
         return Ok(CompositeTaskNodesResult { nodes: Vec::new() });
     }
 
@@ -1214,8 +1218,8 @@ pub async fn get_composite_task_nodes(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        // TODO: Implement remote API call when server supports composite task nodes endpoint
-        // For now, return an empty result
+        // TODO: Implement remote API call when server supports composite task nodes
+        // endpoint For now, return an empty result
         return Ok(CompositeTaskNodesResult { nodes: Vec::new() });
     }
 
