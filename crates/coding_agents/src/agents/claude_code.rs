@@ -122,6 +122,21 @@ impl ClaudeCodeAgent {
                         .map(String::from);
                     events.push(NormalizedEvent::session_end(success, error));
                 }
+                "user" => {
+                    // User message - extract content from the message field
+                    if let Some(message) = value.get("message") {
+                        if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
+                            events.push(NormalizedEvent::user_response(content));
+                        } else if let Some(content_arr) = message.get("content").and_then(|v| v.as_array()) {
+                            // Content can also be an array of content blocks
+                            for item in content_arr {
+                                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                                    events.push(NormalizedEvent::user_response(text));
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {
                     // Unknown event type, include as raw
                     debug!("Unknown Claude Code event type: {}", event_type);
@@ -479,5 +494,33 @@ mod tests {
         assert!(args.contains(&"--model".to_string()));
         assert!(args.contains(&"claude-sonnet-4-20250514".to_string()));
         assert!(args.contains(&"Fix the bug".to_string()));
+    }
+
+    #[test]
+    fn test_parse_user_event() {
+        let agent = ClaudeCodeAgent::new();
+        // User event with string content
+        let line = r#"{"type":"user","message":{"role":"user","content":"What's the capital of France?"},"session_id":"default"}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::UserResponse { response }) if response == "What's the capital of France?"
+        ));
+    }
+
+    #[test]
+    fn test_parse_user_event_with_array_content() {
+        let agent = ClaudeCodeAgent::new();
+        // User event with array content
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello from array"}]},"session_id":"default"}"#;
+        let events = agent.parse_output(line);
+
+        assert!(!events.is_empty());
+        assert!(matches!(
+            events.first(),
+            Some(NormalizedEvent::UserResponse { response }) if response == "Hello from array"
+        ));
     }
 }
