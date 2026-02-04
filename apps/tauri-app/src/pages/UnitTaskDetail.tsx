@@ -49,7 +49,12 @@ export function UnitTaskDetail() {
 
   const handleStop = useCallback(async () => {
     if (task?.id && !cancelMutation.isPending) {
-      await cancelMutation.mutateAsync(task.id);
+      try {
+        await cancelMutation.mutateAsync(task.id);
+      } catch (error) {
+        console.error("Failed to cancel task:", error);
+        // Error is handled by React Query, user will see the mutation state
+      }
     }
   }, [task?.id, cancelMutation]);
 
@@ -109,6 +114,8 @@ export function UnitTaskDetail() {
       case UnitTaskStatus.InReview:
         return "secondary";
       case UnitTaskStatus.Rejected:
+      case UnitTaskStatus.Failed:
+      case UnitTaskStatus.Cancelled:
         return "destructive";
       default:
         return "outline";
@@ -129,6 +136,10 @@ export function UnitTaskDetail() {
         return "Rejected";
       case UnitTaskStatus.Approved:
         return "Approved";
+      case UnitTaskStatus.Failed:
+        return "Failed";
+      case UnitTaskStatus.Cancelled:
+        return "Cancelled";
       default:
         return status;
     }

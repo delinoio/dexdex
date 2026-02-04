@@ -1274,11 +1274,27 @@ pub async fn cancel_task(
     let was_cancelled = executor.cancel_execution(id).await;
 
     if was_cancelled {
-        // Update task status to failed
+        // Update task status to cancelled
         if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-            task.status = UnitTaskStatus::Failed;
-            task.updated_at = chrono::Utc::now();
-            runtime.task_store_arc().update_unit_task(task).await?;
+            // Only update status if the task is still in progress
+            // This prevents race conditions where the task completes just before
+            // cancellation
+            if task.status == UnitTaskStatus::InProgress {
+                task.status = UnitTaskStatus::Cancelled;
+                task.updated_at = chrono::Utc::now();
+                if let Err(e) = runtime.task_store_arc().update_unit_task(task).await {
+                    tracing::error!("Failed to update task status after cancellation: {}", e);
+                    return Err(e.into());
+                }
+            } else {
+                tracing::warn!(
+                    "Task {} was cancelled but status was already {:?}, not updating",
+                    id,
+                    task.status
+                );
+            }
+        } else {
+            tracing::warn!("Task {} was cancelled but not found in store", id);
         }
         info!("Cancelled task: {}", id);
     } else {
@@ -1496,6 +1512,7 @@ fn parse_unit_status(s: &str) -> AppResult<UnitTaskStatus> {
         "done" => Ok(UnitTaskStatus::Done),
         "rejected" => Ok(UnitTaskStatus::Rejected),
         "failed" => Ok(UnitTaskStatus::Failed),
+        "cancelled" => Ok(UnitTaskStatus::Cancelled),
         _ => Err(AppError::InvalidRequest(format!(
             "Unknown unit task status: {}",
             s
@@ -1563,12 +1580,10 @@ mod tests {
     fn test_parse_agent_type_invalid() {
         let result = parse_agent_type("invalid_agent");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown agent type")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown agent type"));
     }
 
     // =========================================================================
@@ -1601,6 +1616,14 @@ mod tests {
             parse_unit_status("rejected"),
             Ok(UnitTaskStatus::Rejected)
         ));
+        assert!(matches!(
+            parse_unit_status("failed"),
+            Ok(UnitTaskStatus::Failed)
+        ));
+        assert!(matches!(
+            parse_unit_status("cancelled"),
+            Ok(UnitTaskStatus::Cancelled)
+        ));
     }
 
     #[test]
@@ -1619,12 +1642,10 @@ mod tests {
     fn test_parse_unit_status_invalid() {
         let result = parse_unit_status("invalid_status");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown unit task status")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown unit task status"));
     }
 
     // =========================================================================
@@ -1671,12 +1692,10 @@ mod tests {
     fn test_parse_composite_status_invalid() {
         let result = parse_composite_status("invalid_status");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Unknown composite task status")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown composite task status"));
     }
 
     // =========================================================================

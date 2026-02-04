@@ -33,6 +33,7 @@ export enum UnitTaskStatus {
   Done = "done",
   Rejected = "rejected",
   Failed = "failed",
+  Cancelled = "cancelled",
 }
 
 export enum CompositeTaskStatus {

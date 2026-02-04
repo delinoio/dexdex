@@ -25,6 +25,8 @@ pub enum UnitTaskStatus {
     Rejected,
     /// Task execution failed.
     Failed,
+    /// Task was cancelled by user.
+    Cancelled,
 }
 
 /// A single task unit visible to users.
