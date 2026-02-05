@@ -707,11 +707,21 @@ User reviews and approves  │ (User can retry or discard)
          ▼                 │
 Status: in_progress        │
          ▼                 │
-Execute tasks (parallel    │
-where possible)            │
+Parse plan_yaml            │
+Create CompositeTaskNode   │
++ UnitTask records         │
+         ▼                 │
+Start root tasks           │
+(no dependencies)          │
+         ▼                 │
+Monitor task graph:        │
+  - Task completes →       │
+    start ready dependents │
+  - Task fails →           │
+    leave dependents       │
          ▼                 │
 All tasks done             │
-(status: done)             │
+(status: done or failed)   │
 ```
 
 The planning agent execution is handled by `LocalExecutor::execute_composite_task()`, which:
@@ -723,6 +733,14 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 6. Cleans up the planning worktree immediately after persisting (not kept until task completion)
 7. Updates composite task status to `pending_approval` on success or `failed` on error
 8. Emits `task-status-changed` and `task-completed` events so the frontend updates automatically
+
+The graph execution after approval is handled by `LocalExecutor::execute_composite_task_graph()`, which:
+1. Parses `plan_yaml` into task definitions
+2. Creates `AgentTask`, `UnitTask`, and `CompositeTaskNode` records for each plan task
+3. Sets dependency relationships between nodes
+4. Starts executing root tasks (tasks with no dependencies) immediately
+5. Spawns a monitoring task that periodically checks for newly ready tasks as dependencies complete
+6. When all tasks reach a terminal state, marks the composite task as `done` (if all succeeded) or `failed` (if any failed)
 
 **PLAN.yaml Persistence:**
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`

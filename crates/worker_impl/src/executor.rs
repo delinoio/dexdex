@@ -9,6 +9,8 @@ use std::{
     sync::Arc,
 };
 
+use plan_parser::Plan;
+
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
 use coding_agents::{
@@ -18,7 +20,10 @@ use coding_agents::{
         TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent,
     },
 };
-use entities::{AgentSession, AiAgentType, CompositeTaskStatus, UnitTaskStatus};
+use entities::{
+    AgentSession, AgentTask, AiAgentType, CompositeTaskNode, CompositeTaskStatus, UnitTask,
+    UnitTaskStatus,
+};
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -832,6 +837,383 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             Err(e) => {
                 warn!("Failed to glob for PLAN.yaml files: {}", e);
                 None
+            }
+        }
+    }
+
+    /// Executes the task graph for a composite task after approval.
+    ///
+    /// This method:
+    /// 1. Parses the `plan_yaml` from the composite task
+    /// 2. Creates `UnitTask` and `CompositeTaskNode` records for each plan task
+    /// 3. Starts executing tasks that have no dependencies (root tasks)
+    /// 4. Spawns a monitoring task that checks for newly ready tasks as
+    ///    dependencies complete
+    pub async fn execute_composite_task_graph(
+        self: &Arc<Self>,
+        composite_task_id: Uuid,
+    ) -> Result<(), String> {
+        info!(
+            "Starting composite task graph execution for: {}",
+            composite_task_id
+        );
+
+        // Get the composite task
+        let composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        // Parse plan_yaml
+        let plan_yaml = composite_task
+            .plan_yaml
+            .as_ref()
+            .ok_or_else(|| "Composite task has no plan_yaml".to_string())?;
+
+        let plan = Plan::from_yaml(plan_yaml)
+            .map_err(|e| format!("Failed to parse plan YAML: {}", e))?;
+
+        info!(
+            "Parsed plan with {} tasks for composite task {}",
+            plan.tasks.len(),
+            composite_task_id
+        );
+
+        // Get the repository group to find repositories
+        let repo_group = self
+            .task_store
+            .get_repository_group(composite_task.repository_group_id)
+            .await
+            .map_err(|e| format!("Failed to get repository group: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Repository group not found: {}",
+                    composite_task.repository_group_id
+                )
+            })?;
+
+        let repo_id = repo_group
+            .repository_ids
+            .first()
+            .ok_or_else(|| "Repository group has no repositories".to_string())?;
+
+        // Verify repository exists
+        self.task_store
+            .get_repository(*repo_id)
+            .await
+            .map_err(|e| format!("Failed to get repository: {}", e))?
+            .ok_or_else(|| format!("Repository not found: {}", repo_id))?;
+
+        let agent_type = composite_task
+            .execution_agent_type
+            .unwrap_or(AiAgentType::ClaudeCode);
+
+        // Build mapping from plan task ID to (node_id, unit_task_id) for
+        // dependency resolution
+        let mut plan_id_to_node_id: HashMap<String, Uuid> = HashMap::new();
+        let mut node_ids: Vec<Uuid> = Vec::new();
+        let mut plan_id_to_unit_task_id: HashMap<String, Uuid> = HashMap::new();
+
+        // First pass: Create AgentTask + UnitTask + CompositeTaskNode for each
+        // plan task (without dependencies set yet)
+        for plan_task in &plan.tasks {
+            // Create agent task
+            let mut agent_task = AgentTask::new();
+            agent_task.ai_agent_type = Some(agent_type);
+            let agent_task = self
+                .task_store
+                .create_agent_task(agent_task)
+                .await
+                .map_err(|e| format!("Failed to create agent task: {}", e))?;
+
+            // Create unit task
+            let mut unit_task = UnitTask::new(
+                composite_task.repository_group_id,
+                agent_task.id,
+                &plan_task.prompt,
+            );
+            if let Some(title) = &plan_task.title {
+                unit_task = unit_task.with_title(title);
+            }
+            if let Some(branch_name) = &plan_task.branch_name {
+                unit_task = unit_task.with_branch_name(branch_name);
+            }
+
+            let unit_task = self
+                .task_store
+                .create_unit_task(unit_task)
+                .await
+                .map_err(|e| format!("Failed to create unit task: {}", e))?;
+
+            // Create composite task node
+            let node = CompositeTaskNode::new(composite_task_id, unit_task.id);
+            let node = self
+                .task_store
+                .create_composite_task_node(node)
+                .await
+                .map_err(|e| format!("Failed to create composite task node: {}", e))?;
+
+            info!(
+                "Created node {} (unit task {}) for plan task '{}'",
+                node.id, unit_task.id, plan_task.id
+            );
+
+            plan_id_to_node_id.insert(plan_task.id.clone(), node.id);
+            plan_id_to_unit_task_id.insert(plan_task.id.clone(), unit_task.id);
+            node_ids.push(node.id);
+        }
+
+        // Second pass: Set dependencies on nodes
+        for plan_task in &plan.tasks {
+            if plan_task.depends_on.is_empty() {
+                continue;
+            }
+
+            let node_id = plan_id_to_node_id[&plan_task.id];
+            let mut node = self
+                .task_store
+                .get_composite_task_node(node_id)
+                .await
+                .map_err(|e| format!("Failed to get composite task node: {}", e))?
+                .ok_or_else(|| format!("Composite task node not found: {}", node_id))?;
+
+            for dep_plan_id in &plan_task.depends_on {
+                let dep_node_id = plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
+                    format!("Dependency plan task not found: {}", dep_plan_id)
+                })?;
+                node.depends_on(dep_node_id.to_owned());
+            }
+
+            self.task_store
+                .update_composite_task_node(node)
+                .await
+                .map_err(|e| format!("Failed to update composite task node deps: {}", e))?;
+        }
+
+        // Update composite task with node_ids
+        let mut composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        composite_task.node_ids = node_ids;
+        composite_task.updated_at = chrono::Utc::now();
+        self.task_store
+            .update_composite_task(composite_task)
+            .await
+            .map_err(|e| format!("Failed to update composite task node_ids: {}", e))?;
+
+        // Find root tasks (no dependencies) and start them
+        let root_unit_task_ids: Vec<Uuid> = plan
+            .tasks
+            .iter()
+            .filter(|t| t.depends_on.is_empty())
+            .filter_map(|t| plan_id_to_unit_task_id.get(&t.id).copied())
+            .collect();
+
+        info!(
+            "Starting {} root tasks for composite task {}",
+            root_unit_task_ids.len(),
+            composite_task_id
+        );
+
+        for unit_task_id in root_unit_task_ids {
+            if let Err(e) = self.execute_unit_task(unit_task_id).await {
+                error!(
+                    "Failed to start unit task {} for composite task {}: {}",
+                    unit_task_id, composite_task_id, e
+                );
+            }
+        }
+
+        // Spawn a monitoring task that periodically checks for newly ready
+        // tasks and starts them. This runs until all tasks are complete.
+        let executor = Arc::clone(self);
+        tokio::spawn(async move {
+            Self::monitor_composite_task_graph(executor, composite_task_id).await;
+        });
+
+        Ok(())
+    }
+
+    /// Monitors a composite task graph and starts dependent tasks as their
+    /// dependencies complete. Runs until all tasks reach a terminal state.
+    async fn monitor_composite_task_graph(
+        executor: Arc<Self>,
+        composite_task_id: Uuid,
+    ) {
+        info!(
+            "Starting graph monitor for composite task {}",
+            composite_task_id
+        );
+
+        loop {
+            // Wait a bit before checking again
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+            // Get all nodes for this composite task
+            let nodes = match executor
+                .task_store
+                .list_composite_task_nodes(composite_task_id)
+                .await
+            {
+                Ok(nodes) => nodes,
+                Err(e) => {
+                    error!(
+                        "Graph monitor: Failed to list nodes for composite task {}: {}",
+                        composite_task_id, e
+                    );
+                    continue;
+                }
+            };
+
+            if nodes.is_empty() {
+                debug!(
+                    "Graph monitor: No nodes found for composite task {}",
+                    composite_task_id
+                );
+                break;
+            }
+
+            // Build a mapping from node_id to its unit_task status
+            let mut node_statuses: HashMap<Uuid, UnitTaskStatus> = HashMap::new();
+            for node in &nodes {
+                match executor.task_store.get_unit_task(node.unit_task_id).await {
+                    Ok(Some(ut)) => {
+                        node_statuses.insert(node.id, ut.status);
+                    }
+                    Ok(None) => {
+                        warn!(
+                            "Graph monitor: Unit task {} not found for node {}",
+                            node.unit_task_id, node.id
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            "Graph monitor: Failed to get unit task {} for node {}: {}",
+                            node.unit_task_id, node.id, e
+                        );
+                    }
+                }
+            }
+
+            // A unit task is considered "successfully complete" when the AI
+            // agent has finished its work (InReview or later positive states).
+            let is_successfully_complete = |status: &UnitTaskStatus| -> bool {
+                matches!(
+                    status,
+                    UnitTaskStatus::InReview
+                        | UnitTaskStatus::Approved
+                        | UnitTaskStatus::PrOpen
+                        | UnitTaskStatus::Done
+                )
+            };
+
+            // Find nodes whose dependencies are all complete but haven't started
+            let mut newly_ready: Vec<Uuid> = Vec::new();
+            for node in &nodes {
+                let status = match node_statuses.get(&node.id) {
+                    Some(s) => s,
+                    None => continue,
+                };
+
+                // Only consider tasks that are InProgress (initial state) and not
+                // yet being executed
+                if *status != UnitTaskStatus::InProgress {
+                    continue;
+                }
+
+                if executor.is_executing(node.unit_task_id).await {
+                    continue;
+                }
+
+                // Check if all dependencies are successfully complete
+                let all_deps_complete = node.depends_on_ids.iter().all(|dep_id| {
+                    node_statuses
+                        .get(dep_id)
+                        .is_some_and(|s| is_successfully_complete(s))
+                });
+
+                if all_deps_complete && !node.depends_on_ids.is_empty() {
+                    newly_ready.push(node.unit_task_id);
+                }
+            }
+
+            // Start newly ready tasks
+            for unit_task_id in &newly_ready {
+                info!(
+                    "Graph monitor: Starting dependent task {} for composite task {}",
+                    unit_task_id, composite_task_id
+                );
+                if let Err(e) = executor.execute_unit_task(*unit_task_id).await {
+                    error!(
+                        "Graph monitor: Failed to start unit task {} for composite task {}: {}",
+                        unit_task_id, composite_task_id, e
+                    );
+                }
+            }
+
+            // Check if all tasks are in a terminal state
+            let all_terminal = node_statuses.values().all(|status| {
+                matches!(
+                    status,
+                    UnitTaskStatus::InReview
+                        | UnitTaskStatus::Approved
+                        | UnitTaskStatus::PrOpen
+                        | UnitTaskStatus::Done
+                        | UnitTaskStatus::Failed
+                        | UnitTaskStatus::Rejected
+                        | UnitTaskStatus::Cancelled
+                )
+            });
+
+            if all_terminal && newly_ready.is_empty() {
+                // All tasks reached terminal state - update composite task status
+                let any_failed = node_statuses.values().any(|status| {
+                    matches!(
+                        status,
+                        UnitTaskStatus::Failed
+                            | UnitTaskStatus::Rejected
+                            | UnitTaskStatus::Cancelled
+                    )
+                });
+
+                let new_status = if any_failed {
+                    CompositeTaskStatus::Failed
+                } else {
+                    CompositeTaskStatus::Done
+                };
+
+                info!(
+                    "Graph monitor: All tasks in composite task {} are terminal, \
+                     setting status to {:?}",
+                    composite_task_id, new_status
+                );
+
+                if let Ok(Some(mut ct)) = executor
+                    .task_store
+                    .get_composite_task(composite_task_id)
+                    .await
+                {
+                    ct.status = new_status;
+                    ct.updated_at = chrono::Utc::now();
+                    if let Err(e) = executor.task_store.update_composite_task(ct).await {
+                        error!(
+                            "Graph monitor: Failed to update composite task {} status: {}",
+                            composite_task_id, e
+                        );
+                    }
+                }
+
+                info!(
+                    "Graph monitor: Composite task {} completed with status {:?}",
+                    composite_task_id, new_status
+                );
+                break;
             }
         }
     }

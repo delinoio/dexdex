@@ -897,12 +897,38 @@ pub async fn approve_task(
     if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
         if task.status == CompositeTaskStatus::PendingApproval {
             task.status = CompositeTaskStatus::InProgress;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_composite_task(task).await?;
+            info!("Approved composite task: {}", id);
+
+            // Trigger composite task graph execution: parse plan_yaml, create
+            // nodes and unit tasks, and start executing root tasks.
+            if let Some(executor) = runtime.executor().await {
+                let composite_task_id = id;
+                tokio::spawn(async move {
+                    if let Err(e) = executor
+                        .execute_composite_task_graph(composite_task_id)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to start composite task graph execution for {}: {}",
+                            composite_task_id,
+                            e
+                        );
+                    }
+                });
+            } else {
+                tracing::warn!(
+                    "Executor not initialized, composite task {} graph will not be executed",
+                    id
+                );
+            }
         } else {
             task.status = CompositeTaskStatus::Done;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_composite_task(task).await?;
+            info!("Approved composite task (marked done): {}", id);
         }
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_composite_task(task).await?;
-        info!("Approved composite task: {}", id);
         return Ok(());
     }
 

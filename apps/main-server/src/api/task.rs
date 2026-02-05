@@ -1,12 +1,13 @@
 //! Task management API endpoints.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{Json, extract::State};
 use entities::{
-    AgentTask, CompositeTask, CompositeTaskStatus as EntityCompositeTaskStatus, UnitTask,
-    UnitTaskStatus as EntityUnitTaskStatus,
+    AgentTask, CompositeTask, CompositeTaskNode, CompositeTaskStatus as EntityCompositeTaskStatus,
+    UnitTask, UnitTaskStatus as EntityUnitTaskStatus,
 };
+use plan_parser::Plan;
 use rpc_protocol::{CompositeTaskStatus, UnitTaskStatus, requests::*, responses::*};
 use task_store::{TaskFilter, TaskStore};
 use uuid::Uuid;
@@ -387,14 +388,137 @@ pub async fn approve_task<S: TaskStore>(
 
     // Try composite task
     if let Some(mut task) = state.store.get_composite_task(task_id).await? {
+        if task.status != EntityCompositeTaskStatus::PendingApproval {
+            return Err(ServerError::InvalidRequest(
+                "Composite task is not in PendingApproval status".to_string(),
+            ));
+        }
+
         task.status = EntityCompositeTaskStatus::InProgress;
         task.updated_at = chrono::Utc::now();
+
+        // Parse plan_yaml and create CompositeTaskNode + UnitTask records
+        if let Some(ref plan_yaml) = task.plan_yaml {
+            match Plan::from_yaml(plan_yaml) {
+                Ok(plan) => {
+                    let agent_type = task.execution_agent_type;
+                    let node_ids = create_composite_task_nodes(
+                        &state.store,
+                        task_id,
+                        task.repository_group_id,
+                        agent_type,
+                        &plan,
+                    )
+                    .await?;
+                    task.node_ids = node_ids;
+                    tracing::info!(
+                        task_id = %task_id,
+                        node_count = plan.tasks.len(),
+                        "Created composite task nodes from plan"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        task_id = %task_id,
+                        "Failed to parse plan YAML: {}",
+                        e
+                    );
+                    task.status = EntityCompositeTaskStatus::Failed;
+                    state.store.update_composite_task(task).await?;
+                    return Err(ServerError::Internal(format!(
+                        "Failed to parse plan YAML: {}",
+                        e
+                    )));
+                }
+            }
+        }
+
         state.store.update_composite_task(task).await?;
-        tracing::info!(task_id = %task_id, "CompositeTask approved");
+        tracing::info!(task_id = %task_id, "CompositeTask approved and execution started");
         return Ok(Json(ApproveTaskResponse {}));
     }
 
     Err(ServerError::NotFound("Task not found".to_string()))
+}
+
+/// Creates CompositeTaskNode and UnitTask records from a parsed plan.
+///
+/// This is called during composite task approval to set up the task graph
+/// for execution. Returns the list of created node IDs.
+async fn create_composite_task_nodes<S: TaskStore>(
+    store: &S,
+    composite_task_id: Uuid,
+    repository_group_id: Uuid,
+    agent_type: Option<entities::AiAgentType>,
+    plan: &Plan,
+) -> ServerResult<Vec<Uuid>> {
+    let mut plan_id_to_node_id: HashMap<String, Uuid> = HashMap::new();
+    let mut node_ids: Vec<Uuid> = Vec::new();
+
+    // First pass: Create AgentTask + UnitTask + CompositeTaskNode for each
+    // plan task (without dependencies set yet)
+    for plan_task in &plan.tasks {
+        // Create agent task
+        let mut agent_task = AgentTask::new();
+        agent_task.ai_agent_type =
+            agent_type.or(Some(entities::AiAgentType::ClaudeCode));
+        let agent_task = store.create_agent_task(agent_task).await?;
+
+        // Create unit task
+        let mut unit_task =
+            UnitTask::new(repository_group_id, agent_task.id, &plan_task.prompt);
+        if let Some(ref title) = plan_task.title {
+            unit_task = unit_task.with_title(title);
+        }
+        if let Some(ref branch_name) = plan_task.branch_name {
+            unit_task = unit_task.with_branch_name(branch_name);
+        }
+
+        let unit_task = store.create_unit_task(unit_task).await?;
+
+        // Create composite task node
+        let node = CompositeTaskNode::new(composite_task_id, unit_task.id);
+        let node = store.create_composite_task_node(node).await?;
+
+        tracing::info!(
+            node_id = %node.id,
+            unit_task_id = %unit_task.id,
+            plan_task_id = %plan_task.id,
+            "Created composite task node"
+        );
+
+        plan_id_to_node_id.insert(plan_task.id.clone(), node.id);
+        node_ids.push(node.id);
+    }
+
+    // Second pass: Set dependencies on nodes
+    for plan_task in &plan.tasks {
+        if plan_task.depends_on.is_empty() {
+            continue;
+        }
+
+        let node_id = plan_id_to_node_id[&plan_task.id];
+        let mut node = store
+            .get_composite_task_node(node_id)
+            .await?
+            .ok_or_else(|| {
+                ServerError::Internal(format!("Composite task node not found: {}", node_id))
+            })?;
+
+        for dep_plan_id in &plan_task.depends_on {
+            let dep_node_id = plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
+                ServerError::Internal(format!(
+                    "Dependency plan task not found: {}",
+                    dep_plan_id
+                ))
+            })?;
+            node.depends_on(dep_node_id.to_owned());
+        }
+
+        store.update_composite_task_node(node).await?;
+    }
+
+    Ok(node_ids)
 }
 
 /// Rejects a task.
