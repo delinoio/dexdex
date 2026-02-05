@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State};
 use entities::{
-    AgentTask, CompositeTask, CompositeTaskStatus as EntityCompositeTaskStatus,
-    UnitTask, UnitTaskStatus as EntityUnitTaskStatus,
+    AgentTask, CompositeTask, CompositeTaskStatus as EntityCompositeTaskStatus, UnitTask,
+    UnitTaskStatus as EntityUnitTaskStatus,
 };
 use plan_parser::{Plan, validate_plan};
 use rpc_protocol::{CompositeTaskStatus, UnitTaskStatus, requests::*, responses::*};
@@ -540,9 +540,8 @@ pub async fn update_plan<S: TaskStore>(
 /// while the executor validates for the desktop (Tauri) code path where
 /// approval bypasses the server. Both paths must reject invalid plans.
 fn validate_composite_task_plan(plan_yaml: &str) -> ServerResult<Plan> {
-    let plan = Plan::from_yaml(plan_yaml).map_err(|e| {
-        ServerError::Internal(format!("Failed to parse plan YAML: {}", e))
-    })?;
+    let plan = Plan::from_yaml(plan_yaml)
+        .map_err(|e| ServerError::Internal(format!("Failed to parse plan YAML: {}", e)))?;
 
     let validation = validate_plan(&plan);
     if !validation.is_valid() {
@@ -810,7 +809,11 @@ tasks:
         let repo = state.store.create_repository(repo).await.unwrap();
         let mut repo_group = entities::RepositoryGroup::new(workspace.id);
         repo_group.repository_ids.push(repo.id);
-        let repo_group = state.store.create_repository_group(repo_group).await.unwrap();
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
 
         // Create a planning agent task
         let planning_task = AgentTask::new();
@@ -825,14 +828,14 @@ tasks:
     prompt: "Task B"
     dependsOn: ["a"]
 "#;
-        let mut composite_task = CompositeTask::new(
-            repo_group.id,
-            planning_task.id,
-            "Test task",
-        );
+        let mut composite_task = CompositeTask::new(repo_group.id, planning_task.id, "Test task");
         composite_task.status = EntityCompositeTaskStatus::PendingApproval;
         composite_task.plan_yaml = Some(valid_plan.to_string());
-        let composite_task = state.store.create_composite_task(composite_task).await.unwrap();
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
 
         // Approve the task
         let request = ApproveTaskRequest {
@@ -842,7 +845,12 @@ tasks:
         assert!(result.is_ok());
 
         // Verify the status was updated to InProgress
-        let updated = state.store.get_composite_task(composite_task.id).await.unwrap().unwrap();
+        let updated = state
+            .store
+            .get_composite_task(composite_task.id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(updated.status, EntityCompositeTaskStatus::InProgress);
     }
 
@@ -879,7 +887,11 @@ tasks:
         let repo = state.store.create_repository(repo).await.unwrap();
         let mut repo_group = entities::RepositoryGroup::new(workspace.id);
         repo_group.repository_ids.push(repo.id);
-        let repo_group = state.store.create_repository_group(repo_group).await.unwrap();
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
 
         // Create a planning agent task
         let planning_task = AgentTask::new();
@@ -895,14 +907,14 @@ tasks:
     prompt: "Task B"
     dependsOn: ["a"]
 "#;
-        let mut composite_task = CompositeTask::new(
-            repo_group.id,
-            planning_task.id,
-            "Test task",
-        );
+        let mut composite_task = CompositeTask::new(repo_group.id, planning_task.id, "Test task");
         composite_task.status = EntityCompositeTaskStatus::PendingApproval;
         composite_task.plan_yaml = Some(cyclic_plan.to_string());
-        let composite_task = state.store.create_composite_task(composite_task).await.unwrap();
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
 
         // Approve the task should fail
         let request = ApproveTaskRequest {
@@ -912,7 +924,12 @@ tasks:
         assert!(result.is_err());
 
         // Verify the status was set to Failed
-        let updated = state.store.get_composite_task(composite_task.id).await.unwrap().unwrap();
+        let updated = state
+            .store
+            .get_composite_task(composite_task.id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(updated.status, EntityCompositeTaskStatus::Failed);
     }
 
@@ -949,7 +966,11 @@ tasks:
         let repo = state.store.create_repository(repo).await.unwrap();
         let mut repo_group = entities::RepositoryGroup::new(workspace.id);
         repo_group.repository_ids.push(repo.id);
-        let repo_group = state.store.create_repository_group(repo_group).await.unwrap();
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
 
         // Create a planning agent task
         let planning_task = AgentTask::new();
@@ -964,20 +985,22 @@ tasks:
     prompt: "Task B"
     dependsOn: ["a"]
 "#;
-        let mut composite_task = CompositeTask::new(
-            repo_group.id,
-            planning_task.id,
-            "Test task",
-        );
+        let mut composite_task = CompositeTask::new(repo_group.id, planning_task.id, "Test task");
         composite_task.status = EntityCompositeTaskStatus::PendingApproval;
         composite_task.plan_yaml = Some(valid_plan.to_string());
-        let composite_task = state.store.create_composite_task(composite_task).await.unwrap();
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
 
         // Approve the task
         let request = ApproveTaskRequest {
             task_id: composite_task.id.to_string(),
         };
-        let _result = approve_task(State(state.clone()), Json(request)).await.unwrap();
+        let _result = approve_task(State(state.clone()), Json(request))
+            .await
+            .unwrap();
 
         // Verify that no CompositeTaskNodes were created
         // (node creation is delegated to the executor)
