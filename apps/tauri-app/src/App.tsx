@@ -9,6 +9,7 @@ import {
   CompositeTaskDetail,
   Dashboard,
   ModeSelection,
+  Notifications,
   Onboarding,
   Repositories,
   RepositoryGroups,
@@ -16,8 +17,10 @@ import {
   TaskCreation,
   UnitTaskDetail,
 } from "@/pages";
+import { NotificationPanel } from "@/components/notifications";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
+import { useNotificationEvents } from "@/hooks/useNotificationEvents";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,12 +36,15 @@ function AppRoutes() {
   useKeyboardShortcuts();
   // Request notification permission on startup
   useNotificationPermission();
+  // Listen for Tauri notification events and populate notification center
+  useNotificationEvents();
 
   return (
     <>
       <CommandPalette />
       <KeyboardShortcutsDialog />
       <ChatWindow />
+      <NotificationPanel />
       <Routes>
         {/* Standalone pages (no sidebar) */}
         <Route path="/mode-select" element={<ModeSelection />} />
@@ -53,6 +59,7 @@ function AppRoutes() {
           <Route path="/repositories" element={<Repositories />} />
           <Route path="/repository-groups" element={<RepositoryGroups />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/notifications" element={<Notifications />} />
         </Route>
       </Routes>
     </>
