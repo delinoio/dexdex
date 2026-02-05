@@ -110,13 +110,24 @@ export function useTaskLogs({
   useEffect(() => {
     if (!enabled || !taskId) return;
 
+    // Use a `cancelled` flag so that if cleanup runs before `listen()`
+    // resolves (e.g. React StrictMode double-invoke), we immediately
+    // unregister the listener instead of leaking it.
+    let cancelled = false;
     let unlisten: UnlistenFn | undefined;
 
     const setupListener = async () => {
-      unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
+      const unlistenFn = await listen<AgentOutputEvent>("agent-output", (event) => {
         if (event.payload.taskId !== taskId) return;
         appendEvent(event.payload.event);
       });
+
+      if (cancelled) {
+        // Cleanup already ran before listen() resolved — tear down immediately
+        unlistenFn();
+        return;
+      }
+      unlisten = unlistenFn;
     };
 
     setupListener().catch((err) => {
@@ -124,6 +135,7 @@ export function useTaskLogs({
     });
 
     return () => {
+      cancelled = true;
       if (unlisten) {
         unlisten();
       }
