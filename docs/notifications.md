@@ -73,13 +73,27 @@ interface PersistentNotification {
 ```
 
 **Actions:**
-- `addNotification()` — Add a new notification (unread by default)
+- `addNotification()` — Add a new notification (unread by default). Automatically trims when exceeding `MAX_NOTIFICATIONS` (200), removing oldest read notifications first.
 - `removeNotification(id)` — Delete a notification
 - `markAsRead(id)` — Mark a single notification as read
 - `markAllAsRead()` — Mark all notifications as read
 - `clearAll()` — Remove all notifications
 - `toggleOpen()` / `setOpen()` — Open/close the notification panel
 - `getUnreadCount()` — Get the number of unread notifications
+
+**Limits:**
+- Maximum 200 notifications are stored (`MAX_NOTIFICATIONS`). When exceeded, oldest read notifications are trimmed first. If still over the limit (e.g., all unread), the oldest notifications are dropped.
+
+### Shared Utilities
+
+**File:** `src/components/notifications/utils.ts`
+
+Helper functions used by both the panel and full-page components:
+- `categoryLabel(category)` — Human-readable label for a notification category
+- `categoryColor(category)` — Tailwind background color class for a category
+- `formatTimeAgo(timestamp)` — Relative time string (e.g., "5m ago", "2d ago")
+- `formatTime(timestamp)` — Absolute or relative time for full-page view
+- `getNotificationPath(notification)` — Route path for a notification's associated task
 
 ### Notification Panel
 

@@ -45,6 +45,10 @@ interface NotificationCenterState {
 
 let centerNotificationIdCounter = 0;
 
+// Maximum number of notifications stored. When exceeded, oldest read
+// notifications are trimmed first, then oldest unread if still over limit.
+export const MAX_NOTIFICATIONS = 200;
+
 export const useNotificationCenterStore = create<NotificationCenterState>()(
   persist(
     (set, get) => ({
@@ -60,9 +64,27 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
           createdAt: Date.now(),
         };
 
-        set((state) => ({
-          notifications: [newNotification, ...state.notifications],
-        }));
+        set((state) => {
+          let updated = [newNotification, ...state.notifications];
+
+          // Trim if over limit: drop oldest read notifications first,
+          // then oldest unread if still over.
+          if (updated.length > MAX_NOTIFICATIONS) {
+            const unread = updated.filter((n) => !n.read);
+            const read = updated.filter((n) => n.read);
+            // Keep all unread + as many recent read as fit within the limit
+            const readSlots = Math.max(0, MAX_NOTIFICATIONS - unread.length);
+            updated = [...unread, ...read.slice(0, readSlots)].sort(
+              (a, b) => b.createdAt - a.createdAt
+            );
+            // If still over (too many unread), hard-cap at limit
+            if (updated.length > MAX_NOTIFICATIONS) {
+              updated = updated.slice(0, MAX_NOTIFICATIONS);
+            }
+          }
+
+          return { notifications: updated };
+        });
 
         return id;
       },

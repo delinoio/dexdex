@@ -20,6 +20,8 @@ export function useNotificationEvents(): void {
   const initialized = useRef(false);
 
   useEffect(() => {
+    // Guard against double-invocation in React 18 strict mode.
+    // All store interactions use getState() so they don't need to be in the dependency array.
     if (initialized.current) return;
     initialized.current = true;
 
@@ -155,5 +157,6 @@ export function useNotificationEvents(): void {
         unlisten();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally runs once on mount; see initialized ref guard above.
   }, []);
 }

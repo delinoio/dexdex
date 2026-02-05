@@ -4,56 +4,14 @@ import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   useNotificationCenterStore,
-  NotificationCategory,
   type PersistentNotification,
 } from "@/stores/notificationCenterStore";
-
-function categoryLabel(category: NotificationCategory): string {
-  switch (category) {
-    case NotificationCategory.TaskReviewReady:
-      return "Review Ready";
-    case NotificationCategory.PlanApproval:
-      return "Plan Approval";
-    case NotificationCategory.TaskFailed:
-      return "Task Failed";
-    case NotificationCategory.TtyInputRequest:
-      return "Agent Question";
-    case NotificationCategory.TaskCompleted:
-      return "Task Completed";
-  }
-}
-
-function categoryColor(category: NotificationCategory): string {
-  switch (category) {
-    case NotificationCategory.TaskReviewReady:
-      return "bg-blue-500";
-    case NotificationCategory.PlanApproval:
-      return "bg-yellow-500";
-    case NotificationCategory.TaskFailed:
-      return "bg-red-500";
-    case NotificationCategory.TtyInputRequest:
-      return "bg-purple-500";
-    case NotificationCategory.TaskCompleted:
-      return "bg-green-500";
-  }
-}
-
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diff = now.getTime() - timestamp;
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) {
-    return date.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-  return date.toLocaleDateString();
-}
+import {
+  categoryLabel,
+  categoryColor,
+  formatTime,
+  getNotificationPath,
+} from "@/components/notifications/utils";
 
 function NotificationRow({
   notification,
@@ -192,11 +150,8 @@ export function Notifications() {
 
   const handleNavigate = useCallback(
     (notification: PersistentNotification) => {
-      if (notification.taskId && notification.taskType) {
-        const path =
-          notification.taskType === "unit_task"
-            ? `/unit-tasks/${notification.taskId}`
-            : `/composite-tasks/${notification.taskId}`;
+      const path = getNotificationPath(notification);
+      if (path) {
         navigate(path);
       }
     },

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   useNotificationCenterStore,
   NotificationCategory,
+  MAX_NOTIFICATIONS,
 } from "../notificationCenterStore";
 
 describe("notificationCenterStore", () => {
@@ -341,6 +342,80 @@ describe("notificationCenterStore", () => {
       expect(
         useNotificationCenterStore.getState().notifications.length
       ).toBe(categories.length);
+    });
+  });
+
+  describe("notification limit", () => {
+    it("trims oldest read notifications when exceeding MAX_NOTIFICATIONS", () => {
+      // Add MAX_NOTIFICATIONS read notifications
+      for (let i = 0; i < MAX_NOTIFICATIONS; i++) {
+        useNotificationCenterStore.getState().addNotification({
+          category: NotificationCategory.TaskCompleted,
+          title: `Old ${i}`,
+          message: "",
+        });
+      }
+      // Mark all as read
+      useNotificationCenterStore.getState().markAllAsRead();
+
+      // Adding one more should trigger trimming
+      useNotificationCenterStore.getState().addNotification({
+        category: NotificationCategory.TaskReviewReady,
+        title: "New notification",
+        message: "",
+      });
+
+      const notifications =
+        useNotificationCenterStore.getState().notifications;
+      expect(notifications.length).toBeLessThanOrEqual(MAX_NOTIFICATIONS);
+      // The newest unread notification should be present
+      expect(notifications[0].title).toBe("New notification");
+      expect(notifications[0].read).toBe(false);
+    });
+
+    it("preserves unread notifications over read ones when trimming", () => {
+      // Add notifications and mark half as read
+      for (let i = 0; i < MAX_NOTIFICATIONS; i++) {
+        const id = useNotificationCenterStore.getState().addNotification({
+          category: NotificationCategory.TaskCompleted,
+          title: `Notification ${i}`,
+          message: "",
+        });
+        if (i % 2 === 0) {
+          useNotificationCenterStore.getState().markAsRead(id);
+        }
+      }
+
+      // Add one more to trigger trimming
+      useNotificationCenterStore.getState().addNotification({
+        category: NotificationCategory.TaskReviewReady,
+        title: "Overflow",
+        message: "",
+      });
+
+      const notifications =
+        useNotificationCenterStore.getState().notifications;
+      expect(notifications.length).toBeLessThanOrEqual(MAX_NOTIFICATIONS);
+
+      // All unread notifications should still be present
+      const unreadCount = notifications.filter((n) => !n.read).length;
+      // We had ~half unread + 1 new = should all be preserved
+      expect(unreadCount).toBeGreaterThan(0);
+    });
+
+    it("hard-caps at MAX_NOTIFICATIONS even with all unread", () => {
+      // Add more than MAX_NOTIFICATIONS unread notifications
+      for (let i = 0; i < MAX_NOTIFICATIONS + 5; i++) {
+        useNotificationCenterStore.getState().addNotification({
+          category: NotificationCategory.TaskReviewReady,
+          title: `Unread ${i}`,
+          message: "",
+        });
+      }
+
+      const notifications =
+        useNotificationCenterStore.getState().notifications;
+      expect(notifications.length).toBeLessThanOrEqual(MAX_NOTIFICATIONS);
     });
   });
 });
