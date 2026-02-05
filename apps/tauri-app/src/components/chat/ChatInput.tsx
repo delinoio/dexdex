@@ -37,8 +37,8 @@ export function ChatInput({ className }: ChatInputProps) {
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Send on Enter (without Shift)
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Send on Enter (without Shift) or Cmd/Ctrl+Enter
+    if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSend();
     }

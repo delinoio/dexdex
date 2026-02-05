@@ -660,13 +660,17 @@ All keyboard shortcuts are keyboard layout-aware. When using a non-English keybo
 
 ### Form Shortcuts
 
-Forms with multiple inputs support `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux) to submit. This applies to:
+All multiline inputs (textareas) support `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux) to submit. This applies to:
 
-| Form | Location | Submit Action |
-|------|----------|---------------|
+| Form / Input | Location | Submit Action |
+|--------------|----------|---------------|
 | Task Creation | `/create-task` | Create Task |
 | Repository Group Dialog | Repository Groups page | Create/Save Group |
 | Onboarding Wizard | Step 1: Next, Step 2: Get Started |
+| Chat Input | Chat window | Send Message |
+| Inline Comment Edit | Review interface | Save Comment |
+| New Comment Form | Review interface | Add Comment |
+| Update Plan | Composite task detail | Update Plan |
 
 ### Review Interface
 

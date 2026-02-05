@@ -135,6 +135,38 @@ describe("ChatInput", () => {
       // Button should be disabled for whitespace-only input
       expect(sendButton).toBeDisabled();
     });
+
+    it("sends message on Cmd+Enter", () => {
+      (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        inputValue: "Hello via cmd",
+        setInputValue: mockSetInputValue,
+        addMessage: mockAddMessage,
+        isLoading: false,
+      });
+      render(<ChatInput />);
+
+      const textarea = screen.getByPlaceholderText("Type a message...");
+      fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+      expect(mockAddMessage).toHaveBeenCalledWith(MessageRole.User, "Hello via cmd");
+      expect(mockSetInputValue).toHaveBeenCalledWith("");
+    });
+
+    it("sends message on Ctrl+Enter", () => {
+      (useChatStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        inputValue: "Hello via ctrl",
+        setInputValue: mockSetInputValue,
+        addMessage: mockAddMessage,
+        isLoading: false,
+      });
+      render(<ChatInput />);
+
+      const textarea = screen.getByPlaceholderText("Type a message...");
+      fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+      expect(mockAddMessage).toHaveBeenCalledWith(MessageRole.User, "Hello via ctrl");
+      expect(mockSetInputValue).toHaveBeenCalledWith("");
+    });
   });
 
   describe("Loading State", () => {
