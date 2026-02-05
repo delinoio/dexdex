@@ -679,7 +679,7 @@ System creates planningTask (AgentTask) and session
 Planning agent starts immediately (status: planning)
         ▼
 ┌────────────────────────────────────────────────────┐
-│ Planning agent generates PLAN.yaml                 │
+│ Planning agent generates PLAN-{random}.yaml        │
 │ - Real-time logs streamed to UI via AgentLogViewer │
 │ - Logs persisted incrementally to database         │
 └────────────────────────────────────────────────────┘

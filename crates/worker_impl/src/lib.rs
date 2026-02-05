@@ -19,6 +19,7 @@
 //! - Server (future): Could use WebSocket emitter
 
 mod executor;
+mod planning_prompt;
 mod runtime;
 
 pub mod error;
@@ -29,4 +30,5 @@ pub use coding_agents::executor::{
     TaskExecutor, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent, TtyInputRequestManager,
 };
 pub use executor::LocalExecutor;
+pub use planning_prompt::build_planning_prompt;
 pub use runtime::LocalRuntime;
