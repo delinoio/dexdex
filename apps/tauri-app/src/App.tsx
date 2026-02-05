@@ -21,6 +21,7 @@ import { NotificationPanel } from "@/components/notifications";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
 import { useNotificationEvents } from "@/hooks/useNotificationEvents";
+import { useTaskStatusEvents } from "@/hooks/useTaskStatusEvents";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,6 +39,8 @@ function AppRoutes() {
   useNotificationPermission();
   // Listen for Tauri notification events and populate notification center
   useNotificationEvents();
+  // Listen for task status events and invalidate react-query caches
+  useTaskStatusEvents();
 
   return (
     <>

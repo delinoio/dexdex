@@ -85,12 +85,14 @@ When a unit task is created in local mode:
 1. **Task Creation**: `create_unit_task` command creates task and agent session in SQLite
 2. **Worktree Setup**: `LocalExecutor` creates git worktree from cached repository
 3. **Agent Execution**: Claude Code (or other agent) spawned with `--print --verbose --output-format stream-json`
-4. **Event Streaming**:
+4. **Event Streaming** (purely event-driven, no polling):
    - Stdout/stderr parsed into `NormalizedEvent` types
    - Events emitted via Tauri `agent-output` channel for real-time display
+   - `useTaskLogs` hook fetches historical logs once on mount, then streams via events
    - Events incrementally persisted to `agent_session.output_log` (every 10 events)
    - Final persistence on task completion ensures all events are stored
 5. **Completion**: Task status updated to `InReview` when agent finishes
+   - `task-status-changed` event emitted, `useTaskStatusEvents` invalidates react-query caches
 
 > **Note**: Interactive TTY input (e.g., `AskUserQuestion` prompts) is not currently supported. Agents run in non-interactive mode with stdin closed.
 
@@ -143,8 +145,12 @@ apps/tauri-app/src/
 ├── hooks/
 │   ├── useKeyboardShortcuts.ts
 │   ├── useNotificationClickHandler.ts
-│   ├── useReviewComments.ts # Inline comment state management
+│   ├── useNotificationEvents.ts # Populates notification center from Tauri events
+│   ├── useReviewComments.ts     # Inline comment state management
+│   ├── useTaskLogs.ts           # Event-driven task log streaming (no polling)
+│   ├── useTaskStatusEvents.ts   # Invalidates react-query caches on task events
 │   ├── useTasks.ts
+│   ├── useTtyInput.ts           # TTY input request handling
 │   └── ...
 ├── pages/
 │   ├── Dashboard.tsx
