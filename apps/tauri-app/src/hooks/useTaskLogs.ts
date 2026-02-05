@@ -99,6 +99,8 @@ export function useTaskLogs({
   // Bounded to MAX_FINGERPRINTS to prevent unbounded memory growth
   const seenFingerprints = useRef(new Set<string>());
   const eventIdCounter = useRef(0);
+  // Track the last processed data object to prevent double-processing in StrictMode
+  const lastProcessedDataRef = useRef<typeof data>(null);
 
   // Track if task is complete based on status
   // Task is complete when status is NOT "in_progress"
@@ -142,12 +144,20 @@ export function useTaskLogs({
       lastEventIdRef.current = undefined;
       seenFingerprints.current = new Set();
       eventIdCounter.current = 0;
+      lastProcessedDataRef.current = null;
       prevAgentTaskIdRef.current = agentTaskId;
     }
   }, [agentTaskId]);
 
   // Update events when we receive new data from polling
   useEffect(() => {
+    // Skip if this is the same data object we already processed
+    // This prevents double-processing in StrictMode where effects run twice
+    if (data === lastProcessedDataRef.current) {
+      return;
+    }
+    lastProcessedDataRef.current = data;
+
     if (data?.events && data.events.length > 0) {
       console.log("[useTaskLogs] Data effect: processing", data.events.length, "events");
       setEvents((prev) => {
