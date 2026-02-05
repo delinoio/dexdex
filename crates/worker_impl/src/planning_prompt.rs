@@ -29,7 +29,8 @@ pub fn plan_yaml_filename(suffix: &str) -> String {
 ///
 /// # Arguments
 /// * `user_prompt` - The user's original request/prompt
-/// * `plan_filename` - The exact filename for the plan YAML (e.g., "PLAN-a1b2c3.yaml")
+/// * `plan_filename` - The exact filename for the plan YAML (e.g.,
+///   "PLAN-a1b2c3.yaml")
 ///
 /// # Returns
 /// A complete prompt string that instructs the AI agent to generate PLAN.yaml
