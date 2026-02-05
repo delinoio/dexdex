@@ -133,7 +133,7 @@ mod tests {
         let full_prompt = build_planning_prompt("test");
 
         // Check for key format instructions
-        assert!(full_prompt.contains("PLAN.yaml"));
+        assert!(full_prompt.contains("PLAN-{random}.yaml"));
         assert!(full_prompt.contains("tasks:"));
         assert!(full_prompt.contains("id:"));
         assert!(full_prompt.contains("prompt:"));
