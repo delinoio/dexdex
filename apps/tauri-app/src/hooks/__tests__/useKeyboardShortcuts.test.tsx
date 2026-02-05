@@ -43,6 +43,16 @@ vi.mock("@/stores/chatStore", () => ({
   }),
 }));
 
+const mockToggleNotifications = vi.fn();
+const mockSetNotificationsOpen = vi.fn();
+
+vi.mock("@/stores/notificationCenterStore", () => ({
+  useNotificationCenterStore: () => ({
+    toggleOpen: mockToggleNotifications,
+    setOpen: mockSetNotificationsOpen,
+  }),
+}));
+
 describe("useKeyboardShortcuts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -348,6 +358,197 @@ describe("useKeyboardShortcuts", () => {
       expect(mockToggleCommandPalette).toHaveBeenCalled();
 
       document.body.removeChild(input);
+    });
+  });
+
+  describe("Keyboard layout awareness", () => {
+    it("should trigger 'c' shortcut via event.code when event.key is a non-Latin character (e.g., Korean)", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Simulate pressing physical 'C' key on a Korean keyboard layout
+      // event.key would be 'ㅊ' but event.code would be 'KeyC'
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "ㅊ",
+          code: "KeyC",
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetTaskCreationOpen).toHaveBeenCalledWith(true);
+      expect(mockNavigate).toHaveBeenCalledWith("/tasks/new");
+    });
+
+    it("should trigger 'n' shortcut via event.code when event.key is a non-Latin character (e.g., Russian)", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Simulate pressing physical 'N' key on a Russian keyboard layout
+      // event.key would be 'т' but event.code would be 'KeyN'
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "т",
+          code: "KeyN",
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockToggleNotifications).toHaveBeenCalled();
+    });
+
+    it("should trigger Ctrl+K shortcut via event.code on non-Latin layout", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Simulate Ctrl+K on a Korean layout where event.key may be 'ㅏ'
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "ㅏ",
+          code: "KeyK",
+          ctrlKey: true,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockToggleCommandPalette).toHaveBeenCalled();
+    });
+
+    it("should trigger Alt+Z shortcut via event.code on non-Latin layout", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Simulate Alt+Z on a Korean layout
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "ㅋ",
+          code: "KeyZ",
+          altKey: true,
+          ctrlKey: false,
+          metaKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockToggleChat).toHaveBeenCalled();
+    });
+
+    it("should trigger Ctrl+N shortcut via event.code on non-Latin layout", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Simulate Ctrl+N on a Russian layout where 'N' key produces 'т'
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "т",
+          code: "KeyN",
+          ctrlKey: true,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetTaskCreationOpen).toHaveBeenCalledWith(true);
+      expect(mockNavigate).toHaveBeenCalledWith("/tasks/new");
+    });
+
+    it("should still work with English layout (event.key matches directly)", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Normal English layout - event.key is 'c' and event.code is 'KeyC'
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "c",
+          code: "KeyC",
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetTaskCreationOpen).toHaveBeenCalledWith(true);
+      expect(mockNavigate).toHaveBeenCalledWith("/tasks/new");
+    });
+
+    it("should NOT trigger shortcut when event.code is unknown and event.key doesn't match", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "ㅊ",
+          code: "UnknownKey",
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetTaskCreationOpen).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    it("should handle shifted keys on non-Latin layouts", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Shift+KeyC on Russian layout produces uppercase Cyrillic 'С'
+      // event.code is still 'KeyC', so it should fall back to physical key
+      // But since shift is pressed and 'c' shortcut requires no shift, it should NOT trigger
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "С",
+          code: "KeyC",
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: true,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetTaskCreationOpen).not.toHaveBeenCalled();
+    });
+
+    it("should trigger Ctrl+, (Settings) shortcut via event.code on non-Latin layout", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Simulate Ctrl+, on a non-Latin layout
+      // The Comma key code maps to ','
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "б",
+          code: "Comma",
+          ctrlKey: true,
+          metaKey: false,
+          altKey: false,
+          shiftKey: false,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+      expect(mockNavigate).toHaveBeenCalledWith("/settings");
     });
   });
 

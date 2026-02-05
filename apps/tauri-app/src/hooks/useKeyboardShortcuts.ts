@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useUiStore } from "@/stores/uiStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useNotificationCenterStore } from "@/stores/notificationCenterStore";
+import { getEffectiveKey } from "@/lib/keyboardUtils";
 
 interface ShortcutHandler {
   key: string;
@@ -195,8 +196,10 @@ export function useKeyboardShortcuts() {
 
       // Check if any shortcut matches
       for (const shortcut of shortcuts) {
-        const keyMatches =
-          event.key.toLowerCase() === shortcut.key.toLowerCase();
+        // Match by event.key first, then fall back to physical key code
+        // for keyboard layout independence (e.g., Korean, Russian layouts)
+        const effectiveKey = getEffectiveKey(event);
+        const keyMatches = effectiveKey === shortcut.key.toLowerCase();
         // mod: true means Cmd on Mac, Ctrl on Windows/Linux
         // When modifier is undefined, require that modifier to NOT be pressed
         // This prevents conflicts with system shortcuts (e.g., Cmd+C for copy)

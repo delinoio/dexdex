@@ -1,5 +1,6 @@
 // Keyboard shortcuts for review and task detail pages
 import { useEffect, useCallback } from "react";
+import { getEffectiveKey } from "@/lib/keyboardUtils";
 
 // Detect platform once at module level
 const isMac =
@@ -63,7 +64,9 @@ export function useTaskDetailShortcuts(options: UseTaskDetailShortcutsOptions) {
         return;
       }
 
-      const key = event.key.toLowerCase();
+      // Use event.key first, then fall back to physical key code
+      // for keyboard layout independence (e.g., Korean, Russian layouts)
+      const key = getEffectiveKey(event);
 
       switch (key) {
         case "a":
@@ -133,7 +136,9 @@ export function useReviewShortcuts(options: UseReviewShortcutsOptions) {
         target.isContentEditable;
 
       const modKey = isMac ? event.metaKey : event.ctrlKey;
-      const key = event.key.toLowerCase();
+      // Use event.key first, then fall back to physical key code
+      // for keyboard layout independence (e.g., Korean, Russian layouts)
+      const key = getEffectiveKey(event);
 
       // Cmd/Ctrl+Enter for approve (works even in inputs)
       if (key === "enter" && modKey && !event.altKey && !event.shiftKey) {
