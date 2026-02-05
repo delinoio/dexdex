@@ -30,5 +30,5 @@ pub use coding_agents::executor::{
     TaskExecutor, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent, TtyInputRequestManager,
 };
 pub use executor::LocalExecutor;
-pub use planning_prompt::build_planning_prompt;
+pub use planning_prompt::{build_planning_prompt, generate_plan_yaml_suffix, plan_yaml_filename};
 pub use runtime::LocalRuntime;
