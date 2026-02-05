@@ -10,6 +10,7 @@ import {
   listTasks,
   rejectTask,
   requestChanges,
+  updatePlanWithPrompt,
 } from "@/api/client";
 import type {
   CreateCompositeTaskParams,
@@ -121,6 +122,19 @@ export function useCancelTask() {
   return useMutation({
     mutationFn: (taskId: string) => cancelTask(taskId),
     onSuccess: (_data, taskId) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useUpdatePlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, prompt }: { taskId: string; prompt: string }) =>
+      updatePlanWithPrompt(taskId, prompt),
+    onSuccess: (_data, { taskId }) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },

@@ -230,7 +230,7 @@ Accessible via global hotkey (default: `Option+Z` / `Alt+Z`).
 │  │ 2. Auth API endpoints                │  │
 │  │ 3. Login/signup UI                   │  │
 │  │                                      │  │
-│  │ [View PLAN.yaml] [Approve] [Edit]    │  │
+│  │ [Update Plan] [Approve] [Reject]     │  │
 │  └──────────────────────────────────────┘  │
 │                                            │
 ├────────────────────────────────────────────┤
@@ -368,7 +368,7 @@ Type `@` to reference files:
 │  │  The AI has generated a plan for this task.                         │   │
 │  │  Please review and approve to proceed.                              │   │
 │  │                                                                     │   │
-│  │  [View PLAN.yaml]                     [Reject]    [Approve Plan]    │   │
+│  │  [Update Plan]              [Reject]    [Approve Plan]    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                            │
 │  Task Graph                                                                │
