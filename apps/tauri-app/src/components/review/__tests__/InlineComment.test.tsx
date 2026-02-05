@@ -138,6 +138,60 @@ describe("InlineComment", () => {
     expect(screen.queryByTestId("inline-comment-edit-textarea")).not.toBeInTheDocument();
     expect(screen.getByText("This is a test comment")).toBeInTheDocument();
   });
+
+  it("submits edit on Cmd+Enter", () => {
+    const handleEdit = vi.fn();
+    render(
+      <InlineComment
+        comment={mockComment}
+        onEdit={handleEdit}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const textarea = screen.getByTestId("inline-comment-edit-textarea");
+    fireEvent.change(textarea, { target: { value: "Updated via shortcut" } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    expect(handleEdit).toHaveBeenCalledWith("comment-1", "Updated via shortcut");
+  });
+
+  it("submits edit on Ctrl+Enter", () => {
+    const handleEdit = vi.fn();
+    render(
+      <InlineComment
+        comment={mockComment}
+        onEdit={handleEdit}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const textarea = screen.getByTestId("inline-comment-edit-textarea");
+    fireEvent.change(textarea, { target: { value: "Updated via ctrl" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    expect(handleEdit).toHaveBeenCalledWith("comment-1", "Updated via ctrl");
+  });
+
+  it("does not submit edit on Cmd+Enter when content is empty", () => {
+    const handleEdit = vi.fn();
+    render(
+      <InlineComment
+        comment={mockComment}
+        onEdit={handleEdit}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const textarea = screen.getByTestId("inline-comment-edit-textarea");
+    fireEvent.change(textarea, { target: { value: "   " } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    expect(handleEdit).not.toHaveBeenCalled();
+  });
 });
 
 describe("CommentInputForm", () => {
@@ -191,6 +245,53 @@ describe("CommentInputForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(handleCancel).toHaveBeenCalled();
+  });
+
+  it("submits on Cmd+Enter", () => {
+    const handleSubmit = vi.fn();
+    render(
+      <CommentInputForm
+        onSubmit={handleSubmit}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const textarea = screen.getByTestId("comment-input-textarea");
+    fireEvent.change(textarea, { target: { value: "Comment via shortcut" } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    expect(handleSubmit).toHaveBeenCalledWith("Comment via shortcut");
+  });
+
+  it("submits on Ctrl+Enter", () => {
+    const handleSubmit = vi.fn();
+    render(
+      <CommentInputForm
+        onSubmit={handleSubmit}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const textarea = screen.getByTestId("comment-input-textarea");
+    fireEvent.change(textarea, { target: { value: "Comment via ctrl" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    expect(handleSubmit).toHaveBeenCalledWith("Comment via ctrl");
+  });
+
+  it("does not submit on Cmd+Enter when content is empty", () => {
+    const handleSubmit = vi.fn();
+    render(
+      <CommentInputForm
+        onSubmit={handleSubmit}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const textarea = screen.getByTestId("comment-input-textarea");
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    expect(handleSubmit).not.toHaveBeenCalled();
   });
 });
 
