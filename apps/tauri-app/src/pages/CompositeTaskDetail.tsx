@@ -12,7 +12,7 @@ import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from 
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { parsePlanYamlToNodes } from "@/lib/planYaml";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { Textarea } from "@/components/ui/Textarea";
 import {
   Dialog,
@@ -146,6 +146,13 @@ export function CompositeTaskDetail() {
     });
     setUpdatePlanPrompt("");
     setUpdatePlanOpen(false);
+  };
+
+  const handleUpdatePlanKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleUpdatePlan();
+    }
   };
 
   const getStatusBadgeVariant = (status: CompositeTaskStatus) => {
@@ -323,6 +330,7 @@ export function CompositeTaskDetail() {
                       placeholder="e.g., Split the database task into two separate tasks..."
                       value={updatePlanPrompt}
                       onChange={(e) => setUpdatePlanPrompt(e.target.value)}
+                      onKeyDown={handleUpdatePlanKeyDown}
                       rows={4}
                       maxLength={100000}
                     />
