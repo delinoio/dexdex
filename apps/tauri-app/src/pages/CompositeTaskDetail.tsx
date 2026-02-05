@@ -11,6 +11,7 @@ import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
+import { parsePlanYamlToNodes } from "@/lib/planYaml";
 import { useMemo } from "react";
         
 interface ProgressSectionProps {
@@ -72,6 +73,19 @@ export function CompositeTaskDetail() {
 
     return aggregateTokenUsage(sessionEndEvents);
   }, [planningEvents]);
+
+  // Parse plan_yaml to generate a preview of the task graph during PendingApproval.
+  // When the plan is first generated, CompositeTaskNode records don't exist in the
+  // DB yet (they're created on approval). We parse the raw YAML to show a preview.
+  const planPreviewNodes = useMemo(() => {
+    if (!task?.planYaml || !task?.id) return [];
+    return parsePlanYamlToNodes(task.planYaml, task.id);
+  }, [task?.planYaml, task?.id]);
+
+  // Use DB nodes when available, fall back to plan preview nodes
+  const effectiveNodes = (nodesData?.nodes && nodesData.nodes.length > 0)
+    ? nodesData.nodes
+    : planPreviewNodes;
 
   // Set dynamic tab title with task context
   // Must be called before any early returns to follow React's Rules of Hooks
@@ -195,7 +209,7 @@ export function CompositeTaskDetail() {
                 {formatStatus(task.status)}
               </Badge>
               <span>Created <FormattedDateTime date={task.createdAt} /></span>
-              <span>{task.nodeIds.length} sub-tasks</span>
+              <span>{effectiveNodes.length || task.nodeIds.length} sub-tasks</span>
             </div>
           </div>
           <Button variant="outline" onClick={() => navigate("/")}>
@@ -290,20 +304,20 @@ export function CompositeTaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {nodesLoading ? (
+              {nodesLoading && effectiveNodes.length === 0 ? (
                 <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]">
                   <p className="text-sm text-[hsl(var(--muted-foreground))]">
                     Loading task graph...
                   </p>
                 </div>
-              ) : nodesError ? (
+              ) : nodesError && effectiveNodes.length === 0 ? (
                 <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-[hsl(var(--destructive))] bg-[hsl(var(--destructive)/0.1)]">
                   <p className="text-sm text-[hsl(var(--destructive))]">
                     Failed to load task graph. Please try again.
                   </p>
                 </div>
               ) : (
-                <TaskGraph nodes={nodesData?.nodes || []} />
+                <TaskGraph nodes={effectiveNodes} />
               )}
             </CardContent>
           </Card>
@@ -316,46 +330,51 @@ export function CompositeTaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {nodesLoading ? (
+              {nodesLoading && effectiveNodes.length === 0 ? (
                 <p className="text-sm text-[hsl(var(--muted-foreground))]">
                   Loading sub-tasks...
                 </p>
-              ) : !nodesData?.nodes || nodesData.nodes.length === 0 ? (
+              ) : effectiveNodes.length === 0 ? (
                 <p className="text-sm text-[hsl(var(--muted-foreground))]">
                   No sub-tasks yet. The plan is still being generated.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {nodesData.nodes.map((nodeWithTask, index) => (
-                    <div
-                      key={nodeWithTask.node.id}
-                      className="flex items-center justify-between rounded-md border border-[hsl(var(--border))] p-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium">
-                          {index + 1}. {nodeWithTask.unitTask?.title || `Task ${nodeWithTask.node.id.slice(0, 8)}`}
-                        </span>
-                        <Badge variant={getUnitTaskBadgeVariant(nodeWithTask.unitTask?.status)}>
-                          {formatUnitTaskStatus(nodeWithTask.unitTask?.status)}
-                        </Badge>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate(`/unit-tasks/${nodeWithTask.unitTask?.id}`)}
+                  {effectiveNodes.map((nodeWithTask, index) => {
+                    const isPreview = !nodesData?.nodes?.length;
+                    return (
+                      <div
+                        key={nodeWithTask.node.id}
+                        className="flex items-center justify-between rounded-md border border-[hsl(var(--border))] p-3"
                       >
-                        →
-                      </Button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium">
+                            {index + 1}. {nodeWithTask.unitTask?.title || `Task ${nodeWithTask.node.id.slice(0, 8)}`}
+                          </span>
+                          <Badge variant={getUnitTaskBadgeVariant(nodeWithTask.unitTask?.status)}>
+                            {formatUnitTaskStatus(nodeWithTask.unitTask?.status)}
+                          </Badge>
+                        </div>
+                        {!isPreview && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/unit-tasks/${nodeWithTask.unitTask?.id}`)}
+                          >
+                            →
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
 
           <ProgressSection
-            nodes={nodesData?.nodes || []}
-            totalCount={task.nodeIds.length}
+            nodes={effectiveNodes}
+            totalCount={effectiveNodes.length || task.nodeIds.length}
           />
         </div>
       </div>

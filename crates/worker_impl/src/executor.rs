@@ -15,7 +15,7 @@ use coding_agents::{
     AgentResult, TimestampedEvent,
     executor::{
         AgentOutputEvent, EventEmitter, ExecutionResultWithWorktree, TaskCompletedEvent,
-        TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent, TtyInputRequestEvent,
+        TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent,
     },
 };
 use entities::{AgentSession, AiAgentType, CompositeTaskStatus, UnitTaskStatus};
@@ -555,6 +555,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                         task_store.get_composite_task(composite_task_id).await
                     {
                         if plan_yaml_content.is_some() {
+                            let old_status = serde_json::to_string(&composite_task.status)
+                                .unwrap_or_default()
+                                .trim_matches('"')
+                                .to_string();
                             composite_task.status = CompositeTaskStatus::PendingApproval;
                             composite_task.plan_yaml = plan_yaml_content;
                             composite_task.updated_at = Utc::now();
@@ -568,6 +572,39 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                                     "Persisted PLAN.yaml for composite task {}",
                                     composite_task_id
                                 );
+
+                                // Emit task-status-changed event so the frontend updates
+                                // automatically
+                                if let Err(e) = persisting_emitter.emit_task_status_changed(
+                                    TaskStatusChangedEvent {
+                                        task_id: composite_task_id.to_string(),
+                                        task_type: TaskType::CompositeTask,
+                                        old_status,
+                                        new_status: "pending_approval".to_string(),
+                                    },
+                                ) {
+                                    warn!(
+                                        "Failed to emit status changed event for composite task \
+                                         {}: {}",
+                                        composite_task_id, e
+                                    );
+                                }
+
+                                // Emit task-completed event for the planning phase
+                                if let Err(e) =
+                                    persisting_emitter.emit_task_completed(TaskCompletedEvent {
+                                        task_id: composite_task_id.to_string(),
+                                        task_type: TaskType::CompositeTask,
+                                        success: true,
+                                        error: None,
+                                    })
+                                {
+                                    warn!(
+                                        "Failed to emit task completed event for composite task \
+                                         {}: {}",
+                                        composite_task_id, e
+                                    );
+                                }
                             }
                         } else {
                             // PLAN.yaml not found - the planning agent didn't complete properly
@@ -575,10 +612,47 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                                 "PLAN.yaml not found for composite task {} - marking as failed",
                                 composite_task_id
                             );
+                            let old_status = serde_json::to_string(&composite_task.status)
+                                .unwrap_or_default()
+                                .trim_matches('"')
+                                .to_string();
                             composite_task.status = CompositeTaskStatus::Failed;
                             composite_task.updated_at = Utc::now();
                             if let Err(e) = task_store.update_composite_task(composite_task).await {
                                 error!("Failed to update composite task status to Failed: {}", e);
+                            } else {
+                                // Emit status changed and task completed events
+                                if let Err(e) = persisting_emitter.emit_task_status_changed(
+                                    TaskStatusChangedEvent {
+                                        task_id: composite_task_id.to_string(),
+                                        task_type: TaskType::CompositeTask,
+                                        old_status,
+                                        new_status: "failed".to_string(),
+                                    },
+                                ) {
+                                    warn!(
+                                        "Failed to emit status changed event for composite task \
+                                         {}: {}",
+                                        composite_task_id, e
+                                    );
+                                }
+                                if let Err(e) =
+                                    persisting_emitter.emit_task_completed(TaskCompletedEvent {
+                                        task_id: composite_task_id.to_string(),
+                                        task_type: TaskType::CompositeTask,
+                                        success: false,
+                                        error: Some(
+                                            "PLAN.yaml not found after planning completed"
+                                                .to_string(),
+                                        ),
+                                    })
+                                {
+                                    warn!(
+                                        "Failed to emit task completed event for composite task \
+                                         {}: {}",
+                                        composite_task_id, e
+                                    );
+                                }
                             }
                         }
                     }
@@ -592,10 +666,42 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     if let Ok(Some(mut composite_task)) =
                         task_store.get_composite_task(composite_task_id).await
                     {
+                        let old_status = serde_json::to_string(&composite_task.status)
+                            .unwrap_or_default()
+                            .trim_matches('"')
+                            .to_string();
                         composite_task.status = CompositeTaskStatus::Failed;
                         composite_task.updated_at = Utc::now();
                         if let Err(e) = task_store.update_composite_task(composite_task).await {
                             error!("Failed to update composite task status to Failed: {}", e);
+                        } else {
+                            // Emit status changed and task completed events
+                            if let Err(e) = persisting_emitter.emit_task_status_changed(
+                                TaskStatusChangedEvent {
+                                    task_id: composite_task_id.to_string(),
+                                    task_type: TaskType::CompositeTask,
+                                    old_status,
+                                    new_status: "failed".to_string(),
+                                },
+                            ) {
+                                warn!(
+                                    "Failed to emit status changed event for composite task {}: {}",
+                                    composite_task_id, e
+                                );
+                            }
+                            if let Err(e) =
+                                persisting_emitter.emit_task_completed(TaskCompletedEvent {
+                                    task_id: composite_task_id.to_string(),
+                                    task_type: TaskType::CompositeTask,
+                                    success: false,
+                                    error: Some(error.clone()),
+                                })
+                            {
+                                warn!(
+                                    "Failed to emit task completed event for composite task {}: {}",
+                                    composite_task_id, e
+                                );
+                            }
                         }
                     }
                 }
