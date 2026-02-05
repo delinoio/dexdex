@@ -9,8 +9,6 @@ use std::{
     sync::Arc,
 };
 
-use plan_parser::{Plan, validate_plan};
-
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
 use coding_agents::{
@@ -24,6 +22,7 @@ use entities::{
     AgentSession, AgentTask, AiAgentType, CompositeTaskNode, CompositeTaskStatus, UnitTask,
     UnitTaskStatus,
 };
+use plan_parser::{Plan, validate_plan};
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -222,6 +221,11 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
     /// Returns the TTY request manager for responding to input requests.
     pub fn tty_request_manager(&self) -> Arc<TtyInputRequestManager> {
         self.executor.tty_request_manager()
+    }
+
+    /// Returns the event emitter for emitting task lifecycle events.
+    pub fn emitter(&self) -> &Arc<E> {
+        &self.emitter
     }
 
     /// Sets the polling interval in seconds for the composite task graph
@@ -601,8 +605,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 Err(_elapsed) => {
                     error!(
                         "Planning for composite task {} timed out after {} seconds",
-                        composite_task_id,
-                        DEFAULT_PLANNING_TIMEOUT_SECS
+                        composite_task_id, DEFAULT_PLANNING_TIMEOUT_SECS
                     );
                     (
                         ExecutionResult::Failed {
@@ -955,8 +958,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             .as_ref()
             .ok_or_else(|| "Composite task has no plan_yaml".to_string())?;
 
-        let plan = Plan::from_yaml(plan_yaml)
-            .map_err(|e| format!("Failed to parse plan YAML: {}", e))?;
+        let plan =
+            Plan::from_yaml(plan_yaml).map_err(|e| format!("Failed to parse plan YAML: {}", e))?;
 
         // Validate the plan for cycles, invalid dependencies, duplicate IDs,
         // etc.
@@ -975,11 +978,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 "Plan validation failed"
             );
             // Mark composite task as failed
-            if let Ok(Some(mut ct)) = self
-                .task_store
-                .get_composite_task(composite_task_id)
-                .await
-            {
+            if let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await {
                 ct.status = CompositeTaskStatus::Failed;
                 ct.updated_at = chrono::Utc::now();
                 let _ = self.task_store.update_composite_task(ct).await;
@@ -1000,11 +999,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 max = MAX_TASKS_PER_PLAN,
                 "Plan exceeds maximum task limit"
             );
-            if let Ok(Some(mut ct)) = self
-                .task_store
-                .get_composite_task(composite_task_id)
-                .await
-            {
+            if let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await {
                 ct.status = CompositeTaskStatus::Failed;
                 ct.updated_at = chrono::Utc::now();
                 let _ = self.task_store.update_composite_task(ct).await;
@@ -1067,10 +1062,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     composite_task_id, e
                 );
                 // Mark composite task as failed
-                if let Ok(Some(mut ct)) = self
-                    .task_store
-                    .get_composite_task(composite_task_id)
-                    .await
+                if let Ok(Some(mut ct)) =
+                    self.task_store.get_composite_task(composite_task_id).await
                 {
                     ct.status = CompositeTaskStatus::Failed;
                     ct.updated_at = chrono::Utc::now();
@@ -1094,6 +1087,23 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             .update_composite_task(composite_task)
             .await
             .map_err(|e| format!("Failed to update composite task node_ids: {}", e))?;
+
+        // Emit task-status-changed so the frontend refreshes the composite task
+        // detail view and picks up the newly created nodes and graph data.
+        if let Err(e) = self
+            .emitter
+            .emit_task_status_changed(TaskStatusChangedEvent {
+                task_id: composite_task_id.to_string(),
+                task_type: TaskType::CompositeTask,
+                old_status: "in_progress".to_string(),
+                new_status: "in_progress".to_string(),
+            })
+        {
+            warn!(
+                "Failed to emit status changed event after node creation for composite task {}: {}",
+                composite_task_id, e
+            );
+        }
 
         // Find root tasks (no dependencies) and start them
         let root_unit_task_ids: Vec<Uuid> = plan
@@ -1176,11 +1186,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 created_agent_task_ids.push(agent_task.id);
 
                 // Create unit task
-                let mut unit_task = UnitTask::new(
-                    repository_group_id,
-                    agent_task.id,
-                    &plan_task.prompt,
-                );
+                let mut unit_task =
+                    UnitTask::new(repository_group_id, agent_task.id, &plan_task.prompt);
                 if let Some(title) = &plan_task.title {
                     unit_task = unit_task.with_title(title);
                 }
@@ -1243,19 +1250,16 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     .ok_or_else(|| format!("Composite task node not found: {}", node_id))?;
 
                 for dep_plan_id in &plan_task.depends_on {
-                    let dep_node_id =
-                        plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
-                            format!("Dependency plan task not found: {}", dep_plan_id)
-                        })?;
+                    let dep_node_id = plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
+                        format!("Dependency plan task not found: {}", dep_plan_id)
+                    })?;
                     node.depends_on(dep_node_id.to_owned());
                 }
 
                 self.task_store
                     .update_composite_task_node(node)
                     .await
-                    .map_err(|e| {
-                        format!("Failed to update composite task node deps: {}", e)
-                    })?;
+                    .map_err(|e| format!("Failed to update composite task node deps: {}", e))?;
             }
             Ok(())
         }
@@ -1349,8 +1353,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 Err(e) => {
                     consecutive_failures += 1;
                     error!(
-                        "Graph monitor: Failed to list nodes for composite task {} \
-                         (consecutive failure {}/{}): {}",
+                        "Graph monitor: Failed to list nodes for composite task {} (consecutive \
+                         failure {}/{}): {}",
                         composite_task_id,
                         consecutive_failures,
                         MAX_CONSECUTIVE_MONITOR_FAILURES,
@@ -1358,8 +1362,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     );
                     if consecutive_failures >= MAX_CONSECUTIVE_MONITOR_FAILURES {
                         error!(
-                            "Graph monitor: Giving up after {} consecutive failures \
-                             for composite task {}. Marking as failed.",
+                            "Graph monitor: Giving up after {} consecutive failures for composite \
+                             task {}. Marking as failed.",
                             MAX_CONSECUTIVE_MONITOR_FAILURES, composite_task_id
                         );
                         if let Ok(Some(mut ct)) = executor
@@ -1367,9 +1371,29 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                             .get_composite_task(composite_task_id)
                             .await
                         {
+                            let old_status = serde_json::to_string(&ct.status)
+                                .unwrap_or_default()
+                                .trim_matches('"')
+                                .to_string();
                             ct.status = CompositeTaskStatus::Failed;
                             ct.updated_at = chrono::Utc::now();
-                            let _ = executor.task_store.update_composite_task(ct).await;
+                            if executor.task_store.update_composite_task(ct).await.is_ok() {
+                                // Emit task-status-changed so the frontend updates
+                                if let Err(e) = executor.emitter.emit_task_status_changed(
+                                    TaskStatusChangedEvent {
+                                        task_id: composite_task_id.to_string(),
+                                        task_type: TaskType::CompositeTask,
+                                        old_status,
+                                        new_status: "failed".to_string(),
+                                    },
+                                ) {
+                                    warn!(
+                                        "Graph monitor: Failed to emit status changed event for \
+                                         composite task {}: {}",
+                                        composite_task_id, e
+                                    );
+                                }
+                            }
                         }
                         break;
                     }
@@ -1502,8 +1526,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 };
 
                 info!(
-                    "Graph monitor: All tasks in composite task {} are terminal, \
-                     setting status to {:?}",
+                    "Graph monitor: All tasks in composite task {} are terminal, setting status \
+                     to {:?}",
                     composite_task_id, new_status
                 );
 
@@ -1512,6 +1536,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     .get_composite_task(composite_task_id)
                     .await
                 {
+                    let old_status = serde_json::to_string(&ct.status)
+                        .unwrap_or_default()
+                        .trim_matches('"')
+                        .to_string();
                     ct.status = new_status;
                     ct.updated_at = chrono::Utc::now();
                     if let Err(e) = executor.task_store.update_composite_task(ct).await {
@@ -1519,6 +1547,28 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                             "Graph monitor: Failed to update composite task {} status: {}",
                             composite_task_id, e
                         );
+                    } else {
+                        // Emit task-status-changed so the frontend updates
+                        let new_status_str = serde_json::to_string(&new_status)
+                            .unwrap_or_default()
+                            .trim_matches('"')
+                            .to_string();
+                        if let Err(e) =
+                            executor
+                                .emitter
+                                .emit_task_status_changed(TaskStatusChangedEvent {
+                                    task_id: composite_task_id.to_string(),
+                                    task_type: TaskType::CompositeTask,
+                                    old_status,
+                                    new_status: new_status_str,
+                                })
+                        {
+                            warn!(
+                                "Graph monitor: Failed to emit status changed event for composite \
+                                 task {}: {}",
+                                composite_task_id, e
+                            );
+                        }
                     }
                 }
 

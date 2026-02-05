@@ -86,6 +86,9 @@ export function useApproveTask() {
     onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      // Invalidate composite nodes so the task graph refetches after approval
+      // (approval creates CompositeTaskNode records in the backend)
+      queryClient.invalidateQueries({ queryKey: taskKeys.compositeNodes(taskId) });
     },
   });
 }
