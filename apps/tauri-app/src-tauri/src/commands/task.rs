@@ -1961,42 +1961,33 @@ mod tests {
     // Rate Limiting Tests
     // =========================================================================
 
+    // NOTE: These tests are combined into a single test because they share
+    // global state (LAST_TASK_CREATION_TIME). Running them as separate #[test]
+    // functions causes flaky failures due to parallel execution.
     #[cfg(desktop)]
     #[test]
-    fn test_check_rate_limit_allows_first_call() {
-        // Reset the rate limiter to ensure clean state
-        LAST_TASK_CREATION_TIME.store(0, Ordering::SeqCst);
-        // First call should always succeed
-        assert!(check_rate_limit().is_ok());
-    }
-
-    #[cfg(desktop)]
-    #[test]
-    fn test_check_rate_limit_blocks_rapid_calls() {
+    fn test_check_rate_limit() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        // Set the last creation time to now
+        // Test 1: First call should always succeed
+        LAST_TASK_CREATION_TIME.store(0, Ordering::SeqCst);
+        assert!(check_rate_limit().is_ok());
+
+        // Test 2: Rapid subsequent call should be blocked
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         LAST_TASK_CREATION_TIME.store(now, Ordering::SeqCst);
 
-        // Immediate second call should be blocked
         let result = check_rate_limit();
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
             .contains("Please wait at least"));
-    }
 
-    #[cfg(desktop)]
-    #[test]
-    fn test_check_rate_limit_allows_after_interval() {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        // Set the last creation time to more than MIN_TASK_CREATION_INTERVAL_MS ago
+        // Test 3: Call should succeed after interval has passed
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -2004,7 +1995,6 @@ mod tests {
         let past = now.saturating_sub(MIN_TASK_CREATION_INTERVAL_MS + 100);
         LAST_TASK_CREATION_TIME.store(past, Ordering::SeqCst);
 
-        // Call should succeed after interval has passed
         assert!(check_rate_limit().is_ok());
     }
 }

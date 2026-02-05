@@ -190,11 +190,9 @@ impl SqliteTaskStore {
             .await
         {
             Ok(_) => {}
-            Err(sqlx::Error::Database(db_err))
-                if db_err.message().contains("duplicate column") =>
-            {
-                // Column already exists, this is expected on subsequent runs
+            Err(sqlx::Error::Database(db_err)) if db_err.message().contains("duplicate column") => {
             }
+
             Err(e) => return Err(e.into()),
         }
 
