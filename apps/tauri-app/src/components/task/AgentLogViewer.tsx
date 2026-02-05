@@ -24,7 +24,7 @@ import {
 import { ToolUseContent, ToolResultContent } from "./ToolEventComponents";
 
 interface AgentLogViewerProps {
-  taskId: string;
+  agentTaskId: string;
   taskStatus: UnitTaskStatus;
   className?: string;
 }
@@ -32,19 +32,19 @@ interface AgentLogViewerProps {
 /**
  * Component for displaying streaming agent logs with formatting per event type.
  */
-export function AgentLogViewer({ taskId, taskStatus, className }: AgentLogViewerProps) {
+export function AgentLogViewer({ agentTaskId, taskStatus, className }: AgentLogViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
   const { events, isLoading, isComplete, error } = useTaskLogs({
-    taskId,
+    agentTaskId,
     taskStatus,
-    enabled: !!taskId,
+    enabled: !!agentTaskId,
   });
 
   const { pendingRequest, respond, isResponding } = useTtyInput({
-    taskId,
-    enabled: !!taskId,
+    taskId: agentTaskId,
+    enabled: !!agentTaskId,
   });
 
   // Auto-scroll to bottom when new events arrive

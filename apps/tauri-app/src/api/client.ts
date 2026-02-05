@@ -95,10 +95,10 @@ export async function getCompositeTaskNodes(
 }
 
 export async function getTaskLogs(
-  taskId: string,
+  agentTaskId: string,
   afterEventId?: number
 ): Promise<TaskLogsResponse> {
-  return invoke<TaskLogsResponse>("get_task_logs", { taskId, afterEventId });
+  return invoke<TaskLogsResponse>("get_task_logs", { agentTaskId, afterEventId });
 }
 
 export async function respondTtyInput(params: RespondTtyInputParams): Promise<void> {

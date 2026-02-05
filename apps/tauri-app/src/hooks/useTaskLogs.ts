@@ -13,11 +13,11 @@ import type {
 // Query keys for task logs
 export const taskLogsKeys = {
   all: ["taskLogs"] as const,
-  logs: (taskId: string) => [...taskLogsKeys.all, taskId] as const,
+  logs: (agentTaskId: string) => [...taskLogsKeys.all, agentTaskId] as const,
 };
 
 interface UseTaskLogsOptions {
-  taskId: string;
+  agentTaskId: string;
   taskStatus: UnitTaskStatus;
   enabled?: boolean;
   pollingInterval?: number;
@@ -88,7 +88,7 @@ const MAX_FINGERPRINTS = 10000;
  * rare cases for very long-running tasks, but prevents unbounded memory growth.
  */
 export function useTaskLogs({
-  taskId,
+  agentTaskId,
   taskStatus,
   enabled = true,
   pollingInterval = 2000,
@@ -104,56 +104,93 @@ export function useTaskLogs({
   // Task is complete when status is NOT "in_progress"
   const isComplete = taskStatus !== "in_progress";
 
+  // Use a ref to track lastEventId for the query function
+  // This avoids changing the query key on every fetch, which would reset the cache
+  const lastEventIdRef = useRef<number | undefined>(lastEventId);
+  lastEventIdRef.current = lastEventId;
+
   // Poll for logs
+  // Note: queryKey does NOT include lastEventId to avoid cache invalidation
+  // The lastEventId is passed via ref to the queryFn
   const { data, isLoading, error } = useQuery({
-    queryKey: [...taskLogsKeys.logs(taskId), lastEventId],
-    queryFn: () => getTaskLogs(taskId, lastEventId),
-    enabled: enabled && !!taskId,
+    queryKey: taskLogsKeys.logs(agentTaskId),
+    queryFn: async () => {
+      const afterEventId = lastEventIdRef.current;
+      const result = await getTaskLogs(agentTaskId, afterEventId);
+      return result;
+    },
+    enabled: enabled && !!agentTaskId,
     refetchInterval: isComplete ? false : pollingInterval,
   });
 
+  // Track the previous agentTaskId to detect changes
+  const prevAgentTaskIdRef = useRef(agentTaskId);
+
+  // Reset events when agent task changes
+  // IMPORTANT: This effect must be declared BEFORE the data update effect
+  // to ensure proper effect ordering. React runs effects in declaration order,
+  // so this reset runs first when agentTaskId changes.
+  useEffect(() => {
+    // Only reset if agentTaskId actually changed to a different value
+    // Skip the initial mount to avoid resetting before data loads
+    if (prevAgentTaskIdRef.current !== agentTaskId) {
+      setEvents([]);
+      setLastEventId(undefined);
+      lastEventIdRef.current = undefined;
+      seenFingerprints.current = new Set();
+      eventIdCounter.current = 0;
+      prevAgentTaskIdRef.current = agentTaskId;
+    }
+  }, [agentTaskId]);
+
   // Update events when we receive new data from polling
   useEffect(() => {
-    if (data?.events && data.events.length > 0) {
-      setEvents((prev) => {
-        // Filter out events we've already seen (based on content fingerprint)
-        const newEvents = data.events.filter((e) => {
-          const fingerprint = getEventFingerprint(e.event);
-          if (seenFingerprints.current.has(fingerprint)) {
-            return false;
-          }
-          // Prevent unbounded memory growth by resetting if we exceed the limit
-          if (seenFingerprints.current.size >= MAX_FINGERPRINTS) {
-            console.warn(
-              "Fingerprint set exceeded limit, resetting. Some duplicates may appear.",
-            );
-            seenFingerprints.current.clear();
-          }
-          seenFingerprints.current.add(fingerprint);
-          return true;
-        });
+    if (!data?.events || data.events.length === 0) {
+      return;
+    }
 
-        if (newEvents.length > 0) {
-          return [...prev, ...newEvents];
+    // Filter events SYNCHRONOUSLY before calling setEvents
+    // This is critical for StrictMode: when the effect runs twice,
+    // the second run will see fingerprints already added and skip those events.
+    // If we did this inside setEvents callback, both callbacks would run
+    // and the second would overwrite the first with empty results.
+    const newEvents: NormalizedEventEntry[] = [];
+    for (const e of data.events) {
+      const fingerprint = getEventFingerprint(e.event);
+      if (!seenFingerprints.current.has(fingerprint)) {
+        // Prevent unbounded memory growth by resetting if we exceed the limit
+        if (seenFingerprints.current.size >= MAX_FINGERPRINTS) {
+          console.warn(
+            "Fingerprint set exceeded limit, resetting. Some duplicates may appear.",
+          );
+          seenFingerprints.current.clear();
         }
-        return prev;
-      });
-
-      if (data.lastEventId !== undefined) {
-        setLastEventId(data.lastEventId);
+        seenFingerprints.current.add(fingerprint);
+        newEvents.push(e);
       }
+    }
+
+    // Only call setEvents if we have new events to add
+    // This prevents the second StrictMode effect run from overwriting
+    // the first run's results with an empty append
+    if (newEvents.length > 0) {
+      setEvents((prev) => [...prev, ...newEvents]);
+    }
+
+    if (data.lastEventId !== undefined) {
+      setLastEventId(data.lastEventId);
     }
   }, [data]);
 
   // Listen for real-time agent output events
   useEffect(() => {
-    if (!enabled || !taskId) return;
+    if (!enabled || !agentTaskId) return;
 
     let unlisten: UnlistenFn | undefined;
 
     const setupListener = async () => {
       unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
-        if (event.payload.taskId === taskId) {
+        if (event.payload.taskId === agentTaskId) {
           // Check if we've already seen this event (from polling)
           const fingerprint = getEventFingerprint(event.payload.event);
           if (seenFingerprints.current.has(fingerprint)) {
@@ -172,7 +209,7 @@ export function useTaskLogs({
           // Create a new event entry for real-time events
           // Use a string prefix "rt-" to distinguish from polled event IDs
           const newEntry: NormalizedEventEntry = {
-            id: `rt-${taskId}-${++eventIdCounter.current}`,
+            id: `rt-${agentTaskId}-${++eventIdCounter.current}`,
             timestamp: new Date().toISOString(),
             event: event.payload.event,
           };
@@ -191,15 +228,7 @@ export function useTaskLogs({
         unlisten();
       }
     };
-  }, [taskId, enabled]);
-
-  // Reset events when task changes
-  useEffect(() => {
-    setEvents([]);
-    setLastEventId(undefined);
-    seenFingerprints.current = new Set();
-    eventIdCounter.current = 0;
-  }, [taskId]);
+  }, [agentTaskId, enabled]);
 
   // Clean up fingerprint set when task completes to free memory
   useEffect(() => {

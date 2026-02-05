@@ -31,9 +31,9 @@ export function UnitTaskDetail() {
 
   // Fetch task logs to extract token usage from session_end events
   const { events } = useTaskLogs({
-    taskId: task?.id ?? "",
+    agentTaskId: task?.agentTaskId ?? "",
     taskStatus: task?.status ?? UnitTaskStatus.Unspecified,
-    enabled: !!task?.id,
+    enabled: !!task?.agentTaskId,
   });
 
   // Extract token usage from session_end events
@@ -346,7 +346,7 @@ export function UnitTaskDetail() {
             {showLog && (
               <CardContent>
                 <AgentLogViewer
-                  taskId={task.id}
+                  agentTaskId={task.agentTaskId}
                   taskStatus={task.status}
                   className="min-h-64 max-h-[500px]"
                 />
