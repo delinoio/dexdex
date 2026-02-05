@@ -155,10 +155,7 @@ impl RemoteClient {
     }
 
     /// Updates the plan for a composite task with new feedback.
-    pub async fn update_plan(
-        &self,
-        request: UpdatePlanRequest,
-    ) -> AppResult<UpdatePlanResponse> {
+    pub async fn update_plan(&self, request: UpdatePlanRequest) -> AppResult<UpdatePlanResponse> {
         self.post("/api/task/update-plan", &request).await
     }
 
