@@ -137,6 +137,7 @@ For desktop usage, all components can run in a single process for a seamless loc
 
 | Crate | Purpose |
 |-------|---------|
+| `entities` | Core entity definitions and shared input sanitization utilities |
 | `coding_agents` | AI agent abstraction, output normalization, Docker sandboxing, task execution |
 | `task_store` | Task storage (SQLite, PostgreSQL, in-memory) |
 | `rpc_protocol` | Connect RPC protocol definitions (Protobuf) |
@@ -339,6 +340,7 @@ Task graph-based Agent Orchestrator.
 | repositoryGroupId | string | Y | Associated RepositoryGroup ID |
 | planningTask | AgentTask | Y | AgentTask for generating PLAN.yaml |
 | planYaml | string | N | Raw PLAN.yaml content (persisted after planning) |
+| updatePlanFeedback | string | N | User feedback for re-planning (set by Update Plan, cleared after re-planning) |
 | tasks | CompositeTaskNode[] | Y | List of task nodes |
 | status | CompositeTaskStatus | Y | Current status |
 | executionAgentType | AIAgentType | N | Agent type for UnitTasks |
@@ -765,11 +767,12 @@ The graph execution after approval is handled by `LocalExecutor::execute_composi
 **Update Plan:**
 
 When a composite task is in `pending_approval` or `failed` state, the user can request plan updates via the "Update Plan" button. This:
-1. Appends the user's feedback to the original prompt
-2. Clears the existing `plan_yaml`
+1. Stores the user's feedback in the `update_plan_feedback` field (the original `prompt` is **not** modified)
+2. Keeps the existing `plan_yaml` (so the planning agent can reference it)
 3. Creates a new planning `AgentTask`
 4. Resets status to `planning`
-5. Re-triggers `LocalExecutor::execute_composite_task()` with the updated prompt
+5. Re-triggers `LocalExecutor::execute_composite_task()` which detects `update_plan_feedback` and uses the existing plan + feedback (instead of the original prompt) to generate a revised plan (falls back to initial planning prompt if either is empty)
+6. After re-planning completes (or fails), `update_plan_feedback` is cleared
 
 The `update_plan_with_prompt` Tauri command handles this flow.
 
@@ -922,6 +925,13 @@ All user inputs are validated to prevent security vulnerabilities:
 | Minimum length | At least 1 character |
 | Maximum length | 100,000 characters |
 | Null bytes | Not allowed |
+
+#### Feedback Validation (Update Plan)
+
+| Check | Description |
+|-------|-------------|
+| Control characters | Removed (except `\n` and `\t`) via `entities::sanitize_user_input()` |
+| Maximum length | 10,000 characters (`entities::MAX_FEEDBACK_LENGTH`) |
 
 #### Title Validation
 

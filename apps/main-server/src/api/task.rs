@@ -109,6 +109,7 @@ fn entity_to_rpc_composite_task(task: &entities::CompositeTask) -> rpc_protocol:
         prompt: task.prompt.clone(),
         title: task.title.clone(),
         plan_yaml: task.plan_yaml.clone(),
+        update_plan_feedback: task.update_plan_feedback.clone(),
         node_ids: task.node_ids.iter().map(|id| id.to_string()).collect(),
         status: to_rpc_composite_status(task.status),
         execution_agent_type: task.execution_agent_type.map(|t| match t {
@@ -493,20 +494,19 @@ pub async fn update_plan<S: TaskStore>(
         )));
     }
 
-    // Sanitize the feedback prompt: remove null bytes and other control characters
-    // (except newlines and tabs which are valid in prompts)
-    let sanitized_prompt: String = request
-        .prompt
-        .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
-        .collect();
+    // Sanitize and validate the feedback prompt
+    let sanitized_prompt = entities::sanitize_user_input(&request.prompt);
+    if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
+        return Err(ServerError::InvalidRequest(format!(
+            "Feedback exceeds maximum length of {} characters",
+            entities::MAX_FEEDBACK_LENGTH
+        )));
+    }
 
-    // Append feedback to the prompt and reset to Planning
-    task.prompt = format!(
-        "{}\n\n--- Update Plan Request ---\n{}",
-        task.prompt, sanitized_prompt
-    );
-    task.plan_yaml = None;
+    // Store the feedback for re-planning. The executor will use the existing
+    // plan_yaml together with this feedback (instead of the original prompt)
+    // to generate a new plan.
+    task.update_plan_feedback = Some(sanitized_prompt);
     task.status = EntityCompositeTaskStatus::Planning;
     task.updated_at = chrono::Utc::now();
 

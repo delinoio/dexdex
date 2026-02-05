@@ -137,6 +137,95 @@ Create the `{plan_filename}` file now."#,
     )
 }
 
+/// Builds a planning prompt for updating an existing plan based on user
+/// feedback.
+///
+/// Unlike [`build_planning_prompt`], this does **not** include the original
+/// user request.  Instead it provides the AI agent with the current plan and
+/// the user's feedback so that the agent can produce a revised plan.
+///
+/// # Arguments
+/// * `existing_plan_yaml` - The current PLAN.yaml content
+/// * `feedback` - The user's feedback describing desired changes
+/// * `plan_filename` - The exact filename for the plan YAML (e.g.,
+///   "PLAN-a1b2c3.yaml")
+///
+/// # Returns
+/// A complete prompt string that instructs the AI agent to revise the plan.
+pub fn build_update_planning_prompt(
+    existing_plan_yaml: &str,
+    feedback: &str,
+    plan_filename: &str,
+) -> String {
+    format!(
+        r#"You are a planning agent for DeliDev, an AI coding orchestration tool. Your task is to revise an existing PLAN.yaml file based on the user's feedback.
+
+## Your Goal
+
+Revise the file named `{plan_filename}` in the repository root based on the user's feedback below.
+
+## PLAN.yaml Format
+
+The file must follow this exact YAML structure:
+
+```yaml
+tasks:
+  - id: string          # Unique identifier for this task (required)
+    title: string       # Human-readable task title (optional, defaults to id)
+    prompt: string      # Task description for the AI agent (required)
+    branchName: string  # Custom git branch name (optional)
+    dependsOn: string[] # IDs of tasks that must complete first (optional)
+```
+
+## Field Specifications
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | Yes | Unique identifier within this plan. Use lowercase with hyphens (e.g., "setup-db", "auth-api"). |
+| `title` | string | No | Human-readable title. Defaults to `id` if not specified. |
+| `prompt` | string | Yes | Detailed description of what the AI agent should do. Be specific about requirements. |
+| `branchName` | string | No | Custom git branch name. If not specified, the system generates one. |
+| `dependsOn` | string[] | No | List of task IDs that must complete before this task starts. |
+
+## Validation Rules (Your PLAN.yaml must follow these)
+
+1. **Unique IDs**: Each task must have a unique `id`
+2. **Valid References**: All IDs in `dependsOn` must reference existing task IDs
+3. **No Cycles**: The dependency graph must be acyclic (no circular dependencies)
+4. **Non-empty Prompts**: Each task must have a non-empty `prompt`
+
+## Current Plan
+
+The following is the current plan that needs to be revised:
+
+```yaml
+{existing_plan_yaml}
+```
+
+## User Feedback
+
+The user has requested the following changes to the plan:
+
+---
+
+{feedback}
+
+---
+
+Instructions:
+1. First, explore the codebase to understand its structure and existing patterns
+2. Analyze the current plan above and the user's feedback
+3. Revise the plan according to the feedback
+4. Create the file `{plan_filename}` in the repository root with the updated plan
+5. Ensure the plan follows best practices for task granularity and parallelization
+
+Create the `{plan_filename}` file now."#,
+        plan_filename = plan_filename,
+        existing_plan_yaml = existing_plan_yaml,
+        feedback = feedback,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +298,44 @@ mod tests {
     fn test_plan_yaml_filename() {
         assert_eq!(plan_yaml_filename("abc123"), "PLAN-abc123.yaml");
         assert_eq!(plan_yaml_filename("x7k9m2"), "PLAN-x7k9m2.yaml");
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_contains_existing_plan() {
+        let existing_plan = "tasks:\n  - id: setup-db\n    prompt: Create database schema";
+        let feedback = "Split the database task into two separate tasks";
+        let prompt = build_update_planning_prompt(existing_plan, feedback, "PLAN-abc123.yaml");
+
+        assert!(prompt.contains(existing_plan));
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_contains_feedback() {
+        let existing_plan = "tasks:\n  - id: setup-db\n    prompt: Create database schema";
+        let feedback = "Split the database task into two separate tasks";
+        let prompt = build_update_planning_prompt(existing_plan, feedback, "PLAN-abc123.yaml");
+
+        assert!(prompt.contains(feedback));
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_contains_plan_filename() {
+        let prompt = build_update_planning_prompt("tasks: []", "change it", "PLAN-x7k9m2.yaml");
+
+        assert!(prompt.contains("PLAN-x7k9m2.yaml"));
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_does_not_contain_original_prompt_section() {
+        let existing_plan = "tasks:\n  - id: setup-db\n    prompt: Create database schema";
+        let feedback = "Add more tasks";
+        let prompt = build_update_planning_prompt(existing_plan, feedback, "PLAN-abc123.yaml");
+
+        // Should contain "Current Plan" section, not the original "Your Task" user
+        // request section
+        assert!(prompt.contains("Current Plan"));
+        assert!(prompt.contains("User Feedback"));
+        // Should not contain the section header used in the initial planning prompt
+        assert!(!prompt.contains("Analyze the following user request"));
     }
 }

@@ -1148,34 +1148,21 @@ pub async fn update_plan_with_prompt(
         )));
     }
 
+    // Sanitize and validate the feedback prompt
+    let sanitized_prompt = entities::sanitize_user_input(&prompt);
+    if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Feedback exceeds maximum length of {} characters",
+            entities::MAX_FEEDBACK_LENGTH
+        )));
+    }
+
     // Save updated_at for optimistic concurrency check
     let expected_updated_at = composite_task.updated_at;
 
-    // Sanitize the feedback prompt: remove null bytes and other control characters
-    // (except newlines and tabs which are valid in prompts)
-    let sanitized_prompt: String = prompt
-        .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
-        .collect();
-
-    // Append the user's feedback to the original prompt
-    composite_task.prompt = format!(
-        "{}\n\n--- Update Plan Request ---\n{}",
-        composite_task.prompt, sanitized_prompt
-    );
-
-    // Clear the old plan
-    composite_task.plan_yaml = None;
-
-    // Create a new planning agent task
-    let mut planning_task = AgentTask::new();
-    planning_task.ai_agent_type = Some(AiAgentType::ClaudeCode);
-    let planning_task = runtime
-        .task_store_arc()
-        .create_agent_task(planning_task)
-        .await?;
-
     // Re-fetch the task to check for concurrent modifications (optimistic lock)
+    // This check is done BEFORE creating the agent task or mutating the
+    // composite task to avoid side effects if a conflict is detected.
     let current_task = runtime
         .task_store_arc()
         .get_composite_task(id)
@@ -1186,6 +1173,19 @@ pub async fn update_plan_with_prompt(
             "Task was modified concurrently. Please try again.".to_string(),
         ));
     }
+
+    // Store the feedback for re-planning. The executor will use the existing
+    // plan_yaml together with this feedback (instead of the original prompt)
+    // to generate a new plan.
+    composite_task.update_plan_feedback = Some(sanitized_prompt);
+
+    // Create a new planning agent task
+    let mut planning_task = AgentTask::new();
+    planning_task.ai_agent_type = Some(AiAgentType::ClaudeCode);
+    let planning_task = runtime
+        .task_store_arc()
+        .create_agent_task(planning_task)
+        .await?;
 
     // Update the composite task with the new planning task and reset status
     composite_task.planning_task_id = planning_task.id;
@@ -2028,42 +2028,33 @@ mod tests {
     // Rate Limiting Tests
     // =========================================================================
 
+    // NOTE: These tests are combined into a single test because they share
+    // global state (LAST_TASK_CREATION_TIME). Running them as separate #[test]
+    // functions causes flaky failures due to parallel execution.
     #[cfg(desktop)]
     #[test]
-    fn test_check_rate_limit_allows_first_call() {
-        // Reset the rate limiter to ensure clean state
-        LAST_TASK_CREATION_TIME.store(0, Ordering::SeqCst);
-        // First call should always succeed
-        assert!(check_rate_limit().is_ok());
-    }
-
-    #[cfg(desktop)]
-    #[test]
-    fn test_check_rate_limit_blocks_rapid_calls() {
+    fn test_check_rate_limit() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        // Set the last creation time to now
+        // Test 1: First call should always succeed
+        LAST_TASK_CREATION_TIME.store(0, Ordering::SeqCst);
+        assert!(check_rate_limit().is_ok());
+
+        // Test 2: Rapid subsequent call should be blocked
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         LAST_TASK_CREATION_TIME.store(now, Ordering::SeqCst);
 
-        // Immediate second call should be blocked
         let result = check_rate_limit();
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
             .contains("Please wait at least"));
-    }
 
-    #[cfg(desktop)]
-    #[test]
-    fn test_check_rate_limit_allows_after_interval() {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        // Set the last creation time to more than MIN_TASK_CREATION_INTERVAL_MS ago
+        // Test 3: Call should succeed after interval has passed
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -2071,7 +2062,6 @@ mod tests {
         let past = now.saturating_sub(MIN_TASK_CREATION_INTERVAL_MS + 100);
         LAST_TASK_CREATION_TIME.store(past, Ordering::SeqCst);
 
-        // Call should succeed after interval has passed
         assert!(check_rate_limit().is_ok());
     }
 }
