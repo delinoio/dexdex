@@ -533,6 +533,12 @@ pub async fn update_plan<S: TaskStore>(
 /// validation errors (cycles, invalid deps, etc.), and resource limits.
 ///
 /// Returns `Ok(plan)` if valid, or an appropriate `ServerError`.
+///
+/// NOTE: This validation is intentionally duplicated here (server API boundary)
+/// and in `LocalExecutor::execute_composite_task_graph` (executor). The server
+/// validates for immediate user feedback when approving via the remote API,
+/// while the executor validates for the desktop (Tauri) code path where
+/// approval bypasses the server. Both paths must reject invalid plans.
 fn validate_composite_task_plan(plan_yaml: &str) -> ServerResult<Plan> {
     let plan = Plan::from_yaml(plan_yaml).map_err(|e| {
         ServerError::Internal(format!("Failed to parse plan YAML: {}", e))
