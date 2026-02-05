@@ -283,19 +283,40 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         };
         let repo_cache = RepositoryCache::new(cache_parent);
 
-        // Compute the worktree path before execution
+        // Compute the expected worktree path
+        let task_id = config.task_id;
         let worktree_path = git_ops::worktree_path_for_task_with_cache(
             repo_cache.worktrees_dir(),
-            &config.task_id.to_string(),
+            &task_id.to_string(),
             &config.branch_name,
         );
 
         let result =
             Self::run_agent_task(config, emitter, tty_manager, repo_cache, false).await;
 
+        // Only return worktree_path if execution succeeded AND worktree actually exists.
+        // This prevents the caller from trying to access a non-existent worktree
+        // if the execution failed before worktree creation.
+        let final_worktree_path = if result.is_success() && worktree_path.exists() {
+            Some(worktree_path)
+        } else {
+            if !result.is_success() {
+                debug!(
+                    "Execution failed, not returning worktree path for task {}",
+                    task_id
+                );
+            } else if !worktree_path.exists() {
+                warn!(
+                    "Worktree path does not exist after successful execution: {:?}",
+                    worktree_path
+                );
+            }
+            None
+        };
+
         ExecutionResultWithWorktree {
             result,
-            worktree_path: Some(worktree_path),
+            worktree_path: final_worktree_path,
         }
     }
 
