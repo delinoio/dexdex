@@ -116,9 +116,7 @@ export function useTaskLogs({
     queryKey: taskLogsKeys.logs(agentTaskId),
     queryFn: async () => {
       const afterEventId = lastEventIdRef.current;
-      console.log("[useTaskLogs] Fetching logs for agentTaskId:", agentTaskId, "afterEventId:", afterEventId);
       const result = await getTaskLogs(agentTaskId, afterEventId);
-      console.log("[useTaskLogs] Received", result.events.length, "events, isComplete:", result.isComplete);
       return result;
     },
     enabled: enabled && !!agentTaskId,
@@ -136,7 +134,6 @@ export function useTaskLogs({
     // Only reset if agentTaskId actually changed to a different value
     // Skip the initial mount to avoid resetting before data loads
     if (prevAgentTaskIdRef.current !== agentTaskId) {
-      console.log("[useTaskLogs] agentTaskId changed from", prevAgentTaskIdRef.current, "to", agentTaskId, "- resetting state");
       setEvents([]);
       setLastEventId(undefined);
       lastEventIdRef.current = undefined;
@@ -151,8 +148,6 @@ export function useTaskLogs({
     if (!data?.events || data.events.length === 0) {
       return;
     }
-
-    console.log("[useTaskLogs] Data effect: processing", data.events.length, "events");
 
     // Filter events SYNCHRONOUSLY before calling setEvents
     // This is critical for StrictMode: when the effect runs twice,
@@ -175,16 +170,11 @@ export function useTaskLogs({
       }
     }
 
-    console.log("[useTaskLogs] After filtering, found", newEvents.length, "new events");
-
     // Only call setEvents if we have new events to add
     // This prevents the second StrictMode effect run from overwriting
     // the first run's results with an empty append
     if (newEvents.length > 0) {
-      setEvents((prev) => {
-        console.log("[useTaskLogs] Appending", newEvents.length, "events to", prev.length, "existing");
-        return [...prev, ...newEvents];
-      });
+      setEvents((prev) => [...prev, ...newEvents]);
     }
 
     if (data.lastEventId !== undefined) {

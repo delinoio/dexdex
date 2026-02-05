@@ -36,15 +36,11 @@ export function AgentLogViewer({ agentTaskId, taskStatus, className }: AgentLogV
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  console.log("[AgentLogViewer] Rendering with agentTaskId:", agentTaskId, "taskStatus:", taskStatus);
-
   const { events, isLoading, isComplete, error } = useTaskLogs({
     agentTaskId,
     taskStatus,
     enabled: !!agentTaskId,
   });
-
-  console.log("[AgentLogViewer] useTaskLogs result - events:", events.length, "isLoading:", isLoading, "isComplete:", isComplete, "error:", error);
 
   const { pendingRequest, respond, isResponding } = useTtyInput({
     taskId: agentTaskId,

@@ -1132,7 +1132,6 @@ pub async fn get_task_logs(
         });
     }
 
-    info!("get_task_logs called with agent_task_id: {}", agent_task_id);
     let agent_task_id = Uuid::parse_str(&agent_task_id)
         .map_err(|e| AppError::InvalidRequest(format!("Invalid agent task ID: {}", e)))?;
 
