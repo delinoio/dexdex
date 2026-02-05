@@ -1279,8 +1279,8 @@ impl TaskStore for SqliteTaskStore {
         let node_ids_json = Self::serialize_uuid_vec(&task.node_ids)?;
         sqlx::query(
             "INSERT INTO composite_tasks (id, repository_group_id, planning_task_id, prompt, \
-             title, plan_yaml, node_ids, status, execution_agent_type, created_at, updated_at) VALUES (?, ?, \
-             ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             title, plan_yaml, node_ids, status, execution_agent_type, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(task.id.to_string())
         .bind(task.repository_group_id.to_string())
@@ -1417,8 +1417,8 @@ impl TaskStore for SqliteTaskStore {
         let node_ids_json = Self::serialize_uuid_vec(&task.node_ids)?;
         let result = sqlx::query(
             "UPDATE composite_tasks SET repository_group_id = ?, planning_task_id = ?, prompt = \
-             ?, title = ?, plan_yaml = ?, node_ids = ?, status = ?, execution_agent_type = ?, updated_at = ? \
-             WHERE id = ?",
+             ?, title = ?, plan_yaml = ?, node_ids = ?, status = ?, execution_agent_type = ?, \
+             updated_at = ? WHERE id = ?",
         )
         .bind(task.repository_group_id.to_string())
         .bind(task.planning_task_id.to_string())

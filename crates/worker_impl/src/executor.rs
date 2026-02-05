@@ -3,7 +3,11 @@
 //! This module provides the `LocalExecutor` which wraps the core `TaskExecutor`
 //! from the `coding_agents` crate with platform-specific event emission.
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
@@ -15,7 +19,6 @@ use coding_agents::{
     },
 };
 use entities::{AgentSession, AiAgentType, CompositeTaskStatus, UnitTaskStatus};
-use git_ops::RepositoryCache;
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -546,7 +549,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     };
 
                     // Update composite task with plan_yaml and status
-                    // If PLAN.yaml is missing, fail the task since planning didn't complete properly
+                    // If PLAN.yaml is missing, fail the task since planning didn't complete
+                    // properly
                     if let Ok(Some(mut composite_task)) =
                         task_store.get_composite_task(composite_task_id).await
                     {
@@ -574,10 +578,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                             composite_task.status = CompositeTaskStatus::Failed;
                             composite_task.updated_at = Utc::now();
                             if let Err(e) = task_store.update_composite_task(composite_task).await {
-                                error!(
-                                    "Failed to update composite task status to Failed: {}",
-                                    e
-                                );
+                                error!("Failed to update composite task status to Failed: {}", e);
                             }
                         }
                     }
@@ -640,10 +641,11 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
     /// Reads the PLAN.yaml file from a worktree directory.
     ///
-    /// The planning agent generates a file named `PLAN-{random}.yaml` in the worktree root.
-    /// This method finds and reads the first matching file. If multiple files match,
-    /// they are sorted alphabetically for deterministic behavior.
-    async fn read_plan_yaml_from_worktree(worktree_path: &PathBuf) -> Option<String> {
+    /// The planning agent generates a file named `PLAN-{random}.yaml` in the
+    /// worktree root. This method finds and reads the first matching file.
+    /// If multiple files match, they are sorted alphabetically for
+    /// deterministic behavior.
+    async fn read_plan_yaml_from_worktree(worktree_path: &Path) -> Option<String> {
         // Look for PLAN-*.yaml files in the worktree root
         let pattern = worktree_path.join("PLAN-*.yaml");
         let pattern_str = pattern.to_string_lossy();
@@ -659,7 +661,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
                 if valid_paths.len() > 1 {
                     warn!(
-                        "Multiple PLAN.yaml files found ({} files), using first (alphabetically): {:?}",
+                        "Multiple PLAN.yaml files found ({} files), using first (alphabetically): \
+                         {:?}",
                         valid_paths.len(),
                         valid_paths.first()
                     );
@@ -681,10 +684,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                         }
                     }
                 }
-                warn!(
-                    "No PLAN.yaml files found matching pattern: {}",
-                    pattern_str
-                );
+                warn!("No PLAN.yaml files found matching pattern: {}", pattern_str);
                 None
             }
             Err(e) => {

@@ -43,8 +43,9 @@ pub enum ExecutionResult {
 
 /// Result of a task execution with worktree path.
 ///
-/// This is returned by `execute_and_wait_without_cleanup` and includes the worktree path
-/// so the caller can access files in the worktree before cleaning it up.
+/// This is returned by `execute_and_wait_without_cleanup` and includes the
+/// worktree path so the caller can access files in the worktree before cleaning
+/// it up.
 #[derive(Debug, Clone)]
 pub struct ExecutionResultWithWorktree {
     /// The execution result.
@@ -218,8 +219,7 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
 
         // Spawn the execution task
         let handle = tokio::spawn(async move {
-            let result =
-                Self::run_agent_task(config, emitter, tty_manager, repo_cache, true).await;
+            let result = Self::run_agent_task(config, emitter, tty_manager, repo_cache, true).await;
 
             // Clean up the cleanup info after task completion
             let mut cleanup_info = task_cleanup_info.write().await;
@@ -257,10 +257,10 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
 
     /// Executes a task without automatically cleaning up the worktree.
     ///
-    /// This method is useful when the caller needs to access files in the worktree
-    /// after execution completes (e.g., reading PLAN.yaml for composite tasks).
-    /// The caller is responsible for cleaning up the worktree using
-    /// `RepositoryCache::remove_worktree_for_task`.
+    /// This method is useful when the caller needs to access files in the
+    /// worktree after execution completes (e.g., reading PLAN.yaml for
+    /// composite tasks). The caller is responsible for cleaning up the
+    /// worktree using `RepositoryCache::remove_worktree_for_task`.
     ///
     /// Returns the execution result along with the worktree path.
     pub async fn execute_and_wait_without_cleanup(
@@ -291,12 +291,11 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             &config.branch_name,
         );
 
-        let result =
-            Self::run_agent_task(config, emitter, tty_manager, repo_cache, false).await;
+        let result = Self::run_agent_task(config, emitter, tty_manager, repo_cache, false).await;
 
-        // Only return worktree_path if execution succeeded AND worktree actually exists.
-        // This prevents the caller from trying to access a non-existent worktree
-        // if the execution failed before worktree creation.
+        // Only return worktree_path if execution succeeded AND worktree actually
+        // exists. This prevents the caller from trying to access a non-existent
+        // worktree if the execution failed before worktree creation.
         let final_worktree_path = if result.is_success() && worktree_path.exists() {
             Some(worktree_path)
         } else {
@@ -360,8 +359,9 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
     /// Runs the agent task (internal implementation).
     ///
     /// # Arguments
-    /// * `cleanup_worktree` - If true, the worktree will be cleaned up after execution.
-    ///   Set to false when the caller needs to access files in the worktree after execution.
+    /// * `cleanup_worktree` - If true, the worktree will be cleaned up after
+    ///   execution. Set to false when the caller needs to access files in the
+    ///   worktree after execution.
     async fn run_agent_task(
         config: TaskExecutionConfig,
         emitter: Arc<E>,
