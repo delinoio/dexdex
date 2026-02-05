@@ -53,6 +53,7 @@ export function CompositeTaskDetail() {
 
   // Fetch planning task logs to get token usage for the planning phase
   const { events: planningEvents } = useTaskLogs({
+    taskId: task?.id ?? "",
     agentTaskId: task?.planningTaskId ?? "",
     taskStatus: task?.status === CompositeTaskStatus.Planning
       ? UnitTaskStatus.InProgress
@@ -230,6 +231,7 @@ export function CompositeTaskDetail() {
               </CardHeader>
               <CardContent>
                 <AgentLogViewer
+                  taskId={task.id}
                   agentTaskId={task.planningTaskId}
                   taskStatus={UnitTaskStatus.InProgress}
                   className="min-h-64 max-h-[500px]"

@@ -20,6 +20,9 @@ export const taskLogsKeys = {
 };
 
 interface UseTaskLogsOptions {
+  /** The unit/composite task ID used for matching real-time Tauri events. */
+  taskId: string;
+  /** The agent task ID used for fetching persisted logs from the database. */
   agentTaskId: string;
   taskStatus: UnitTaskStatus;
   enabled?: boolean;
@@ -45,6 +48,7 @@ interface UseTaskLogsResult {
  * real-time, so the frontend receives updates immediately.
  */
 export function useTaskLogs({
+  taskId,
   agentTaskId,
   taskStatus,
   enabled = true,
@@ -53,12 +57,9 @@ export function useTaskLogs({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const eventIdCounter = useRef(0);
-  // Track the last event ID from the initial fetch so real-time events
-  // appended after that point are not duplicated.
+  // Track whether the initial fetch has completed so that real-time events
+  // arriving before the fetch finishes do not cause confusion.
   const initialFetchDone = useRef(false);
-  // Set of IDs from the initial fetch, used to skip duplicates from
-  // real-time events that may have arrived during the fetch.
-  const knownEventIds = useRef(new Set<string | number>());
 
   // Track if task is complete based on status
   const isComplete = taskStatus !== "in_progress";
@@ -79,12 +80,6 @@ export function useTaskLogs({
         if (cancelled) return;
 
         if (result.events.length > 0) {
-          // Store IDs from the fetch to deduplicate against real-time events
-          const ids = new Set<string | number>();
-          for (const e of result.events) {
-            ids.add(e.id);
-          }
-          knownEventIds.current = ids;
           setEvents(result.events);
           eventIdCounter.current = result.events.length;
         }
@@ -115,7 +110,6 @@ export function useTaskLogs({
       setEvents([]);
       setError(null);
       eventIdCounter.current = 0;
-      knownEventIds.current = new Set();
       initialFetchDone.current = false;
       prevAgentTaskIdRef.current = agentTaskId;
     }
@@ -134,15 +128,17 @@ export function useTaskLogs({
     [agentTaskId],
   );
 
-  // Listen for real-time agent output events
+  // Listen for real-time agent output events.
+  // The backend emits events with the unit/composite task ID (not the agent
+  // task ID), so we filter by `taskId` here.
   useEffect(() => {
-    if (!enabled || !agentTaskId) return;
+    if (!enabled || !taskId) return;
 
     let unlisten: UnlistenFn | undefined;
 
     const setupListener = async () => {
       unlisten = await listen<AgentOutputEvent>("agent-output", (event) => {
-        if (event.payload.taskId !== agentTaskId) return;
+        if (event.payload.taskId !== taskId) return;
         appendEvent(event.payload.event);
       });
     };
@@ -156,7 +152,7 @@ export function useTaskLogs({
         unlisten();
       }
     };
-  }, [agentTaskId, enabled, appendEvent]);
+  }, [taskId, enabled, appendEvent]);
 
   return {
     events,

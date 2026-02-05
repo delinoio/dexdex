@@ -17,14 +17,13 @@ import type { TaskStatusChangedEvent, TaskCompletedEvent } from "@/api/types";
  */
 export function useTaskStatusEvents(): void {
   const queryClient = useQueryClient();
-  const initialized = useRef(false);
+  // Store unlisteners in a ref so the cleanup function can access them
+  // even when setup() resolves after the effect cleanup runs (e.g. in
+  // React 18 StrictMode).
+  const unlistenersRef = useRef<UnlistenFn[]>([]);
 
   useEffect(() => {
-    // Guard against double-invocation in React 18 strict mode.
-    if (initialized.current) return;
-    initialized.current = true;
-
-    const unlisteners: UnlistenFn[] = [];
+    let cancelled = false;
 
     async function setup() {
       try {
@@ -37,7 +36,12 @@ export function useTaskStatusEvents(): void {
             queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
           },
         );
-        unlisteners.push(unlistenStatus);
+
+        if (cancelled) {
+          unlistenStatus();
+          return;
+        }
+        unlistenersRef.current.push(unlistenStatus);
 
         // When a task completes, invalidate its detail and the list views
         const unlistenCompleted = await listen<TaskCompletedEvent>(
@@ -48,7 +52,12 @@ export function useTaskStatusEvents(): void {
             queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
           },
         );
-        unlisteners.push(unlistenCompleted);
+
+        if (cancelled) {
+          unlistenCompleted();
+          return;
+        }
+        unlistenersRef.current.push(unlistenCompleted);
       } catch {
         // Not in Tauri context (browser dev mode)
       }
@@ -57,10 +66,11 @@ export function useTaskStatusEvents(): void {
     setup();
 
     return () => {
-      for (const unlisten of unlisteners) {
+      cancelled = true;
+      for (const unlisten of unlistenersRef.current) {
         unlisten();
       }
+      unlistenersRef.current = [];
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally runs once on mount; see initialized ref guard above.
-  }, []);
+  }, [queryClient]);
 }
