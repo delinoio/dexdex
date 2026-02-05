@@ -114,6 +114,19 @@ pub enum CompositeTaskStatus {
     Failed,
 }
 
+impl std::fmt::Display for CompositeTaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompositeTaskStatus::Planning => write!(f, "Planning"),
+            CompositeTaskStatus::PendingApproval => write!(f, "PendingApproval"),
+            CompositeTaskStatus::InProgress => write!(f, "InProgress"),
+            CompositeTaskStatus::Done => write!(f, "Done"),
+            CompositeTaskStatus::Rejected => write!(f, "Rejected"),
+            CompositeTaskStatus::Failed => write!(f, "Failed"),
+        }
+    }
+}
+
 /// A node in a CompositeTask graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -304,5 +317,18 @@ mod tests {
         assert_eq!(task.id(), unit_task.id);
         assert_eq!(task.repository_group_id(), repo_group_id);
         assert_eq!(task.prompt(), "Test prompt");
+    }
+
+    #[test]
+    fn test_composite_task_status_display() {
+        assert_eq!(CompositeTaskStatus::Planning.to_string(), "Planning");
+        assert_eq!(
+            CompositeTaskStatus::PendingApproval.to_string(),
+            "PendingApproval"
+        );
+        assert_eq!(CompositeTaskStatus::InProgress.to_string(), "InProgress");
+        assert_eq!(CompositeTaskStatus::Done.to_string(), "Done");
+        assert_eq!(CompositeTaskStatus::Rejected.to_string(), "Rejected");
+        assert_eq!(CompositeTaskStatus::Failed.to_string(), "Failed");
     }
 }

@@ -6,13 +6,23 @@ import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
-import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes, useUpdatePlan } from "@/hooks/useTasks";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { parsePlanYamlToNodes } from "@/lib/planYaml";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Textarea } from "@/components/ui/Textarea";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/Dialog";
         
 interface ProgressSectionProps {
   nodes: CompositeTaskNodeWithUnitTask[];
@@ -49,6 +59,9 @@ export function CompositeTaskDetail() {
   const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useCompositeTaskNodes(id ?? "");
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
+  const updatePlanMutation = useUpdatePlan();
+  const [updatePlanOpen, setUpdatePlanOpen] = useState(false);
+  const [updatePlanPrompt, setUpdatePlanPrompt] = useState("");
 
   const task = data?.compositeTask;
 
@@ -123,6 +136,16 @@ export function CompositeTaskDetail() {
 
   const handleRejectPlan = async () => {
     await rejectMutation.mutateAsync({ taskId: task.id });
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!updatePlanPrompt.trim()) return;
+    await updatePlanMutation.mutateAsync({
+      taskId: task.id,
+      prompt: updatePlanPrompt.trim(),
+    });
+    setUpdatePlanPrompt("");
+    setUpdatePlanOpen(false);
   };
 
   const getStatusBadgeVariant = (status: CompositeTaskStatus) => {
@@ -284,7 +307,41 @@ export function CompositeTaskDetail() {
                 <Button onClick={handleApprovePlan} disabled={approveMutation.isPending}>
                   {approveMutation.isPending ? "Approving..." : "Approve Plan"}
                 </Button>
-                <Button variant="outline">View PLAN.yaml</Button>
+                <Dialog open={updatePlanOpen} onOpenChange={setUpdatePlanOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" type="button">Update Plan</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Update Plan</DialogTitle>
+                      <DialogDescription>
+                        Describe what changes you want in the plan. The planning agent will
+                        re-generate the plan with your feedback.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                      placeholder="e.g., Split the database task into two separate tasks..."
+                      value={updatePlanPrompt}
+                      onChange={(e) => setUpdatePlanPrompt(e.target.value)}
+                      rows={4}
+                      maxLength={100000}
+                    />
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setUpdatePlanOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleUpdatePlan}
+                        disabled={updatePlanMutation.isPending || !updatePlanPrompt.trim()}
+                      >
+                        {updatePlanMutation.isPending ? "Updating..." : "Update Plan"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 <Button
                   variant="destructive"
                   onClick={handleRejectPlan}

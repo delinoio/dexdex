@@ -703,7 +703,13 @@ Planning agent starts immediately (status: planning)
 │ pending_approval│ failed             │
 └────────┬────────┴────────┬───────────┘
          ▼                 │
-User reviews and approves  │ (User can retry or discard)
+User reviews plan          │ (User can retry or discard)
+  ├─ Approve → in_progress │
+  ├─ Update Plan ──────────┼──► Re-plan with feedback
+  │   (appends feedback    │    (status → planning)
+  │    to prompt, resets   │
+  │    to planning status) │
+  └─ Reject → rejected     │
          ▼                 │
 Status: in_progress        │
          ▼                 │
@@ -734,6 +740,8 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 7. Updates composite task status to `pending_approval` on success or `failed` on error
 8. Emits `task-status-changed` and `task-completed` events so the frontend updates automatically
 
+
+
 The graph execution after approval is handled by `LocalExecutor::execute_composite_task_graph()`, which:
 1. Parses `plan_yaml` into task definitions
 2. Creates `AgentTask`, `UnitTask`, and `CompositeTaskNode` records for each plan task
@@ -741,6 +749,20 @@ The graph execution after approval is handled by `LocalExecutor::execute_composi
 4. Starts executing root tasks (tasks with no dependencies) immediately
 5. Spawns a monitoring task that periodically checks for newly ready tasks as dependencies complete
 6. When all tasks reach a terminal state, marks the composite task as `done` (if all succeeded) or `failed` (if any failed)
+
+
+**Update Plan:**
+
+When a composite task is in `pending_approval` or `failed` state, the user can request plan updates via the "Update Plan" button. This:
+1. Appends the user's feedback to the original prompt
+2. Clears the existing `plan_yaml`
+3. Creates a new planning `AgentTask`
+4. Resets status to `planning`
+5. Re-triggers `LocalExecutor::execute_composite_task()` with the updated prompt
+
+The `update_plan_with_prompt` Tauri command handles this flow.
+
+
 
 **PLAN.yaml Persistence:**
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`

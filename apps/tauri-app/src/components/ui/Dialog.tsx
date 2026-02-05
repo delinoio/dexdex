@@ -8,6 +8,8 @@ import {
   useEffect,
   useCallback,
   useId,
+  cloneElement,
+  isValidElement,
 } from "react";
 import { cn } from "@/lib/utils";
 import { CloseIcon } from "./Icons";
@@ -81,6 +83,19 @@ function DialogTrigger({ children, asChild, ...props }: DialogTriggerProps) {
       triggerRef.current = buttonRef.current;
     }
   }, [triggerRef]);
+
+  if (asChild && isValidElement(children)) {
+    return cloneElement(children as React.ReactElement<Record<string, unknown>>, {
+      ref: buttonRef,
+      onClick: (e: React.MouseEvent) => {
+        const childProps = (children as React.ReactElement<Record<string, unknown>>).props;
+        if (typeof childProps.onClick === "function") {
+          (childProps.onClick as (e: React.MouseEvent) => void)(e);
+        }
+        setOpen(true);
+      },
+    });
+  }
 
   return (
     <button ref={buttonRef} type="button" onClick={() => setOpen(true)} {...props}>

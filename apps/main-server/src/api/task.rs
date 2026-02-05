@@ -552,6 +552,70 @@ pub async fn reject_task<S: TaskStore>(
     Err(ServerError::NotFound("Task not found".to_string()))
 }
 
+/// Updates the plan for a composite task by appending feedback and resetting to
+/// Planning status.
+pub async fn update_plan<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<UpdatePlanRequest>,
+) -> ServerResult<Json<UpdatePlanResponse>> {
+    let task_id: Uuid = request
+        .task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    let mut task = state
+        .store
+        .get_composite_task(task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Composite task not found".to_string()))?;
+
+    // Only allow re-planning from PendingApproval or Failed states
+    let previous_status = task.status;
+    if previous_status != EntityCompositeTaskStatus::PendingApproval
+        && previous_status != EntityCompositeTaskStatus::Failed
+    {
+        return Err(ServerError::InvalidRequest(format!(
+            "Cannot update plan: task is in {} status (must be PendingApproval or Failed)",
+            previous_status
+        )));
+    }
+
+    // Sanitize the feedback prompt: remove null bytes and other control characters
+    // (except newlines and tabs which are valid in prompts)
+    let sanitized_prompt: String = request
+        .prompt
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect();
+
+    // Append feedback to the prompt and reset to Planning
+    task.prompt = format!(
+        "{}\n\n--- Update Plan Request ---\n{}",
+        task.prompt, sanitized_prompt
+    );
+    task.plan_yaml = None;
+    task.status = EntityCompositeTaskStatus::Planning;
+    task.updated_at = chrono::Utc::now();
+
+    // Create a new planning agent task
+    let planning_agent_task = AgentTask::new();
+    let planning_agent_task = state.store.create_agent_task(planning_agent_task).await?;
+    task.planning_task_id = planning_agent_task.id;
+
+    let task = state.store.update_composite_task(task).await?;
+
+    tracing::info!(
+        task_id = %task_id,
+        prompt_length = request.prompt.len(),
+        previous_status = %previous_status,
+        "Plan updated for re-planning"
+    );
+
+    Ok(Json(UpdatePlanResponse {
+        task: entity_to_rpc_composite_task(&task),
+    }))
+}
+
 /// Requests changes on a task.
 pub async fn request_changes<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
