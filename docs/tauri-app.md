@@ -88,8 +88,8 @@ When a unit task is created in local mode:
 4. **Event Streaming**:
    - Stdout/stderr parsed into `NormalizedEvent` types
    - Events emitted via Tauri `agent-output` channel for real-time display
-   - Events incrementally persisted to `agent_session.output_log` (every 10 events)
-   - Final persistence on task completion ensures all events are stored
+   - Events accumulated in memory and persisted to `agent_session.output_log` on task completion
+   - `task-status-changed` and `task-completed` events drive automatic react-query cache invalidation
 5. **Completion**: Task status updated to `InReview` when agent finishes
 
 > **Note**: Interactive TTY input (e.g., `AskUserQuestion` prompts) is not currently supported. Agents run in non-interactive mode with stdin closed.

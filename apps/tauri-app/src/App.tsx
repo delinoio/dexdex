@@ -18,6 +18,7 @@ import {
 } from "@/pages";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
+import { useTaskEvents } from "@/hooks/useTaskEvents";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +34,8 @@ function AppRoutes() {
   useKeyboardShortcuts();
   // Request notification permission on startup
   useNotificationPermission();
+  // Listen for task status/completion events and invalidate query caches
+  useTaskEvents();
 
   return (
     <>

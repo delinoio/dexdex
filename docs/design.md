@@ -105,8 +105,21 @@ For desktop usage, all components can run in a single process for a seamless loc
 | Layer | Protocol |
 |-------|----------|
 | Client ↔ Main Server | Connect RPC over HTTP |
-| Frontend State | react-query for data fetching |
+| Frontend State | react-query for data fetching, Tauri events for real-time updates |
 | Client ↔ Worker | **Not allowed** - all communication goes through Main Server |
+
+### Event System (Single Process Mode)
+
+In single-process mode, the frontend receives real-time updates through the Tauri event system rather than polling:
+
+| Event | Emitted When | Frontend Behavior |
+|-------|-------------|-------------------|
+| `agent-output` | AI agent produces output | Appended to live log stream |
+| `task-status-changed` | Task status transitions | Invalidates task detail and list queries |
+| `task-completed` | Task execution finishes | Invalidates task detail and list queries |
+| `tty-input-request` | Agent needs user input | Shows interactive input dialog |
+
+**Log Recovery:** On page reload, the frontend performs a single fetch of persisted logs from the database. All subsequent updates arrive via events. Logs are persisted to the database once when a task completes.
 
 ---
 
@@ -143,7 +156,7 @@ For desktop usage, all components can run in a single process for a seamless loc
 | `git_ops` | Git operations, worktree management & repository caching |
 | `auth` | JWT authentication & RBAC |
 | `secrets` | Cross-platform keychain access |
-| `worker_impl` | Local worker implementation with incremental log persistence for single-process mode task execution |
+| `worker_impl` | Local worker implementation with event-driven log streaming and final persistence for single-process mode task execution |
 
 ### Frontend (React + TypeScript)
 

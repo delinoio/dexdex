@@ -26,11 +26,12 @@ use uuid::Uuid;
 
 use crate::{TtyInputRequestManager, error::WorkerError, planning_prompt::build_planning_prompt};
 
-/// A wrapper emitter that both emits events to an inner emitter AND persists
-/// them to the database incrementally.
+/// A wrapper emitter that both emits events to an inner emitter AND accumulates
+/// them for final persistence to the database when the task completes.
 ///
-/// This ensures that events are available via polling even if the frontend
-/// misses the real-time events due to race conditions (e.g., page load).
+/// Events are delivered in real-time via the inner emitter (e.g., Tauri events)
+/// and accumulated in memory. On task completion, all events are persisted to
+/// the database so they can be loaded on page reload.
 struct PersistingEventEmitter<E: EventEmitter> {
     /// The inner emitter for real-time event delivery.
     inner: Arc<E>,
@@ -86,16 +87,13 @@ impl<E: EventEmitter> EventEmitter for PersistingEventEmitter<E> {
     }
 
     fn emit_agent_output(&self, event: AgentOutputEvent) -> AgentResult<()> {
-        // Persist the event to the log buffer
+        // Accumulate the event in the log buffer for final persistence
         let timestamped = TimestampedEvent {
             timestamp: Utc::now(),
             event: event.event.clone(),
         };
         match serde_json::to_string(&timestamped) {
             Ok(json) => {
-                let task_store = self.task_store.clone();
-                let session_id = self.session_id;
-
                 // Use try_lock to avoid blocking if possible.
                 // If lock is contended, we use blocking_lock since this is called from
                 // a sync context within an async runtime. The lock should be held briefly.
@@ -109,31 +107,6 @@ impl<E: EventEmitter> EventEmitter for PersistingEventEmitter<E> {
                     }
                 };
                 logs.push(json);
-                let logs_count = logs.len();
-
-                // Spawn incremental persistence every 10 events
-                if logs_count % 10 == 0 {
-                    let output_log = logs.join("\n");
-                    drop(logs); // Release lock before spawning
-                    tokio::spawn(async move {
-                        if let Ok(Some(mut session)) =
-                            task_store.get_agent_session(session_id).await
-                        {
-                            session.output_log = Some(output_log);
-                            if let Err(e) = task_store.update_agent_session(session).await {
-                                warn!(
-                                    "Failed to persist incremental logs for session {}: {}",
-                                    session_id, e
-                                );
-                            } else {
-                                debug!(
-                                    "Incrementally persisted logs for session {} ({} events)",
-                                    session_id, logs_count
-                                );
-                            }
-                        }
-                    });
-                }
             }
             Err(e) => {
                 warn!(
@@ -143,7 +116,7 @@ impl<E: EventEmitter> EventEmitter for PersistingEventEmitter<E> {
             }
         }
 
-        // Always emit to the inner emitter for real-time delivery
+        // Emit to the inner emitter for real-time delivery
         self.inner.emit_agent_output(event)
     }
 
