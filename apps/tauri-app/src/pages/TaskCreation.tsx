@@ -158,13 +158,25 @@ export function TaskCreation() {
     try {
       let effectiveGroupId = selection;
 
-      // If an individual repository is selected, create a repository group for it
+      // If an individual repository is selected, find or create a repository group for it
       if (isRepositorySelected && selectedRepositoryId) {
-        const newGroup = await createRepositoryGroup.mutateAsync({
-          repositoryIds: [selectedRepositoryId],
-          // No name - it will show the repository name as title
-        });
-        effectiveGroupId = newGroup.id;
+        // Check if an existing unnamed single-repo group already contains this repository
+        const existingGroup = groups.find(
+          (g) =>
+            !g.name &&
+            g.repositoryIds.length === 1 &&
+            g.repositoryIds[0] === selectedRepositoryId
+        );
+
+        if (existingGroup) {
+          effectiveGroupId = existingGroup.id;
+        } else {
+          const newGroup = await createRepositoryGroup.mutateAsync({
+            repositoryIds: [selectedRepositoryId],
+            // No name - it will show the repository name as title
+          });
+          effectiveGroupId = newGroup.id;
+        }
       }
 
       if (isComposite) {
