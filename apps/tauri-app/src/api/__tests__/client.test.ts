@@ -10,6 +10,8 @@ import {
   approveTask,
   rejectTask,
   requestChanges,
+  updatePlanWithPrompt,
+  cancelTask,
   addRepository,
   listRepositories,
   removeRepository,
@@ -144,6 +146,25 @@ describe("API Client", () => {
         taskId: "task-1",
         feedback: "Please fix this",
       });
+    });
+
+    it("updatePlanWithPrompt calls invoke with correct parameters", async () => {
+      vi.mocked(invoke).mockResolvedValue(undefined);
+
+      await updatePlanWithPrompt("composite-1", "Split the tasks differently");
+
+      expect(invoke).toHaveBeenCalledWith("update_plan_with_prompt", {
+        taskId: "composite-1",
+        prompt: "Split the tasks differently",
+      });
+    });
+
+    it("cancelTask calls invoke with correct taskId", async () => {
+      vi.mocked(invoke).mockResolvedValue(undefined);
+
+      await cancelTask("task-1");
+
+      expect(invoke).toHaveBeenCalledWith("cancel_task", { taskId: "task-1" });
     });
   });
 

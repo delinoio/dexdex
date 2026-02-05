@@ -703,7 +703,13 @@ Planning agent starts immediately (status: planning)
 │ pending_approval│ failed             │
 └────────┬────────┴────────┬───────────┘
          ▼                 │
-User reviews and approves  │ (User can retry or discard)
+User reviews plan          │ (User can retry or discard)
+  ├─ Approve → in_progress │
+  ├─ Update Plan ──────────┼──► Re-plan with feedback
+  │   (appends feedback    │    (status → planning)
+  │    to prompt, resets   │
+  │    to planning status) │
+  └─ Reject → rejected     │
          ▼                 │
 Status: in_progress        │
          ▼                 │
@@ -723,6 +729,17 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 6. Cleans up the planning worktree immediately after persisting (not kept until task completion)
 7. Updates composite task status to `pending_approval` on success or `failed` on error
 8. Emits `task-status-changed` and `task-completed` events so the frontend updates automatically
+
+**Update Plan:**
+
+When a composite task is in `pending_approval` or `failed` state, the user can request plan updates via the "Update Plan" button. This:
+1. Appends the user's feedback to the original prompt
+2. Clears the existing `plan_yaml`
+3. Creates a new planning `AgentTask`
+4. Resets status to `planning`
+5. Re-triggers `LocalExecutor::execute_composite_task()` with the updated prompt
+
+The `update_plan_with_prompt` Tauri command handles this flow.
 
 **PLAN.yaml Persistence:**
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`

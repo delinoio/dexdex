@@ -75,6 +75,12 @@ pub struct RequestChangesRequest {
     pub feedback: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatePlanRequest {
+    pub task_id: String,
+    pub prompt: String,
+}
+
 // ============================================================================
 // Session Service Requests
 // ============================================================================

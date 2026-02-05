@@ -11,6 +11,7 @@ import {
   useRejectTask,
   useRequestChanges,
   useCancelTask,
+  useUpdatePlan,
   taskKeys,
 } from "../useTasks";
 import * as client from "@/api/client";
@@ -27,6 +28,8 @@ vi.mock("@/api/client", () => ({
   rejectTask: vi.fn(),
   requestChanges: vi.fn(),
   cancelTask: vi.fn(),
+  updatePlanWithPrompt: vi.fn(),
+  getCompositeTaskNodes: vi.fn(),
 }));
 
 const mockUnitTask: UnitTask = {
@@ -253,6 +256,29 @@ describe("useTasks hooks", () => {
       const { result } = renderHook(() => useCancelTask(), { wrapper: createWrapper() });
 
       await expect(result.current.mutateAsync("task-1")).rejects.toThrow("Failed to cancel task");
+    });
+  });
+
+  describe("useUpdatePlan", () => {
+    it("updates plan with prompt successfully", async () => {
+      vi.mocked(client.updatePlanWithPrompt).mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => useUpdatePlan(), { wrapper: createWrapper() });
+
+      await result.current.mutateAsync({ taskId: "composite-1", prompt: "Split into more tasks" });
+
+      expect(client.updatePlanWithPrompt).toHaveBeenCalledWith("composite-1", "Split into more tasks");
+    });
+
+    it("handles update plan error", async () => {
+      const error = new Error("Failed to update plan");
+      vi.mocked(client.updatePlanWithPrompt).mockRejectedValue(error);
+
+      const { result } = renderHook(() => useUpdatePlan(), { wrapper: createWrapper() });
+
+      await expect(
+        result.current.mutateAsync({ taskId: "composite-1", prompt: "feedback" })
+      ).rejects.toThrow("Failed to update plan");
     });
   });
 });
