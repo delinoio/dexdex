@@ -680,7 +680,8 @@ System creates planningTask (AgentTask) and session
 Planning agent starts immediately (status: planning)
         ▼
 ┌────────────────────────────────────────────────────┐
-│ Planning agent generates PLAN-{random}.yaml        │
+│ Worker generates PLAN-{random}.yaml filename       │
+│ Planning agent creates file with that name         │
 │ - Real-time logs streamed to UI via AgentLogViewer │
 │ - Logs persisted incrementally to database         │
 └────────────────────────────────────────────────────┘
@@ -715,11 +716,12 @@ All tasks done             │
 
 The planning agent execution is handled by `LocalExecutor::execute_composite_task()`, which:
 1. Creates an agent session for the planning task
-2. Spawns a background task for execution
-3. Uses `PersistingEventEmitter` for real-time streaming and incremental log persistence
-4. On success, reads `PLAN-{random}.yaml` from the worktree and persists to `plan_yaml` field
-5. Cleans up the planning worktree immediately after persisting (not kept until task completion)
-6. Updates composite task status to `pending_approval` on success or `failed` on error
+2. Generates a deterministic `PLAN-{random}.yaml` filename before building the prompt
+3. Spawns a background task for execution
+4. Uses `PersistingEventEmitter` for real-time streaming and incremental log persistence
+5. On success, reads the pre-determined plan file from the worktree (with glob fallback) and persists to `plan_yaml` field
+6. Cleans up the planning worktree immediately after persisting (not kept until task completion)
+7. Updates composite task status to `pending_approval` on success or `failed` on error
 
 **PLAN.yaml Persistence:**
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`

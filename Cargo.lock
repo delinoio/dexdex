@@ -7314,6 +7314,7 @@ dependencies = [
  "entities",
  "git_ops",
  "glob",
+ "rand 0.9.2",
  "serde",
  "serde_json",
  "task_store",

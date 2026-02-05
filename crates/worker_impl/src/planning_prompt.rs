@@ -11,16 +11,17 @@
 ///
 /// # Arguments
 /// * `user_prompt` - The user's original request/prompt
+/// * `plan_file_name` - The pre-determined filename for the plan YAML (e.g., "PLAN-a1b2c3.yaml")
 ///
 /// # Returns
 /// A complete prompt string that instructs the AI agent to generate PLAN.yaml
-pub fn build_planning_prompt(user_prompt: &str) -> String {
+pub fn build_planning_prompt(user_prompt: &str, plan_file_name: &str) -> String {
     format!(
         r#"You are a planning agent for DeliDev, an AI coding orchestration tool. Your task is to analyze the user's request and generate a PLAN.yaml file that breaks down the work into smaller, executable tasks.
 
 ## Your Goal
 
-Create a file named `PLAN-{{random}}.yaml` (where {{random}} is a short random string like `a1b2c3`) in the repository root that defines a task graph for the AI coding agents to execute.
+Create a file named `{plan_file_name}` in the repository root that defines a task graph for the AI coding agents to execute.
 
 ## PLAN.yaml Format
 
@@ -108,11 +109,12 @@ Instructions:
 1. First, explore the codebase to understand its structure and existing patterns
 2. Break down the user's request into logical, focused tasks
 3. Identify dependencies between tasks
-4. Create the PLAN.yaml file in the repository root with a random suffix (e.g., PLAN-x7k9m2.yaml)
+4. Create the file `{plan_file_name}` in the repository root
 5. Ensure the plan follows best practices for task granularity and parallelization
 
-Create the PLAN.yaml file now."#,
-        user_prompt = user_prompt
+Create the `{plan_file_name}` file now."#,
+        user_prompt = user_prompt,
+        plan_file_name = plan_file_name
     )
 }
 
@@ -123,17 +125,17 @@ mod tests {
     #[test]
     fn test_build_planning_prompt_contains_user_prompt() {
         let user_prompt = "Add user authentication to the app";
-        let full_prompt = build_planning_prompt(user_prompt);
+        let full_prompt = build_planning_prompt(user_prompt, "PLAN-abc123.yaml");
 
         assert!(full_prompt.contains(user_prompt));
     }
 
     #[test]
-    fn test_build_planning_prompt_contains_format_instructions() {
-        let full_prompt = build_planning_prompt("test");
+    fn test_build_planning_prompt_contains_plan_file_name() {
+        let full_prompt = build_planning_prompt("test", "PLAN-x7k9m2.yaml");
 
-        // Check for key format instructions
-        assert!(full_prompt.contains("PLAN-{random}.yaml"));
+        // Check that the specific plan file name is used in the prompt
+        assert!(full_prompt.contains("PLAN-x7k9m2.yaml"));
         assert!(full_prompt.contains("tasks:"));
         assert!(full_prompt.contains("id:"));
         assert!(full_prompt.contains("prompt:"));
@@ -142,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_build_planning_prompt_contains_validation_rules() {
-        let full_prompt = build_planning_prompt("test");
+        let full_prompt = build_planning_prompt("test", "PLAN-abc123.yaml");
 
         assert!(full_prompt.contains("Unique IDs"));
         assert!(full_prompt.contains("Valid References"));
@@ -152,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_build_planning_prompt_contains_example() {
-        let full_prompt = build_planning_prompt("test");
+        let full_prompt = build_planning_prompt("test", "PLAN-abc123.yaml");
 
         // Check for example content
         assert!(full_prompt.contains("setup-db"));
