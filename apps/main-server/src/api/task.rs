@@ -103,6 +103,7 @@ fn entity_to_rpc_composite_task(task: &entities::CompositeTask) -> rpc_protocol:
         planning_task_id: task.planning_task_id.to_string(),
         prompt: task.prompt.clone(),
         title: task.title.clone(),
+        plan_yaml: task.plan_yaml.clone(),
         node_ids: task.node_ids.iter().map(|id| id.to_string()).collect(),
         status: to_rpc_composite_status(task.status),
         execution_agent_type: task.execution_agent_type.map(|t| match t {

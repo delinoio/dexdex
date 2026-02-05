@@ -11,6 +11,10 @@ entities = { path = "../entities" }
 coding_agents = { path = "../coding_agents" }
 task_store = { path = "../task_store" }
 config = { path = "../config" }
+git_ops = { path = "../git_ops" }
+
+# File matching
+glob = "0.3"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
