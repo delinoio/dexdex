@@ -58,50 +58,15 @@ export function useTaskLogs({
   const [error, setError] = useState<Error | null>(null);
   const eventIdCounter = useRef(0);
   // Track whether the initial fetch has completed so that real-time events
-  // arriving before the fetch finishes do not cause confusion.
+  // arriving before the fetch finishes are buffered instead of appended directly.
   const initialFetchDone = useRef(false);
+  // Buffer for real-time events that arrive before the initial fetch completes.
+  // After the fetch finishes we merge these into the state, skipping any that
+  // are already present in the fetched snapshot.
+  const realtimeBuffer = useRef<NormalizedEvent[]>([]);
 
   // Track if task is complete based on status
   const isComplete = taskStatus !== "in_progress";
-
-  // Fetch existing logs once when the component mounts or agentTaskId changes.
-  // This loads any events that were persisted before the component rendered.
-  useEffect(() => {
-    if (!enabled || !agentTaskId) return;
-
-    let cancelled = false;
-    initialFetchDone.current = false;
-
-    const fetchExistingLogs = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await getTaskLogs(agentTaskId);
-        if (cancelled) return;
-
-        if (result.events.length > 0) {
-          setEvents(result.events);
-          eventIdCounter.current = result.events.length;
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("Failed to fetch existing task logs:", err);
-          setError(err instanceof Error ? err : new Error(String(err)));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-          initialFetchDone.current = true;
-        }
-      }
-    };
-
-    fetchExistingLogs();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agentTaskId, enabled]);
 
   // Reset events when agent task changes
   const prevAgentTaskIdRef = useRef(agentTaskId);
@@ -111,13 +76,20 @@ export function useTaskLogs({
       setError(null);
       eventIdCounter.current = 0;
       initialFetchDone.current = false;
+      realtimeBuffer.current = [];
       prevAgentTaskIdRef.current = agentTaskId;
     }
   }, [agentTaskId]);
 
-  // Append a new event from the real-time listener
+  // Append a new event from the real-time listener.
+  // If the initial fetch hasn't completed yet, buffer the event so we can
+  // deduplicate it against the fetched snapshot later.
   const appendEvent = useCallback(
     (normalizedEvent: NormalizedEvent) => {
+      if (!initialFetchDone.current) {
+        realtimeBuffer.current.push(normalizedEvent);
+        return;
+      }
       const newEntry: NormalizedEventEntry = {
         id: `rt-${agentTaskId}-${++eventIdCounter.current}`,
         timestamp: new Date().toISOString(),
@@ -131,6 +103,10 @@ export function useTaskLogs({
   // Listen for real-time agent output events.
   // The backend emits events with the unit/composite task ID (not the agent
   // task ID), so we filter by `taskId` here.
+  //
+  // This effect is placed BEFORE the initial-fetch effect so that the listener
+  // is registered first. Events that arrive while the fetch is in-flight are
+  // buffered (see appendEvent above) and merged after the fetch completes.
   useEffect(() => {
     if (!enabled || !taskId) return;
 
@@ -153,6 +129,71 @@ export function useTaskLogs({
       }
     };
   }, [taskId, enabled, appendEvent]);
+
+  // Fetch existing logs once when the component mounts or agentTaskId changes.
+  // This loads any events that were persisted before the component rendered.
+  // After the fetch we also drain the real-time buffer and append any events
+  // that arrived during the fetch but are not already in the DB snapshot.
+  useEffect(() => {
+    if (!enabled || !agentTaskId) return;
+
+    let cancelled = false;
+    initialFetchDone.current = false;
+    realtimeBuffer.current = [];
+
+    const fetchExistingLogs = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await getTaskLogs(agentTaskId);
+        if (cancelled) return;
+
+        const fetchedEvents = result.events;
+        eventIdCounter.current = fetchedEvents.length;
+
+        // Drain the real-time buffer: create entries for events that arrived
+        // during the fetch. We use a simple heuristic to skip events already
+        // present in the fetched snapshot: compare by serialised JSON of the
+        // NormalizedEvent payload. For large logs this set is small (only
+        // events emitted during the short fetch window).
+        const fetchedFingerprints = new Set(
+          fetchedEvents.map((e) => JSON.stringify(e.event)),
+        );
+        const buffered = realtimeBuffer.current;
+        realtimeBuffer.current = [];
+
+        const newFromBuffer: NormalizedEventEntry[] = [];
+        for (const evt of buffered) {
+          const fp = JSON.stringify(evt);
+          if (!fetchedFingerprints.has(fp)) {
+            newFromBuffer.push({
+              id: `rt-${agentTaskId}-${++eventIdCounter.current}`,
+              timestamp: new Date().toISOString(),
+              event: evt,
+            });
+          }
+        }
+
+        setEvents([...fetchedEvents, ...newFromBuffer]);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to fetch existing task logs:", err);
+          setError(err instanceof Error ? err : new Error(String(err)));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          initialFetchDone.current = true;
+        }
+      }
+    };
+
+    fetchExistingLogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentTaskId, enabled]);
 
   return {
     events,
