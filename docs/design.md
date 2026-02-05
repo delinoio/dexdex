@@ -143,6 +143,7 @@ For desktop usage, all components can run in a single process for a seamless loc
 | `git_ops` | Git operations, worktree management & repository caching |
 | `auth` | JWT authentication & RBAC |
 | `secrets` | Cross-platform keychain access |
+| `plan_parser` | PLAN.yaml parsing, validation, and execution orchestration for CompositeTask plans |
 | `worker_impl` | Local worker implementation with incremental log persistence for single-process mode task execution |
 
 ### Frontend (React + TypeScript)
@@ -704,6 +705,10 @@ Planning agent starts immediately (status: planning)
          ▼                 │
 User reviews and approves  │ (User can retry or discard)
          ▼                 │
+Parse plan_yaml into       │
+CompositeTaskNode +        │
+UnitTask entries           │
+         ▼                 │
 Status: in_progress        │
          ▼                 │
 Execute tasks (parallel    │
@@ -725,6 +730,22 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`
 - This allows the plan to be accessed without the worktree (which is cleaned up immediately)
 - The worktree is cleaned up right after the PLAN.yaml is persisted to conserve disk space
+
+**Plan Approval and Node Creation:**
+When the user approves a composite task (`approve_task` command):
+1. The `plan_yaml` field is parsed using the `plan_parser` crate
+2. For each task in the plan, the system creates:
+   - An `AgentTask` (with the configured execution agent type)
+   - A `UnitTask` (linked to the AgentTask, with prompt, title, and branch name from the plan)
+   - A `CompositeTaskNode` (linking the UnitTask, with dependency references resolved from plan task IDs to node IDs)
+3. The composite task's `node_ids` field is updated with all created node IDs
+4. Status transitions from `pending_approval` to `in_progress`
+
+**Frontend Auto-Polling:**
+- `useTask()` polls every 2 seconds while the task is in an active state (`planning`, `in_progress` for composite; `in_progress` for unit)
+- `useCompositeTaskNodes()` polls every 2 seconds while no nodes exist (waiting for plan approval to create them)
+- `useTasks()` (list) polls every 2 seconds while any task is in an active state
+- Polling automatically stops when tasks reach terminal states, avoiding unnecessary network overhead
 
 ### PR Auto-Management
 

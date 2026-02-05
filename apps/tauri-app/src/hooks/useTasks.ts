@@ -16,6 +16,10 @@ import type {
   CreateUnitTaskParams,
   ListTasksParams,
 } from "@/api/types";
+import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
+
+/// Polling interval for active tasks (in milliseconds).
+const ACTIVE_TASK_POLL_INTERVAL = 2000;
 
 // Query keys
 export const taskKeys = {
@@ -34,6 +38,21 @@ export function useTasks(params: ListTasksParams = {}) {
   return useQuery({
     queryKey: taskKeys.list(params),
     queryFn: () => listTasks(params),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      // Poll while any task is in an active state
+      const hasActiveUnit = data?.unitTasks?.some(
+        (t) => t.status === UnitTaskStatus.InProgress
+      );
+      const hasActiveComposite = data?.compositeTasks?.some(
+        (t) =>
+          t.status === CompositeTaskStatus.Planning ||
+          t.status === CompositeTaskStatus.InProgress
+      );
+      return hasActiveUnit || hasActiveComposite
+        ? ACTIVE_TASK_POLL_INTERVAL
+        : false;
+    },
   });
 }
 
@@ -42,6 +61,17 @@ export function useTask(taskId: string) {
     queryKey: taskKeys.detail(taskId),
     queryFn: () => getTask(taskId),
     enabled: !!taskId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      // Poll while task is in an active state
+      const unitStatus = data?.unitTask?.status;
+      const compositeStatus = data?.compositeTask?.status;
+      const isActive =
+        unitStatus === UnitTaskStatus.InProgress ||
+        compositeStatus === CompositeTaskStatus.Planning ||
+        compositeStatus === CompositeTaskStatus.InProgress;
+      return isActive ? ACTIVE_TASK_POLL_INTERVAL : false;
+    },
   });
 }
 
@@ -50,6 +80,11 @@ export function useCompositeTaskNodes(compositeTaskId: string) {
     queryKey: taskKeys.compositeNodes(compositeTaskId),
     queryFn: () => getCompositeTaskNodes(compositeTaskId),
     enabled: !!compositeTaskId,
+    refetchInterval: (query) => {
+      // Poll while there are no nodes yet (plan may still be generating)
+      const nodes = query.state.data?.nodes;
+      return !nodes || nodes.length === 0 ? ACTIVE_TASK_POLL_INTERVAL : false;
+    },
   });
 }
 
@@ -85,6 +120,9 @@ export function useApproveTask() {
     onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: taskKeys.compositeNodes(taskId),
+      });
     },
   });
 }

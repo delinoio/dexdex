@@ -1,6 +1,8 @@
 //! Task-related Tauri commands.
 
 #[cfg(desktop)]
+use std::collections::HashMap;
+#[cfg(desktop)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -896,6 +898,94 @@ pub async fn approve_task(
     // Try composite task
     if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
         if task.status == CompositeTaskStatus::PendingApproval {
+            // Parse plan_yaml and create CompositeTaskNode + UnitTask entries
+            if let Some(ref plan_yaml) = task.plan_yaml {
+                match plan_parser::Plan::from_yaml(plan_yaml) {
+                    Ok(plan) => {
+                        info!(
+                            "Parsed plan with {} tasks for composite task {}",
+                            plan.task_count(),
+                            id
+                        );
+
+                        let execution_agent_type =
+                            task.execution_agent_type.unwrap_or(AiAgentType::ClaudeCode);
+
+                        // Map from plan task ID -> created CompositeTaskNode ID
+                        // so we can resolve depends_on references
+                        let mut plan_id_to_node_id: HashMap<String, Uuid> = HashMap::new();
+                        let mut node_ids: Vec<Uuid> = Vec::new();
+
+                        for plan_task in &plan.tasks {
+                            // Create an AgentTask for this sub-task
+                            let mut agent_task = AgentTask::new();
+                            agent_task.ai_agent_type = Some(execution_agent_type);
+                            let agent_task = runtime
+                                .task_store_arc()
+                                .create_agent_task(agent_task)
+                                .await?;
+
+                            // Create a UnitTask for this sub-task
+                            let mut unit_task = UnitTask::new(
+                                task.repository_group_id,
+                                agent_task.id,
+                                &plan_task.prompt,
+                            );
+                            if let Some(ref title) = plan_task.title {
+                                unit_task = unit_task.with_title(title.clone());
+                            }
+                            if let Some(ref branch_name) = plan_task.branch_name {
+                                unit_task = unit_task.with_branch_name(branch_name.clone());
+                            }
+                            let unit_task =
+                                runtime.task_store_arc().create_unit_task(unit_task).await?;
+
+                            // Create a CompositeTaskNode linking this unit task
+                            let mut node = CompositeTaskNode::new(id, unit_task.id);
+
+                            // Resolve depends_on from plan task IDs to node IDs
+                            for dep_plan_id in &plan_task.depends_on {
+                                if let Some(&dep_node_id) = plan_id_to_node_id.get(dep_plan_id) {
+                                    node.depends_on(dep_node_id);
+                                } else {
+                                    tracing::warn!(
+                                        "Dependency '{}' not found for task '{}' in composite \
+                                         task {}",
+                                        dep_plan_id,
+                                        plan_task.id,
+                                        id
+                                    );
+                                }
+                            }
+
+                            let node = runtime
+                                .task_store_arc()
+                                .create_composite_task_node(node)
+                                .await?;
+
+                            plan_id_to_node_id.insert(plan_task.id.clone(), node.id);
+                            node_ids.push(node.id);
+
+                            info!(
+                                "Created node {} (unit_task={}) for plan task '{}' in composite \
+                                 task {}",
+                                node.id, unit_task.id, plan_task.id, id
+                            );
+                        }
+
+                        task.node_ids = node_ids;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to parse plan_yaml for composite task {}: {}",
+                            id,
+                            e
+                        );
+                        return Err(AppError::Internal(format!("Failed to parse plan: {}", e)));
+                    }
+                }
+            }
+
             task.status = CompositeTaskStatus::InProgress;
         } else {
             task.status = CompositeTaskStatus::Done;
