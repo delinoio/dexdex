@@ -104,12 +104,20 @@ export function useTaskLogs({
   // Task is complete when status is NOT "in_progress"
   const isComplete = taskStatus !== "in_progress";
 
+  // Use a ref to track lastEventId for the query function
+  // This avoids changing the query key on every fetch, which would reset the cache
+  const lastEventIdRef = useRef<number | undefined>(lastEventId);
+  lastEventIdRef.current = lastEventId;
+
   // Poll for logs
+  // Note: queryKey does NOT include lastEventId to avoid cache invalidation
+  // The lastEventId is passed via ref to the queryFn
   const { data, isLoading, error } = useQuery({
-    queryKey: [...taskLogsKeys.logs(agentTaskId), lastEventId],
+    queryKey: taskLogsKeys.logs(agentTaskId),
     queryFn: async () => {
-      console.log("[useTaskLogs] Fetching logs for agentTaskId:", agentTaskId, "afterEventId:", lastEventId);
-      const result = await getTaskLogs(agentTaskId, lastEventId);
+      const afterEventId = lastEventIdRef.current;
+      console.log("[useTaskLogs] Fetching logs for agentTaskId:", agentTaskId, "afterEventId:", afterEventId);
+      const result = await getTaskLogs(agentTaskId, afterEventId);
       console.log("[useTaskLogs] Received", result.events.length, "events, isComplete:", result.isComplete);
       return result;
     },
@@ -117,9 +125,31 @@ export function useTaskLogs({
     refetchInterval: isComplete ? false : pollingInterval,
   });
 
+  // Track the previous agentTaskId to detect changes
+  const prevAgentTaskIdRef = useRef(agentTaskId);
+
+  // Reset events when agent task changes
+  // IMPORTANT: This effect must be declared BEFORE the data update effect
+  // to ensure proper effect ordering. React runs effects in declaration order,
+  // so this reset runs first when agentTaskId changes.
+  useEffect(() => {
+    // Only reset if agentTaskId actually changed to a different value
+    // Skip the initial mount to avoid resetting before data loads
+    if (prevAgentTaskIdRef.current !== agentTaskId) {
+      console.log("[useTaskLogs] agentTaskId changed from", prevAgentTaskIdRef.current, "to", agentTaskId, "- resetting state");
+      setEvents([]);
+      setLastEventId(undefined);
+      lastEventIdRef.current = undefined;
+      seenFingerprints.current = new Set();
+      eventIdCounter.current = 0;
+      prevAgentTaskIdRef.current = agentTaskId;
+    }
+  }, [agentTaskId]);
+
   // Update events when we receive new data from polling
   useEffect(() => {
     if (data?.events && data.events.length > 0) {
+      console.log("[useTaskLogs] Data effect: processing", data.events.length, "events");
       setEvents((prev) => {
         // Filter out events we've already seen (based on content fingerprint)
         const newEvents = data.events.filter((e) => {
@@ -138,6 +168,7 @@ export function useTaskLogs({
           return true;
         });
 
+        console.log("[useTaskLogs] After filtering, adding", newEvents.length, "new events to", prev.length, "existing");
         if (newEvents.length > 0) {
           return [...prev, ...newEvents];
         }
@@ -197,14 +228,6 @@ export function useTaskLogs({
       }
     };
   }, [agentTaskId, enabled]);
-
-  // Reset events when agent task changes
-  useEffect(() => {
-    setEvents([]);
-    setLastEventId(undefined);
-    seenFingerprints.current = new Set();
-    eventIdCounter.current = 0;
-  }, [agentTaskId]);
 
   // Clean up fingerprint set when task completes to free memory
   useEffect(() => {
