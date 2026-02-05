@@ -704,7 +704,11 @@ Planning agent starts immediately (status: planning)
 └────────┬────────┴────────┬───────────┘
          ▼                 │
 User reviews plan          │ (User can retry or discard)
-  ├─ Approve → in_progress │
+  ├─ Approve ──────────────┤
+  │   1. Validate plan     │
+  │      (cycles, deps,    │
+  │       limits ≤100)     │
+  │   2. → in_progress     │
   ├─ Update Plan ──────────┼──► Re-plan with feedback
   │   (appends feedback    │    (status → planning)
   │    to prompt, resets   │
@@ -713,14 +717,17 @@ User reviews plan          │ (User can retry or discard)
          ▼                 │
 Status: in_progress        │
          ▼                 │
-Parse plan_yaml            │
-Create CompositeTaskNode   │
+Executor parses plan_yaml  │
+Validates plan again       │
+Creates CompositeTaskNode  │
 + UnitTask records         │
+(with cleanup on error)    │
          ▼                 │
 Start root tasks           │
 (no dependencies)          │
          ▼                 │
-Monitor task graph:        │
+Monitor task graph         │
+(configurable interval):   │
   - Task completes →       │
     start ready dependents │
   - Task fails →           │
@@ -744,11 +751,15 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 
 The graph execution after approval is handled by `LocalExecutor::execute_composite_task_graph()`, which:
 1. Parses `plan_yaml` into task definitions
-2. Creates `AgentTask`, `UnitTask`, and `CompositeTaskNode` records for each plan task
-3. Sets dependency relationships between nodes
-4. Starts executing root tasks (tasks with no dependencies) immediately
-5. Spawns a monitoring task that periodically checks for newly ready tasks as dependencies complete
-6. When all tasks reach a terminal state, marks the composite task as `done` (if all succeeded) or `failed` (if any failed)
+2. Validates the plan (cycles, invalid dependencies, duplicate IDs, empty prompts)
+3. Enforces resource limits (maximum 100 tasks per plan)
+4. Creates `AgentTask`, `UnitTask`, and `CompositeTaskNode` records for each plan task (with automatic cleanup of orphaned records on failure)
+5. Sets dependency relationships between nodes
+6. Starts executing root tasks (tasks with no dependencies) immediately
+7. Spawns a monitoring task that periodically checks for newly ready tasks as dependencies complete (configurable interval, default 3 seconds)
+8. When all tasks reach a terminal state, marks the composite task as `done` (if all succeeded) or `failed` (if any failed)
+
+**Note:** The server's `approve_task` endpoint validates the plan and changes status, but does *not* create `CompositeTaskNode` records. Node creation is delegated entirely to the executor to avoid duplicate record creation between server and desktop (Tauri) code paths.
 
 
 **Update Plan:**
@@ -926,6 +937,7 @@ Task creation is rate-limited to prevent resource exhaustion:
 | Limit | Value |
 |-------|-------|
 | Minimum interval | 500 milliseconds between task creations |
+| Max tasks per plan | 100 tasks per composite task plan |
 
 ### Path Sanitization
 

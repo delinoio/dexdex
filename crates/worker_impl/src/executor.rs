@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use plan_parser::Plan;
+use plan_parser::{Plan, validate_plan};
 
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
@@ -34,6 +34,13 @@ use crate::{
     error::WorkerError,
     planning_prompt::{build_planning_prompt, generate_plan_yaml_suffix, plan_yaml_filename},
 };
+
+/// Maximum number of tasks allowed in a single composite task plan.
+/// This prevents resource exhaustion from excessively large plans.
+const MAX_TASKS_PER_PLAN: usize = 100;
+
+/// Default polling interval in seconds for the composite task graph monitor.
+const DEFAULT_GRAPH_MONITOR_INTERVAL_SECS: u64 = 3;
 
 /// A wrapper emitter that both emits events to an inner emitter AND persists
 /// them to the database incrementally.
@@ -183,6 +190,8 @@ pub struct LocalExecutor<E: EventEmitter> {
     /// Active execution handles keyed by task ID.
     /// This stores handles for spawned tasks so they can be cancelled.
     execution_handles: Arc<RwLock<HashMap<Uuid, JoinHandle<()>>>>,
+    /// Polling interval in seconds for the composite task graph monitor.
+    graph_monitor_interval_secs: u64,
 }
 
 impl<E: EventEmitter + 'static> LocalExecutor<E> {
@@ -196,12 +205,19 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             emitter,
             data_dir,
             execution_handles: Arc::new(RwLock::new(HashMap::new())),
+            graph_monitor_interval_secs: DEFAULT_GRAPH_MONITOR_INTERVAL_SECS,
         }
     }
 
     /// Returns the TTY request manager for responding to input requests.
     pub fn tty_request_manager(&self) -> Arc<TtyInputRequestManager> {
         self.executor.tty_request_manager()
+    }
+
+    /// Sets the polling interval in seconds for the composite task graph
+    /// monitor.
+    pub fn set_graph_monitor_interval_secs(&mut self, secs: u64) {
+        self.graph_monitor_interval_secs = secs;
     }
 
     /// Executes a unit task asynchronously.
@@ -875,6 +891,54 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let plan = Plan::from_yaml(plan_yaml)
             .map_err(|e| format!("Failed to parse plan YAML: {}", e))?;
 
+        // Validate the plan for cycles, invalid dependencies, duplicate IDs,
+        // etc.
+        let validation = validate_plan(&plan);
+        if !validation.is_valid() {
+            let err_msg = format!("Plan validation failed: {:?}", validation.errors);
+            error!(
+                composite_task_id = %composite_task_id,
+                errors = ?validation.errors,
+                "Plan validation failed"
+            );
+            // Mark composite task as failed
+            if let Ok(Some(mut ct)) = self
+                .task_store
+                .get_composite_task(composite_task_id)
+                .await
+            {
+                ct.status = CompositeTaskStatus::Failed;
+                ct.updated_at = chrono::Utc::now();
+                let _ = self.task_store.update_composite_task(ct).await;
+            }
+            return Err(err_msg);
+        }
+
+        // Check resource limits
+        if plan.tasks.len() > MAX_TASKS_PER_PLAN {
+            let err_msg = format!(
+                "Plan has {} tasks, exceeding the maximum of {}",
+                plan.tasks.len(),
+                MAX_TASKS_PER_PLAN
+            );
+            error!(
+                composite_task_id = %composite_task_id,
+                task_count = plan.tasks.len(),
+                max = MAX_TASKS_PER_PLAN,
+                "Plan exceeds maximum task limit"
+            );
+            if let Ok(Some(mut ct)) = self
+                .task_store
+                .get_composite_task(composite_task_id)
+                .await
+            {
+                ct.status = CompositeTaskStatus::Failed;
+                ct.updated_at = chrono::Utc::now();
+                let _ = self.task_store.update_composite_task(ct).await;
+            }
+            return Err(err_msg);
+        }
+
         info!(
             "Parsed plan with {} tasks for composite task {}",
             plan.tasks.len(),
@@ -910,87 +974,38 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             .execution_agent_type
             .unwrap_or(AiAgentType::ClaudeCode);
 
-        // Build mapping from plan task ID to (node_id, unit_task_id) for
-        // dependency resolution
-        let mut plan_id_to_node_id: HashMap<String, Uuid> = HashMap::new();
-        let mut node_ids: Vec<Uuid> = Vec::new();
-        let mut plan_id_to_unit_task_id: HashMap<String, Uuid> = HashMap::new();
-
-        // First pass: Create AgentTask + UnitTask + CompositeTaskNode for each
-        // plan task (without dependencies set yet)
-        for plan_task in &plan.tasks {
-            // Create agent task
-            let mut agent_task = AgentTask::new();
-            agent_task.ai_agent_type = Some(agent_type);
-            let agent_task = self
-                .task_store
-                .create_agent_task(agent_task)
-                .await
-                .map_err(|e| format!("Failed to create agent task: {}", e))?;
-
-            // Create unit task
-            let mut unit_task = UnitTask::new(
+        // Create all nodes with cleanup on error. If any node creation fails,
+        // we delete all previously created nodes and unit tasks to avoid orphaned
+        // records.
+        let create_result = self
+            .create_task_graph_nodes(
+                composite_task_id,
                 composite_task.repository_group_id,
-                agent_task.id,
-                &plan_task.prompt,
-            );
-            if let Some(title) = &plan_task.title {
-                unit_task = unit_task.with_title(title);
+                agent_type,
+                &plan,
+            )
+            .await;
+
+        let (node_ids, plan_id_to_unit_task_id) = match create_result {
+            Ok(result) => result,
+            Err(e) => {
+                error!(
+                    "Failed to create task graph nodes for composite task {}: {}",
+                    composite_task_id, e
+                );
+                // Mark composite task as failed
+                if let Ok(Some(mut ct)) = self
+                    .task_store
+                    .get_composite_task(composite_task_id)
+                    .await
+                {
+                    ct.status = CompositeTaskStatus::Failed;
+                    ct.updated_at = chrono::Utc::now();
+                    let _ = self.task_store.update_composite_task(ct).await;
+                }
+                return Err(e);
             }
-            if let Some(branch_name) = &plan_task.branch_name {
-                unit_task = unit_task.with_branch_name(branch_name);
-            }
-
-            let unit_task = self
-                .task_store
-                .create_unit_task(unit_task)
-                .await
-                .map_err(|e| format!("Failed to create unit task: {}", e))?;
-
-            // Create composite task node
-            let node = CompositeTaskNode::new(composite_task_id, unit_task.id);
-            let node = self
-                .task_store
-                .create_composite_task_node(node)
-                .await
-                .map_err(|e| format!("Failed to create composite task node: {}", e))?;
-
-            info!(
-                "Created node {} (unit task {}) for plan task '{}'",
-                node.id, unit_task.id, plan_task.id
-            );
-
-            plan_id_to_node_id.insert(plan_task.id.clone(), node.id);
-            plan_id_to_unit_task_id.insert(plan_task.id.clone(), unit_task.id);
-            node_ids.push(node.id);
-        }
-
-        // Second pass: Set dependencies on nodes
-        for plan_task in &plan.tasks {
-            if plan_task.depends_on.is_empty() {
-                continue;
-            }
-
-            let node_id = plan_id_to_node_id[&plan_task.id];
-            let mut node = self
-                .task_store
-                .get_composite_task_node(node_id)
-                .await
-                .map_err(|e| format!("Failed to get composite task node: {}", e))?
-                .ok_or_else(|| format!("Composite task node not found: {}", node_id))?;
-
-            for dep_plan_id in &plan_task.depends_on {
-                let dep_node_id = plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
-                    format!("Dependency plan task not found: {}", dep_plan_id)
-                })?;
-                node.depends_on(dep_node_id.to_owned());
-            }
-
-            self.task_store
-                .update_composite_task_node(node)
-                .await
-                .map_err(|e| format!("Failed to update composite task node deps: {}", e))?;
-        }
+        };
 
         // Update composite task with node_ids
         let mut composite_task = self
@@ -1033,11 +1048,177 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         // Spawn a monitoring task that periodically checks for newly ready
         // tasks and starts them. This runs until all tasks are complete.
         let executor = Arc::clone(self);
+        let monitor_interval_secs = self.graph_monitor_interval_secs;
         tokio::spawn(async move {
-            Self::monitor_composite_task_graph(executor, composite_task_id).await;
+            Self::monitor_composite_task_graph(executor, composite_task_id, monitor_interval_secs)
+                .await;
         });
 
         Ok(())
+    }
+
+    /// Creates AgentTask + UnitTask + CompositeTaskNode records for each plan
+    /// task. If any creation fails, cleans up all previously created records
+    /// to avoid orphaned data.
+    ///
+    /// Returns `(node_ids, plan_id_to_unit_task_id)` on success.
+    async fn create_task_graph_nodes(
+        &self,
+        composite_task_id: Uuid,
+        repository_group_id: Uuid,
+        agent_type: AiAgentType,
+        plan: &Plan,
+    ) -> Result<(Vec<Uuid>, HashMap<String, Uuid>), String> {
+        let mut plan_id_to_node_id: HashMap<String, Uuid> = HashMap::new();
+        let mut node_ids: Vec<Uuid> = Vec::new();
+        let mut plan_id_to_unit_task_id: HashMap<String, Uuid> = HashMap::new();
+        // Track created records for cleanup on error
+        let mut created_node_ids: Vec<Uuid> = Vec::new();
+        let mut created_unit_task_ids: Vec<Uuid> = Vec::new();
+        let mut created_agent_task_ids: Vec<Uuid> = Vec::new();
+
+        // First pass: Create AgentTask + UnitTask + CompositeTaskNode for each
+        // plan task (without dependencies set yet)
+        let first_pass_result: Result<(), String> = async {
+            for plan_task in &plan.tasks {
+                // Create agent task
+                let mut agent_task = AgentTask::new();
+                agent_task.ai_agent_type = Some(agent_type);
+                let agent_task = self
+                    .task_store
+                    .create_agent_task(agent_task)
+                    .await
+                    .map_err(|e| format!("Failed to create agent task: {}", e))?;
+                created_agent_task_ids.push(agent_task.id);
+
+                // Create unit task
+                let mut unit_task = UnitTask::new(
+                    repository_group_id,
+                    agent_task.id,
+                    &plan_task.prompt,
+                );
+                if let Some(title) = &plan_task.title {
+                    unit_task = unit_task.with_title(title);
+                }
+                if let Some(branch_name) = &plan_task.branch_name {
+                    unit_task = unit_task.with_branch_name(branch_name);
+                }
+
+                let unit_task = self
+                    .task_store
+                    .create_unit_task(unit_task)
+                    .await
+                    .map_err(|e| format!("Failed to create unit task: {}", e))?;
+                created_unit_task_ids.push(unit_task.id);
+
+                // Create composite task node
+                let node = CompositeTaskNode::new(composite_task_id, unit_task.id);
+                let node = self
+                    .task_store
+                    .create_composite_task_node(node)
+                    .await
+                    .map_err(|e| format!("Failed to create composite task node: {}", e))?;
+                created_node_ids.push(node.id);
+
+                info!(
+                    "Created node {} (unit task {}) for plan task '{}'",
+                    node.id, unit_task.id, plan_task.id
+                );
+
+                plan_id_to_node_id.insert(plan_task.id.clone(), node.id);
+                plan_id_to_unit_task_id.insert(plan_task.id.clone(), unit_task.id);
+                node_ids.push(node.id);
+            }
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = first_pass_result {
+            self.cleanup_created_records(
+                &created_node_ids,
+                &created_unit_task_ids,
+                &created_agent_task_ids,
+            )
+            .await;
+            return Err(e);
+        }
+
+        // Second pass: Set dependencies on nodes
+        let second_pass_result: Result<(), String> = async {
+            for plan_task in &plan.tasks {
+                if plan_task.depends_on.is_empty() {
+                    continue;
+                }
+
+                let node_id = plan_id_to_node_id[&plan_task.id];
+                let mut node = self
+                    .task_store
+                    .get_composite_task_node(node_id)
+                    .await
+                    .map_err(|e| format!("Failed to get composite task node: {}", e))?
+                    .ok_or_else(|| format!("Composite task node not found: {}", node_id))?;
+
+                for dep_plan_id in &plan_task.depends_on {
+                    let dep_node_id =
+                        plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
+                            format!("Dependency plan task not found: {}", dep_plan_id)
+                        })?;
+                    node.depends_on(dep_node_id.to_owned());
+                }
+
+                self.task_store
+                    .update_composite_task_node(node)
+                    .await
+                    .map_err(|e| {
+                        format!("Failed to update composite task node deps: {}", e)
+                    })?;
+            }
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = second_pass_result {
+            self.cleanup_created_records(
+                &created_node_ids,
+                &created_unit_task_ids,
+                &created_agent_task_ids,
+            )
+            .await;
+            return Err(e);
+        }
+
+        Ok((node_ids, plan_id_to_unit_task_id))
+    }
+
+    /// Best-effort cleanup of records created during a failed node creation.
+    async fn cleanup_created_records(
+        &self,
+        node_ids: &[Uuid],
+        unit_task_ids: &[Uuid],
+        agent_task_ids: &[Uuid],
+    ) {
+        warn!(
+            "Cleaning up {} nodes, {} unit tasks, {} agent tasks after failed node creation",
+            node_ids.len(),
+            unit_task_ids.len(),
+            agent_task_ids.len()
+        );
+
+        for id in node_ids {
+            if let Err(e) = self.task_store.delete_composite_task_node(*id).await {
+                warn!("Failed to cleanup composite task node {}: {}", id, e);
+            }
+        }
+        for id in unit_task_ids {
+            if let Err(e) = self.task_store.delete_unit_task(*id).await {
+                warn!("Failed to cleanup unit task {}: {}", id, e);
+            }
+        }
+        for id in agent_task_ids {
+            if let Err(e) = self.task_store.delete_agent_task(*id).await {
+                warn!("Failed to cleanup agent task {}: {}", id, e);
+            }
+        }
     }
 
     /// Monitors a composite task graph and starts dependent tasks as their
@@ -1045,6 +1226,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
     async fn monitor_composite_task_graph(
         executor: Arc<Self>,
         composite_task_id: Uuid,
+        monitor_interval_secs: u64,
     ) {
         info!(
             "Starting graph monitor for composite task {}",
@@ -1052,8 +1234,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         );
 
         loop {
-            // Wait a bit before checking again
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            // Wait before checking again (configurable interval)
+            tokio::time::sleep(tokio::time::Duration::from_secs(monitor_interval_secs)).await;
 
             // Get all nodes for this composite task
             let nodes = match executor
