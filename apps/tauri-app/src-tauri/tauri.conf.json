@@ -5,7 +5,7 @@
   "identifier": "dev.deli",
   "build": {
     "beforeDevCommand": "pnpm dev:frontend",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:38492",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
