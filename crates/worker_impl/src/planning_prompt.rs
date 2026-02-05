@@ -6,21 +6,40 @@
 //! - How to break down the user's request into tasks
 //! - Best practices for task dependencies
 
+/// Generates a random suffix for the plan YAML filename.
+///
+/// Returns a 6-character hex string derived from a UUID v4.
+pub fn generate_plan_yaml_suffix() -> String {
+    uuid::Uuid::new_v4().simple().to_string()[..6].to_string()
+}
+
+/// Returns the plan YAML filename for a given suffix.
+///
+/// # Arguments
+/// * `suffix` - The random suffix (e.g., "a1b2c3")
+///
+/// # Returns
+/// The filename string (e.g., "PLAN-a1b2c3.yaml")
+pub fn plan_yaml_filename(suffix: &str) -> String {
+    format!("PLAN-{}.yaml", suffix)
+}
+
 /// Builds the full planning prompt by combining the system instructions
 /// with the user's request.
 ///
 /// # Arguments
 /// * `user_prompt` - The user's original request/prompt
+/// * `plan_filename` - The exact filename for the plan YAML (e.g., "PLAN-a1b2c3.yaml")
 ///
 /// # Returns
 /// A complete prompt string that instructs the AI agent to generate PLAN.yaml
-pub fn build_planning_prompt(user_prompt: &str) -> String {
+pub fn build_planning_prompt(user_prompt: &str, plan_filename: &str) -> String {
     format!(
         r#"You are a planning agent for DeliDev, an AI coding orchestration tool. Your task is to analyze the user's request and generate a PLAN.yaml file that breaks down the work into smaller, executable tasks.
 
 ## Your Goal
 
-Create a file named `PLAN-{{random}}.yaml` (where {{random}} is a short random string like `a1b2c3`) in the repository root that defines a task graph for the AI coding agents to execute.
+Create a file named `{plan_filename}` in the repository root that defines a task graph for the AI coding agents to execute.
 
 ## PLAN.yaml Format
 
@@ -108,11 +127,12 @@ Instructions:
 1. First, explore the codebase to understand its structure and existing patterns
 2. Break down the user's request into logical, focused tasks
 3. Identify dependencies between tasks
-4. Create the PLAN.yaml file in the repository root with a random suffix (e.g., PLAN-x7k9m2.yaml)
+4. Create the file `{plan_filename}` in the repository root
 5. Ensure the plan follows best practices for task granularity and parallelization
 
-Create the PLAN.yaml file now."#,
-        user_prompt = user_prompt
+Create the `{plan_filename}` file now."#,
+        user_prompt = user_prompt,
+        plan_filename = plan_filename
     )
 }
 
@@ -123,17 +143,27 @@ mod tests {
     #[test]
     fn test_build_planning_prompt_contains_user_prompt() {
         let user_prompt = "Add user authentication to the app";
-        let full_prompt = build_planning_prompt(user_prompt);
+        let full_prompt = build_planning_prompt(user_prompt, "PLAN-abc123.yaml");
 
         assert!(full_prompt.contains(user_prompt));
     }
 
     #[test]
+    fn test_build_planning_prompt_contains_plan_filename() {
+        let full_prompt = build_planning_prompt("test", "PLAN-x7k9m2.yaml");
+
+        // Check that the specific filename is referenced in the prompt
+        assert!(full_prompt.contains("PLAN-x7k9m2.yaml"));
+        // Check that there's no generic {random} placeholder
+        assert!(!full_prompt.contains("{random}"));
+    }
+
+    #[test]
     fn test_build_planning_prompt_contains_format_instructions() {
-        let full_prompt = build_planning_prompt("test");
+        let full_prompt = build_planning_prompt("test", "PLAN-abc123.yaml");
 
         // Check for key format instructions
-        assert!(full_prompt.contains("PLAN-{random}.yaml"));
+        assert!(full_prompt.contains("PLAN-abc123.yaml"));
         assert!(full_prompt.contains("tasks:"));
         assert!(full_prompt.contains("id:"));
         assert!(full_prompt.contains("prompt:"));
@@ -142,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_build_planning_prompt_contains_validation_rules() {
-        let full_prompt = build_planning_prompt("test");
+        let full_prompt = build_planning_prompt("test", "PLAN-abc123.yaml");
 
         assert!(full_prompt.contains("Unique IDs"));
         assert!(full_prompt.contains("Valid References"));
@@ -152,10 +182,31 @@ mod tests {
 
     #[test]
     fn test_build_planning_prompt_contains_example() {
-        let full_prompt = build_planning_prompt("test");
+        let full_prompt = build_planning_prompt("test", "PLAN-abc123.yaml");
 
         // Check for example content
         assert!(full_prompt.contains("setup-db"));
         assert!(full_prompt.contains("auth-api"));
+    }
+
+    #[test]
+    fn test_generate_plan_yaml_suffix_length() {
+        let suffix = generate_plan_yaml_suffix();
+        assert_eq!(suffix.len(), 6);
+        // Verify it's valid hex
+        assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_generate_plan_yaml_suffix_uniqueness() {
+        let suffix1 = generate_plan_yaml_suffix();
+        let suffix2 = generate_plan_yaml_suffix();
+        assert_ne!(suffix1, suffix2);
+    }
+
+    #[test]
+    fn test_plan_yaml_filename() {
+        assert_eq!(plan_yaml_filename("abc123"), "PLAN-abc123.yaml");
+        assert_eq!(plan_yaml_filename("x7k9m2"), "PLAN-x7k9m2.yaml");
     }
 }
