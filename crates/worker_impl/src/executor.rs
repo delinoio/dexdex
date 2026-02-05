@@ -24,7 +24,11 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::{TtyInputRequestManager, error::WorkerError, planning_prompt::build_planning_prompt};
+use crate::{
+    TtyInputRequestManager,
+    error::WorkerError,
+    planning_prompt::{build_planning_prompt, build_update_planning_prompt},
+};
 
 /// A wrapper emitter that both emits events to an inner emitter AND persists
 /// them to the database incrementally.
@@ -610,6 +614,249 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
             // Clean up the planning worktree now that we've persisted the PLAN.yaml
             // Reuse executor's repo_cache directly instead of creating a new one
+            if let Err(e) = executor.repo_cache().remove_worktree_for_task(
+                &remote_url,
+                &composite_task_id.to_string(),
+                &branch_name_clone,
+            ) {
+                warn!(
+                    "Failed to cleanup planning worktree for composite task {}: {}",
+                    composite_task_id, e
+                );
+            } else {
+                info!(
+                    "Cleaned up planning worktree for composite task {}",
+                    composite_task_id
+                );
+            }
+
+            // Remove handle from the map after completion
+            execution_handles.write().await.remove(&composite_task_id);
+        });
+
+        // Store the handle so it can be cancelled later
+        self.execution_handles
+            .write()
+            .await
+            .insert(composite_task_id, handle);
+
+        Ok(())
+    }
+
+    /// Re-executes the planning phase of a composite task with an update
+    /// prompt.
+    ///
+    /// This is similar to `execute_composite_task` but uses the previous plan
+    /// and the user's update instructions to generate a revised PLAN.yaml.
+    pub async fn update_composite_task_plan(
+        &self,
+        composite_task_id: Uuid,
+        update_prompt: String,
+    ) -> Result<(), String> {
+        info!(
+            "Starting plan update for composite task: {}",
+            composite_task_id
+        );
+
+        // Get the composite task from the store
+        let composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        let previous_plan = composite_task
+            .plan_yaml
+            .as_deref()
+            .unwrap_or("(no previous plan)");
+
+        // Get the repository group to find repositories
+        let repo_group = self
+            .task_store
+            .get_repository_group(composite_task.repository_group_id)
+            .await
+            .map_err(|e| format!("Failed to get repository group: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Repository group not found: {}",
+                    composite_task.repository_group_id
+                )
+            })?;
+
+        // Get the first repository
+        let repo_id = repo_group
+            .repository_ids
+            .first()
+            .ok_or_else(|| "Repository group has no repositories".to_string())?;
+
+        let repository = self
+            .task_store
+            .get_repository(*repo_id)
+            .await
+            .map_err(|e| format!("Failed to get repository: {}", e))?
+            .ok_or_else(|| format!("Repository not found: {}", repo_id))?;
+
+        // Get the planning agent task
+        let agent_task = self
+            .task_store
+            .get_agent_task(composite_task.planning_task_id)
+            .await
+            .map_err(|e| format!("Failed to get planning agent task: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Planning agent task not found: {}",
+                    composite_task.planning_task_id
+                )
+            })?;
+
+        let agent_type = agent_task.ai_agent_type.unwrap_or(AiAgentType::ClaudeCode);
+        let agent_model = agent_task.ai_agent_model.clone();
+
+        // Create an agent session for the update planning task
+        let mut session = AgentSession::new(composite_task.planning_task_id, agent_type);
+        if let Some(model) = &agent_model {
+            session = session.with_model(model.clone());
+        }
+        session.started_at = Some(Utc::now());
+
+        let session = self
+            .task_store
+            .create_agent_session(session)
+            .await
+            .map_err(|e| format!("Failed to create agent session: {}", e))?;
+
+        let session_id = session.id;
+
+        // Use the same branch name pattern for composite planning
+        let branch_name = format!("delidev/composite/{}", composite_task_id);
+
+        // Build the update planning prompt with previous plan context
+        let planning_prompt =
+            build_update_planning_prompt(&composite_task.prompt, previous_plan, &update_prompt);
+
+        // Create the execution config
+        let config = TaskExecutionConfig {
+            task_id: composite_task_id,
+            session_id,
+            remote_url: repository.remote_url.clone(),
+            branch_name: branch_name.clone(),
+            agent_type,
+            agent_model,
+            prompt: planning_prompt,
+        };
+
+        // Clone values needed for the spawned task
+        let task_store = self.task_store.clone();
+        let emitter = self.emitter.clone();
+        let repo_cache = self.executor.repo_cache().clone();
+
+        // Create a persisting emitter for the planning session
+        let persisting_emitter = Arc::new(PersistingEventEmitter::new(
+            emitter,
+            task_store.clone(),
+            session_id,
+        ));
+        let executor = TaskExecutor::with_repo_cache(repo_cache, persisting_emitter.clone());
+        let execution_handles = self.execution_handles.clone();
+
+        // Store remote_url and branch_name for worktree cleanup
+        let remote_url = repository.remote_url.clone();
+        let branch_name_clone = branch_name.clone();
+
+        // Spawn the planning execution task (reuses the same logic as
+        // execute_composite_task)
+        let handle = tokio::spawn(async move {
+            let ExecutionResultWithWorktree {
+                result,
+                worktree_path,
+            } = executor.execute_and_wait_without_cleanup(config).await;
+
+            // Final persist of all logs
+            persisting_emitter.persist_logs().await;
+
+            // Update session completed_at
+            if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+                session.completed_at = Some(Utc::now());
+                if let Err(e) = task_store.update_agent_session(session).await {
+                    warn!("Failed to update planning agent session: {}", e);
+                }
+            }
+
+            // Update composite task status based on planning result
+            match &result {
+                ExecutionResult::Success { .. } => {
+                    info!(
+                        "Plan update for composite task {} completed successfully",
+                        composite_task_id
+                    );
+
+                    let plan_yaml_content = if let Some(ref worktree) = worktree_path {
+                        Self::read_plan_yaml_from_worktree(worktree).await
+                    } else {
+                        warn!(
+                            "No worktree path available for composite task {}",
+                            composite_task_id
+                        );
+                        None
+                    };
+
+                    if let Ok(Some(mut composite_task)) =
+                        task_store.get_composite_task(composite_task_id).await
+                    {
+                        if plan_yaml_content.is_some() {
+                            composite_task.status = CompositeTaskStatus::PendingApproval;
+                            composite_task.plan_yaml = plan_yaml_content;
+                            composite_task.updated_at = Utc::now();
+                            if let Err(e) = task_store.update_composite_task(composite_task).await {
+                                error!(
+                                    "Failed to update composite task status to PendingApproval: {}",
+                                    e
+                                );
+                            } else {
+                                info!(
+                                    "Persisted updated PLAN.yaml for composite task {}",
+                                    composite_task_id
+                                );
+                            }
+                        } else {
+                            error!(
+                                "PLAN.yaml not found after update for composite task {} - marking \
+                                 as failed",
+                                composite_task_id
+                            );
+                            composite_task.status = CompositeTaskStatus::Failed;
+                            composite_task.updated_at = Utc::now();
+                            if let Err(e) = task_store.update_composite_task(composite_task).await {
+                                error!("Failed to update composite task status to Failed: {}", e);
+                            }
+                        }
+                    }
+                }
+                ExecutionResult::Failed { error, .. } => {
+                    error!(
+                        "Plan update for composite task {} failed: {}",
+                        composite_task_id, error
+                    );
+                    if let Ok(Some(mut composite_task)) =
+                        task_store.get_composite_task(composite_task_id).await
+                    {
+                        composite_task.status = CompositeTaskStatus::Failed;
+                        composite_task.updated_at = Utc::now();
+                        if let Err(e) = task_store.update_composite_task(composite_task).await {
+                            error!("Failed to update composite task status to Failed: {}", e);
+                        }
+                    }
+                }
+                ExecutionResult::Cancelled => {
+                    info!(
+                        "Plan update for composite task {} was cancelled",
+                        composite_task_id
+                    );
+                }
+            }
+
+            // Clean up the planning worktree
             if let Err(e) = executor.repo_cache().remove_worktree_for_task(
                 &remote_url,
                 &composite_task_id.to_string(),

@@ -459,3 +459,44 @@ pub async fn request_changes<S: TaskStore>(
         task: entity_to_rpc_unit_task(&task),
     }))
 }
+
+/// Updates the plan for a composite task by transitioning it back to planning.
+pub async fn update_plan<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<UpdatePlanRequest>,
+) -> ServerResult<Json<UpdatePlanResponse>> {
+    let task_id: Uuid = request
+        .task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    let mut task = state
+        .store
+        .get_composite_task(task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Composite task not found".to_string()))?;
+
+    // Only allow updating plan when in pending_approval status
+    if task.status != EntityCompositeTaskStatus::PendingApproval {
+        return Err(ServerError::InvalidRequest(
+            "Can only update plan when status is pending_approval".to_string(),
+        ));
+    }
+
+    // Transition back to planning and create a new planning agent task
+    let mut planning_task = AgentTask::new();
+    planning_task.ai_agent_type = task.execution_agent_type;
+    let planning_task = state.store.create_agent_task(planning_task).await?;
+
+    task.planning_task_id = planning_task.id;
+    task.status = EntityCompositeTaskStatus::Planning;
+    task.plan_yaml = None;
+    task.updated_at = chrono::Utc::now();
+    let task = state.store.update_composite_task(task).await?;
+
+    tracing::info!(task_id = %task_id, "Plan update requested, transitioning back to planning");
+
+    Ok(Json(UpdatePlanResponse {
+        task: entity_to_rpc_composite_task(&task),
+    }))
+}

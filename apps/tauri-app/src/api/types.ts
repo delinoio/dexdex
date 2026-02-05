@@ -302,6 +302,11 @@ export interface CreateCompositeTaskParams {
   planningAgentType?: string;
 }
 
+export interface UpdatePlanParams {
+  taskId: string;
+  prompt: string;
+}
+
 export interface ListTasksParams {
   repositoryGroupId?: string;
   unitStatus?: string;

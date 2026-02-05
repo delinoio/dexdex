@@ -86,6 +86,13 @@ export async function cancelTask(taskId: string): Promise<void> {
   return invoke<void>("cancel_task", { taskId });
 }
 
+export async function updatePlan(
+  taskId: string,
+  prompt: string
+): Promise<CompositeTask> {
+  return invoke<CompositeTask>("update_plan", { taskId, prompt });
+}
+
 export async function getCompositeTaskNodes(
   compositeTaskId: string
 ): Promise<CompositeTaskNodesResult> {

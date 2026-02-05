@@ -368,7 +368,7 @@ Type `@` to reference files:
 │  │  The AI has generated a plan for this task.                         │   │
 │  │  Please review and approve to proceed.                              │   │
 │  │                                                                     │   │
-│  │  [View PLAN.yaml]                     [Reject]    [Approve Plan]    │   │
+│  │  [View PLAN.yaml]  [Update Plan]      [Reject]    [Approve Plan]    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                            │
 │  Task Graph                                                                │
@@ -520,6 +520,7 @@ The review interface is built from the following components:
 | Commit | Merge changes to repository |
 | Create PR | Create PR on VCS provider |
 | Request Changes | Send feedback for AI rework |
+| Update Plan | Request changes to a composite task plan (opens dialog with text area for prompt) |
 | Reject | Discard the task |
 
 ---

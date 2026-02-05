@@ -116,6 +116,89 @@ Create the PLAN.yaml file now."#,
     )
 }
 
+/// Builds a prompt for updating an existing plan based on user feedback.
+///
+/// # Arguments
+/// * `original_prompt` - The original user request/prompt
+/// * `previous_plan_yaml` - The previous PLAN.yaml content
+/// * `update_prompt` - The user's update instructions
+///
+/// # Returns
+/// A complete prompt string that instructs the AI agent to generate an updated
+/// PLAN.yaml
+pub fn build_update_planning_prompt(
+    original_prompt: &str,
+    previous_plan_yaml: &str,
+    update_prompt: &str,
+) -> String {
+    format!(
+        r#"You are a planning agent for DeliDev, an AI coding orchestration tool. Your task is to update an existing PLAN.yaml file based on user feedback.
+
+## Your Goal
+
+Update the existing plan by creating a new `PLAN-{{random}}.yaml` file (where {{random}} is a short random string like `a1b2c3`) in the repository root. The updated plan should incorporate the user's feedback while maintaining the same format.
+
+## PLAN.yaml Format
+
+The file must follow this exact YAML structure:
+
+```yaml
+tasks:
+  - id: string          # Unique identifier for this task (required)
+    title: string       # Human-readable task title (optional, defaults to id)
+    prompt: string      # Task description for the AI agent (required)
+    branchName: string  # Custom git branch name (optional)
+    dependsOn: string[] # IDs of tasks that must complete first (optional)
+```
+
+## Original User Request
+
+---
+
+{original_prompt}
+
+---
+
+## Previous Plan
+
+The following PLAN.yaml was previously generated but the user wants changes:
+
+```yaml
+{previous_plan_yaml}
+```
+
+## User's Update Request
+
+The user wants the following changes to the plan:
+
+---
+
+{update_prompt}
+
+---
+
+## Validation Rules (Your PLAN.yaml must follow these)
+
+1. **Unique IDs**: Each task must have a unique `id`
+2. **Valid References**: All IDs in `dependsOn` must reference existing task IDs
+3. **No Cycles**: The dependency graph must be acyclic (no circular dependencies)
+4. **Non-empty Prompts**: Each task must have a non-empty `prompt`
+
+## Instructions
+
+1. First, explore the codebase to understand its structure and existing patterns
+2. Review the previous plan and the user's update request
+3. Modify the plan according to the user's feedback (add, remove, or update tasks as needed)
+4. Create the updated PLAN.yaml file in the repository root with a random suffix (e.g., PLAN-x7k9m2.yaml)
+5. Ensure the plan follows best practices for task granularity and parallelization
+
+Create the updated PLAN.yaml file now."#,
+        original_prompt = original_prompt,
+        previous_plan_yaml = previous_plan_yaml,
+        update_prompt = update_prompt,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +240,39 @@ mod tests {
         // Check for example content
         assert!(full_prompt.contains("setup-db"));
         assert!(full_prompt.contains("auth-api"));
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_contains_all_parts() {
+        let original = "Add user authentication";
+        let plan = "tasks:\n  - id: setup-db\n    prompt: Create database";
+        let update = "Split the database task into two separate tasks";
+
+        let full_prompt = build_update_planning_prompt(original, plan, update);
+
+        assert!(full_prompt.contains(original));
+        assert!(full_prompt.contains(plan));
+        assert!(full_prompt.contains(update));
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_contains_format_instructions() {
+        let full_prompt = build_update_planning_prompt("test", "tasks:", "update");
+
+        assert!(full_prompt.contains("PLAN-{random}.yaml"));
+        assert!(full_prompt.contains("tasks:"));
+        assert!(full_prompt.contains("id:"));
+        assert!(full_prompt.contains("prompt:"));
+        assert!(full_prompt.contains("dependsOn:"));
+    }
+
+    #[test]
+    fn test_build_update_planning_prompt_contains_validation_rules() {
+        let full_prompt = build_update_planning_prompt("test", "tasks:", "update");
+
+        assert!(full_prompt.contains("Unique IDs"));
+        assert!(full_prompt.contains("Valid References"));
+        assert!(full_prompt.contains("No Cycles"));
+        assert!(full_prompt.contains("Non-empty Prompts"));
     }
 }

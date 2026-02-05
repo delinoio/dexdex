@@ -36,6 +36,7 @@ pub fn create_router<S: TaskStore + 'static>() -> Router<Arc<AppState<S>>> {
         .route("/api/task/approve", post(task::approve_task))
         .route("/api/task/reject", post(task::reject_task))
         .route("/api/task/request-changes", post(task::request_changes))
+        .route("/api/task/update-plan", post(task::update_plan))
         // Session endpoints
         .route("/api/session/get-log", post(session::get_log))
         .route("/api/session/stop", post(session::stop_session))

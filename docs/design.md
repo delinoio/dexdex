@@ -702,7 +702,19 @@ Planning agent starts immediately (status: planning)
 │ pending_approval│ failed             │
 └────────┬────────┴────────┬───────────┘
          ▼                 │
-User reviews and approves  │ (User can retry or discard)
+User reviews plan          │ (User can retry or discard)
+  ├── Approve → in_progress│
+  └── Update Plan          │
+         ▼                 │
+┌────────────────────────┐ │
+│ User provides prompt   │ │
+│ describing changes     │ │
+│ Status → planning      │ │
+│ Re-runs planning agent │ │
+│ with update context    │ │
+└────────┬───────────────┘ │
+         ▼                 │
+(back to planning phase)   │
          ▼                 │
 Status: in_progress        │
          ▼                 │
@@ -725,6 +737,14 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`
 - This allows the plan to be accessed without the worktree (which is cleaned up immediately)
 - The worktree is cleaned up right after the PLAN.yaml is persisted to conserve disk space
+
+**Plan Update Flow:**
+- When a composite task is in `pending_approval` status, the user can request plan updates via an "Update Plan" button
+- The user provides a prompt describing the desired changes to the plan
+- The system creates a new planning agent task with `build_update_planning_prompt()`, which includes the original prompt, previous PLAN.yaml, and update instructions
+- The composite task transitions back to `planning` status and `plan_yaml` is cleared
+- On completion, the updated PLAN.yaml is persisted and the task returns to `pending_approval`
+- This is handled by `LocalExecutor::update_composite_task_plan()`
 
 ### PR Auto-Management
 
