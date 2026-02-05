@@ -1042,9 +1042,17 @@ pub async fn update_plan_with_prompt(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented for update_plan_with_prompt".to_string(),
-        ));
+        // Remote mode: make API call to main server
+        let client = state.get_remote_client()?;
+
+        let request = requests::UpdatePlanRequest {
+            task_id: task_id.clone(),
+            prompt: prompt.clone(),
+        };
+
+        client.update_plan(request).await?;
+        info!("Updated plan via remote for task: {}", task_id);
+        return Ok(());
     }
 
     let id = Uuid::parse_str(&task_id)
@@ -1130,15 +1138,22 @@ pub async fn update_plan_with_prompt(
 #[tauri::command]
 pub async fn update_plan_with_prompt(
     state: State<'_, Arc<RwLock<AppState>>>,
-    _task_id: String,
-    _prompt: String,
+    task_id: String,
+    prompt: String,
 ) -> AppResult<()> {
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented for update_plan_with_prompt".to_string(),
-        ));
+        let client = state.get_remote_client()?;
+
+        let request = requests::UpdatePlanRequest {
+            task_id: task_id.clone(),
+            prompt: prompt.clone(),
+        };
+
+        client.update_plan(request).await?;
+        info!("Updated plan via remote for task: {}", task_id);
+        return Ok(());
     }
 
     Err(AppError::InvalidRequest(
