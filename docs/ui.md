@@ -638,6 +638,8 @@ The review interface is built from the following components:
 
 ## Keyboard Shortcuts
 
+All keyboard shortcuts are keyboard layout-aware. When using a non-English keyboard layout (e.g., Korean, Russian), shortcuts are matched by the physical key position using `KeyboardEvent.code` as a fallback. This means pressing the physical 'C' key will trigger the 'c' shortcut regardless of the active input method.
+
 ### Global Shortcuts
 
 | Shortcut | Action |
