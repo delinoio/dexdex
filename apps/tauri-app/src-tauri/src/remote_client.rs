@@ -479,6 +479,7 @@ pub fn rpc_to_entity_composite_task(
         prompt: rpc.prompt,
         title: rpc.title,
         plan_yaml: rpc.plan_yaml,
+        update_plan_feedback: rpc.update_plan_feedback,
         node_ids: parse_uuid_list(&rpc.node_ids, "node id"),
         status: rpc_to_entity_composite_status(rpc.status),
         execution_agent_type: rpc.execution_agent_type.map(rpc_to_entity_agent_type),

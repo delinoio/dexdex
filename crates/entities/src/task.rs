@@ -179,6 +179,10 @@ pub struct CompositeTask {
     /// This is persisted after planning completes and the worktree is cleaned
     /// up.
     pub plan_yaml: Option<String>,
+    /// User feedback for re-planning. When set, the executor uses the existing
+    /// `plan_yaml` together with this feedback (instead of the original
+    /// `prompt`) to generate a new plan.
+    pub update_plan_feedback: Option<String>,
     /// List of task node IDs.
     pub node_ids: Vec<Uuid>,
     /// Current status.
@@ -206,6 +210,7 @@ impl CompositeTask {
             prompt: prompt.into(),
             title: None,
             plan_yaml: None,
+            update_plan_feedback: None,
             node_ids: Vec::new(),
             status: CompositeTaskStatus::Planning,
             execution_agent_type: None,

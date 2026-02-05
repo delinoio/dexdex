@@ -155,6 +155,8 @@ export interface CompositeTask {
   title?: string;
   /** Raw PLAN.yaml content persisted after planning completes. */
   planYaml?: string;
+  /** User feedback for re-planning (set by Update Plan, cleared after re-planning). */
+  updatePlanFeedback?: string;
   nodeIds: string[];
   status: CompositeTaskStatus;
   executionAgentType?: AiAgentType;

@@ -1091,14 +1091,10 @@ pub async fn update_plan_with_prompt(
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
         .collect();
 
-    // Append the user's feedback to the original prompt
-    composite_task.prompt = format!(
-        "{}\n\n--- Update Plan Request ---\n{}",
-        composite_task.prompt, sanitized_prompt
-    );
-
-    // Clear the old plan
-    composite_task.plan_yaml = None;
+    // Store the feedback for re-planning. The executor will use the existing
+    // plan_yaml together with this feedback (instead of the original prompt)
+    // to generate a new plan.
+    composite_task.update_plan_feedback = Some(sanitized_prompt);
 
     // Create a new planning agent task
     let mut planning_task = AgentTask::new();

@@ -27,7 +27,10 @@ use uuid::Uuid;
 use crate::{
     TtyInputRequestManager,
     error::WorkerError,
-    planning_prompt::{build_planning_prompt, generate_plan_yaml_suffix, plan_yaml_filename},
+    planning_prompt::{
+        build_planning_prompt, build_update_planning_prompt, generate_plan_yaml_suffix,
+        plan_yaml_filename,
+    },
 };
 
 /// A wrapper emitter that both emits events to an inner emitter AND persists
@@ -488,8 +491,17 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let plan_suffix = generate_plan_yaml_suffix();
         let plan_filename = plan_yaml_filename(&plan_suffix);
 
-        // Build the full planning prompt with PLAN.yaml format instructions
-        let planning_prompt = build_planning_prompt(&composite_task.prompt, &plan_filename);
+        // Build the full planning prompt with PLAN.yaml format instructions.
+        // If the task has update_plan_feedback, use the existing plan + feedback
+        // instead of the original prompt.
+        let planning_prompt = if let (Some(feedback), Some(existing_plan)) = (
+            &composite_task.update_plan_feedback,
+            &composite_task.plan_yaml,
+        ) {
+            build_update_planning_prompt(existing_plan, feedback, &plan_filename)
+        } else {
+            build_planning_prompt(&composite_task.prompt, &plan_filename)
+        };
 
         // Create the execution config using the planning prompt
         let config = TaskExecutionConfig {
@@ -572,6 +584,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                                 .to_string();
                             composite_task.status = CompositeTaskStatus::PendingApproval;
                             composite_task.plan_yaml = plan_yaml_content;
+                            // Clear the update feedback now that re-planning is done
+                            composite_task.update_plan_feedback = None;
                             composite_task.updated_at = Utc::now();
                             if let Err(e) = task_store.update_composite_task(composite_task).await {
                                 error!(
@@ -628,6 +642,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                                 .trim_matches('"')
                                 .to_string();
                             composite_task.status = CompositeTaskStatus::Failed;
+                            // Clear the update feedback on failure too
+                            composite_task.update_plan_feedback = None;
                             composite_task.updated_at = Utc::now();
                             if let Err(e) = task_store.update_composite_task(composite_task).await {
                                 error!("Failed to update composite task status to Failed: {}", e);
@@ -682,6 +698,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                             .trim_matches('"')
                             .to_string();
                         composite_task.status = CompositeTaskStatus::Failed;
+                        // Clear the update feedback on failure
+                        composite_task.update_plan_feedback = None;
                         composite_task.updated_at = Utc::now();
                         if let Err(e) = task_store.update_composite_task(composite_task).await {
                             error!("Failed to update composite task status to Failed: {}", e);

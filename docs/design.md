@@ -339,6 +339,7 @@ Task graph-based Agent Orchestrator.
 | repositoryGroupId | string | Y | Associated RepositoryGroup ID |
 | planningTask | AgentTask | Y | AgentTask for generating PLAN.yaml |
 | planYaml | string | N | Raw PLAN.yaml content (persisted after planning) |
+| updatePlanFeedback | string | N | User feedback for re-planning (set by Update Plan, cleared after re-planning) |
 | tasks | CompositeTaskNode[] | Y | List of task nodes |
 | status | CompositeTaskStatus | Y | Current status |
 | executionAgentType | AIAgentType | N | Agent type for UnitTasks |
@@ -733,11 +734,12 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 **Update Plan:**
 
 When a composite task is in `pending_approval` or `failed` state, the user can request plan updates via the "Update Plan" button. This:
-1. Appends the user's feedback to the original prompt
-2. Clears the existing `plan_yaml`
+1. Stores the user's feedback in the `update_plan_feedback` field (the original `prompt` is **not** modified)
+2. Keeps the existing `plan_yaml` (so the planning agent can reference it)
 3. Creates a new planning `AgentTask`
 4. Resets status to `planning`
-5. Re-triggers `LocalExecutor::execute_composite_task()` with the updated prompt
+5. Re-triggers `LocalExecutor::execute_composite_task()` which detects `update_plan_feedback` and uses the existing plan + feedback (instead of the original prompt) to generate a revised plan
+6. After re-planning completes, `update_plan_feedback` is cleared
 
 The `update_plan_with_prompt` Tauri command handles this flow.
 
