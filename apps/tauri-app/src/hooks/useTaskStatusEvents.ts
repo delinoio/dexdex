@@ -27,13 +27,15 @@ export function useTaskStatusEvents(): void {
 
     async function setup() {
       try {
-        // When a task's status changes, invalidate its detail and the list views
+        // When a task's status changes, invalidate its detail, list views,
+        // and composite task nodes (for task graph updates on plan completion)
         const unlistenStatus = await listen<TaskStatusChangedEvent>(
           "task-status-changed",
           (event) => {
             const { taskId } = event.payload;
             queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
             queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+            queryClient.invalidateQueries({ queryKey: taskKeys.compositeNodes(taskId) });
           },
         );
 

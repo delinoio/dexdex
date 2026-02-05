@@ -720,6 +720,7 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 4. On success, reads `PLAN-{random}.yaml` from the worktree and persists to `plan_yaml` field
 5. Cleans up the planning worktree immediately after persisting (not kept until task completion)
 6. Updates composite task status to `pending_approval` on success or `failed` on error
+7. Emits `task-status-changed` and `task-completed` events so the frontend updates automatically
 
 **PLAN.yaml Persistence:**
 - The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`
@@ -780,8 +781,13 @@ Tauri Backend ─── agent-output event ──► useTaskLogs hook
 ```
 Tauri Backend ─── task-status-changed ──► useTaskStatusEvents hook
               ─── task-completed ────────►    └── Invalidates react-query caches
-                                               (task detail + task list queries)
+                                               (task detail, task list, and
+                                                composite task nodes queries)
 ```
+
+**Plan Preview (PendingApproval):**
+
+During `pending_approval`, `CompositeTaskNode` records don't exist in the database yet (they are created on plan approval). The frontend parses the raw `plan_yaml` field using `parsePlanYamlToNodes()` to generate preview nodes for the TaskGraph component and sub-task list. Once the plan is approved and execution begins, the preview is replaced by real database-backed nodes.
 
 ### Notification Flow
 

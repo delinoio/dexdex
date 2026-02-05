@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   ReactFlow,
   Controls,
@@ -271,8 +271,20 @@ export function TaskGraph({ nodes: taskNodes, className }: TaskGraphProps) {
     return { initialNodes: flowNodes, initialEdges: flowEdges };
   }, [taskNodes]);
 
-  const [flowNodes, , onNodesChange] = useNodesState(initialNodes);
-  const [flowEdges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(initialNodes);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Sync React Flow state when the computed nodes/edges change.
+  // useNodesState/useEdgesState only use the parameter as an initial value,
+  // so we need to explicitly update when the source data changes (e.g., when
+  // plan_yaml becomes available after planning completes).
+  useEffect(() => {
+    setFlowNodes(initialNodes);
+  }, [initialNodes, setFlowNodes]);
+
+  useEffect(() => {
+    setFlowEdges(initialEdges);
+  }, [initialEdges, setFlowEdges]);
 
   if (taskNodes.length === 0) {
     return (
