@@ -765,6 +765,24 @@ When user requests changes on a task:
 3. Agent considers if feedback is generalizable
 4. If yes, updates AGENTS.md or CLAUDE.md
 
+### Event-Driven UI Updates
+
+The frontend uses a purely event-driven architecture for real-time updates. No polling is used.
+
+**Task Log Streaming:**
+```
+Tauri Backend ─── agent-output event ──► useTaskLogs hook
+                                              └── Appends to event list in real-time
+                                         (Initial fetch on mount for historical logs)
+```
+
+**Task Status Updates:**
+```
+Tauri Backend ─── task-status-changed ──► useTaskStatusEvents hook
+              ─── task-completed ────────►    └── Invalidates react-query caches
+                                               (task detail + task list queries)
+```
+
 ### Notification Flow
 
 The notification system provides persistent, actionable notifications for system events:

@@ -24,6 +24,9 @@ import {
 import { ToolUseContent, ToolResultContent } from "./ToolEventComponents";
 
 interface AgentLogViewerProps {
+  /** The unit/composite task ID for matching real-time Tauri events. */
+  taskId: string;
+  /** The agent task ID for fetching persisted logs from the database. */
   agentTaskId: string;
   taskStatus: UnitTaskStatus;
   className?: string;
@@ -32,11 +35,12 @@ interface AgentLogViewerProps {
 /**
  * Component for displaying streaming agent logs with formatting per event type.
  */
-export function AgentLogViewer({ agentTaskId, taskStatus, className }: AgentLogViewerProps) {
+export function AgentLogViewer({ taskId, agentTaskId, taskStatus, className }: AgentLogViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
   const { events, isLoading, isComplete, error } = useTaskLogs({
+    taskId,
     agentTaskId,
     taskStatus,
     enabled: !!agentTaskId,

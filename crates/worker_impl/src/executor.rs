@@ -29,8 +29,8 @@ use crate::{TtyInputRequestManager, error::WorkerError, planning_prompt::build_p
 /// A wrapper emitter that both emits events to an inner emitter AND persists
 /// them to the database incrementally.
 ///
-/// This ensures that events are available via polling even if the frontend
-/// misses the real-time events due to race conditions (e.g., page load).
+/// This ensures that events are available for initial log loading when the
+/// frontend opens a task view after events have already been emitted.
 struct PersistingEventEmitter<E: EventEmitter> {
     /// The inner emitter for real-time event delivery.
     inner: Arc<E>,
@@ -284,8 +284,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let repo_cache = self.executor.repo_cache().clone();
 
         // Create a persisting emitter that both emits events AND persists them
-        // incrementally. This ensures events are available via polling even if
-        // the frontend misses real-time events.
+        // incrementally. This ensures events are available for initial log
+        // loading when the frontend opens a task view.
         let persisting_emitter = Arc::new(PersistingEventEmitter::new(
             emitter,
             task_store.clone(),
