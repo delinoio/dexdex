@@ -308,7 +308,7 @@ export function CompositeTaskDetail() {
                   {approveMutation.isPending ? "Approving..." : "Approve Plan"}
                 </Button>
                 <Dialog open={updatePlanOpen} onOpenChange={setUpdatePlanOpen}>
-                  <DialogTrigger>
+                  <DialogTrigger asChild>
                     <Button variant="outline" type="button">Update Plan</Button>
                   </DialogTrigger>
                   <DialogContent>
@@ -324,6 +324,7 @@ export function CompositeTaskDetail() {
                       value={updatePlanPrompt}
                       onChange={(e) => setUpdatePlanPrompt(e.target.value)}
                       rows={4}
+                      maxLength={100000}
                     />
                     <DialogFooter>
                       <Button

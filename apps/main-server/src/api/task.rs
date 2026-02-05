@@ -428,7 +428,8 @@ pub async fn reject_task<S: TaskStore>(
     Err(ServerError::NotFound("Task not found".to_string()))
 }
 
-/// Updates the plan for a composite task by appending feedback and resetting to Planning status.
+/// Updates the plan for a composite task by appending feedback and resetting to
+/// Planning status.
 pub async fn update_plan<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<UpdatePlanRequest>,
@@ -445,19 +446,28 @@ pub async fn update_plan<S: TaskStore>(
         .ok_or_else(|| ServerError::NotFound("Composite task not found".to_string()))?;
 
     // Only allow re-planning from PendingApproval or Failed states
-    if task.status != EntityCompositeTaskStatus::PendingApproval
-        && task.status != EntityCompositeTaskStatus::Failed
+    let previous_status = task.status;
+    if previous_status != EntityCompositeTaskStatus::PendingApproval
+        && previous_status != EntityCompositeTaskStatus::Failed
     {
         return Err(ServerError::InvalidRequest(format!(
-            "Cannot update plan: task is in {:?} status (must be PendingApproval or Failed)",
-            task.status
+            "Cannot update plan: task is in {} status (must be PendingApproval or Failed)",
+            previous_status
         )));
     }
+
+    // Sanitize the feedback prompt: remove null bytes and other control characters
+    // (except newlines and tabs which are valid in prompts)
+    let sanitized_prompt: String = request
+        .prompt
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect();
 
     // Append feedback to the prompt and reset to Planning
     task.prompt = format!(
         "{}\n\n--- Update Plan Request ---\n{}",
-        task.prompt, request.prompt
+        task.prompt, sanitized_prompt
     );
     task.plan_yaml = None;
     task.status = EntityCompositeTaskStatus::Planning;
@@ -470,7 +480,12 @@ pub async fn update_plan<S: TaskStore>(
 
     let task = state.store.update_composite_task(task).await?;
 
-    tracing::info!(task_id = %task_id, "Plan updated for re-planning");
+    tracing::info!(
+        task_id = %task_id,
+        prompt_length = request.prompt.len(),
+        previous_status = %previous_status,
+        "Plan updated for re-planning"
+    );
 
     Ok(Json(UpdatePlanResponse {
         task: entity_to_rpc_composite_task(&task),

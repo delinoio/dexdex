@@ -1071,19 +1071,30 @@ pub async fn update_plan_with_prompt(
         .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
 
     // Verify the task is in a state that allows re-planning
-    if composite_task.status != CompositeTaskStatus::PendingApproval
-        && composite_task.status != CompositeTaskStatus::Failed
+    let previous_status = composite_task.status;
+    if previous_status != CompositeTaskStatus::PendingApproval
+        && previous_status != CompositeTaskStatus::Failed
     {
         return Err(AppError::InvalidRequest(format!(
-            "Cannot update plan: task is in {:?} status (must be PendingApproval or Failed)",
-            composite_task.status
+            "Cannot update plan: task is in {} status (must be PendingApproval or Failed)",
+            previous_status
         )));
     }
+
+    // Save updated_at for optimistic concurrency check
+    let expected_updated_at = composite_task.updated_at;
+
+    // Sanitize the feedback prompt: remove null bytes and other control characters
+    // (except newlines and tabs which are valid in prompts)
+    let sanitized_prompt: String = prompt
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect();
 
     // Append the user's feedback to the original prompt
     composite_task.prompt = format!(
         "{}\n\n--- Update Plan Request ---\n{}",
-        composite_task.prompt, prompt
+        composite_task.prompt, sanitized_prompt
     );
 
     // Clear the old plan
@@ -1097,6 +1108,18 @@ pub async fn update_plan_with_prompt(
         .create_agent_task(planning_task)
         .await?;
 
+    // Re-fetch the task to check for concurrent modifications (optimistic lock)
+    let current_task = runtime
+        .task_store_arc()
+        .get_composite_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
+    if current_task.updated_at != expected_updated_at {
+        return Err(AppError::InvalidRequest(
+            "Task was modified concurrently. Please try again.".to_string(),
+        ));
+    }
+
     // Update the composite task with the new planning task and reset status
     composite_task.planning_task_id = planning_task.id;
     composite_task.status = CompositeTaskStatus::Planning;
@@ -1107,8 +1130,10 @@ pub async fn update_plan_with_prompt(
         .await?;
 
     info!(
-        "Updated composite task {} for re-planning with new prompt",
-        id
+        task_id = %id,
+        prompt_length = prompt.len(),
+        previous_status = %previous_status,
+        "Updated composite task for re-planning with new prompt"
     );
 
     // Trigger re-planning if executor is initialized
