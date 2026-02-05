@@ -1106,15 +1106,15 @@ pub async fn request_changes(
     ))
 }
 
-/// Gets logs for a task.
+/// Gets logs for an agent task.
 ///
 /// Returns normalized events from the agent session output.
-/// Supports both unit task IDs and agent task IDs (for planning tasks).
+/// Only accepts agent task IDs directly.
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task_logs(
     state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
+    agent_task_id: String,
     after_event_id: Option<i64>,
 ) -> AppResult<TaskLogsResponse> {
     let state = state.read().await;
@@ -1123,8 +1123,8 @@ pub async fn get_task_logs(
         // In remote mode on desktop, we currently return minimal data
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
-        // TODO: Implement proper remote log streaming (task_id and after_event_id are
-        // unused here)
+        // TODO: Implement proper remote log streaming (agent_task_id and after_event_id
+        // are unused here)
         return Ok(TaskLogsResponse {
             events: Vec::new(),
             is_complete: true,
@@ -1132,36 +1132,26 @@ pub async fn get_task_logs(
         });
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    let agent_task_id = Uuid::parse_str(&agent_task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid agent task ID: {}", e)))?;
 
     let runtime = state
         .local_runtime
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Try to get logs by unit task ID first, then composite task ID, then agent
-    // task ID. This supports:
-    // - Regular unit tasks (unit task ID -> agent_task_id)
-    // - Composite task planning (composite task ID -> planning_task_id)
-    // - Direct agent task lookups (agent task ID)
-    let (agent_task_id, task_is_complete) = if let Some(task) =
-        runtime.task_store_arc().get_unit_task(id).await?
+    // Verify the agent task exists
+    if runtime
+        .task_store_arc()
+        .get_agent_task(agent_task_id)
+        .await?
+        .is_none()
     {
-        // Found a unit task - use its agent_task_id
-        let is_complete = task.status != UnitTaskStatus::InProgress;
-        (task.agent_task_id, is_complete)
-    } else if let Some(composite_task) = runtime.task_store_arc().get_composite_task(id).await? {
-        // Found a composite task - use its planning_task_id for logs
-        let is_complete = composite_task.status != CompositeTaskStatus::Planning;
-        (composite_task.planning_task_id, is_complete)
-    } else if runtime.task_store_arc().get_agent_task(id).await?.is_some() {
-        // ID is an agent task ID directly
-        // For agent tasks, we determine completion from the session
-        (id, false)
-    } else {
-        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
-    };
+        return Err(AppError::NotFound(format!(
+            "Agent task not found: {}",
+            agent_task_id
+        )));
+    }
 
     // Get the sessions for the agent task
     let mut sessions = runtime
@@ -1172,11 +1162,11 @@ pub async fn get_task_logs(
     // Sort sessions by created_at to ensure we get the latest one
     sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-    // If no sessions, return empty
+    // If no sessions, return empty (task hasn't started yet)
     if sessions.is_empty() {
         return Ok(TaskLogsResponse {
             events: Vec::new(),
-            is_complete: task_is_complete,
+            is_complete: false,
             last_event_id: None,
         });
     }
@@ -1187,13 +1177,8 @@ pub async fn get_task_logs(
         .last()
         .ok_or_else(|| AppError::Internal("Sessions list became empty unexpectedly".to_string()))?;
 
-    // Determine completion based on the latest agent session when available,
-    // falling back to the task status otherwise.
-    let is_complete = if session.completed_at.is_some() {
-        true
-    } else {
-        task_is_complete
-    };
+    // Determine completion based on whether the session has completed
+    let is_complete = session.completed_at.is_some();
     let mut events = Vec::new();
     let mut last_event_id: Option<i64> = None;
 
@@ -1237,7 +1222,7 @@ pub async fn get_task_logs(
     })
 }
 
-/// Gets logs for a task (mobile - remote mode only).
+/// Gets logs for an agent task (mobile - remote mode only).
 ///
 /// Note: In remote mode, we fetch the session log from the server. The log
 /// format may differ from local mode as we receive it as a single string
@@ -1247,7 +1232,7 @@ pub async fn get_task_logs(
 #[allow(unused_variables)]
 pub async fn get_task_logs(
     state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
+    agent_task_id: String,
     after_event_id: Option<i64>,
 ) -> AppResult<TaskLogsResponse> {
     let state = state.read().await;
