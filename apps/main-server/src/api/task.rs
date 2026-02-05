@@ -7,6 +7,7 @@ use entities::{
     AgentTask, CompositeTask, CompositeTaskStatus as EntityCompositeTaskStatus, UnitTask,
     UnitTaskStatus as EntityUnitTaskStatus,
 };
+use plan_parser::{Plan, validate_plan};
 use rpc_protocol::{CompositeTaskStatus, UnitTaskStatus, requests::*, responses::*};
 use task_store::{TaskFilter, TaskStore};
 use uuid::Uuid;
@@ -15,6 +16,10 @@ use crate::{
     error::{ServerError, ServerResult},
     state::AppState,
 };
+
+/// Maximum number of tasks allowed in a single composite task plan.
+/// This prevents resource exhaustion from excessively large plans.
+const MAX_TASKS_PER_PLAN: usize = 100;
 
 /// Converts RPC UnitTaskStatus to entity UnitTaskStatus.
 fn to_entity_unit_status(status: UnitTaskStatus) -> EntityUnitTaskStatus {
@@ -387,10 +392,42 @@ pub async fn approve_task<S: TaskStore>(
 
     // Try composite task
     if let Some(mut task) = state.store.get_composite_task(task_id).await? {
+        if task.status != EntityCompositeTaskStatus::PendingApproval {
+            return Err(ServerError::InvalidRequest(
+                "Composite task is not in PendingApproval status".to_string(),
+            ));
+        }
+
+        // Validate the plan before approving
+        if let Some(ref plan_yaml) = task.plan_yaml {
+            match validate_composite_task_plan(plan_yaml) {
+                Ok(plan) => {
+                    tracing::info!(
+                        task_id = %task_id,
+                        task_count = plan.tasks.len(),
+                        "Plan validated successfully"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        task_id = %task_id,
+                        error = %e,
+                        "Plan validation failed during approval"
+                    );
+                    task.status = EntityCompositeTaskStatus::Failed;
+                    state.store.update_composite_task(task).await?;
+                    return Err(e);
+                }
+            }
+        }
+
+        // Only validate and change status on the server side.
+        // Node creation is delegated to the executor (LocalExecutor or
+        // worker) to avoid duplicate node creation.
         task.status = EntityCompositeTaskStatus::InProgress;
         task.updated_at = chrono::Utc::now();
         state.store.update_composite_task(task).await?;
-        tracing::info!(task_id = %task_id, "CompositeTask approved");
+        tracing::info!(task_id = %task_id, "CompositeTask approved and execution started");
         return Ok(Json(ApproveTaskResponse {}));
     }
 
@@ -492,6 +529,39 @@ pub async fn update_plan<S: TaskStore>(
     }))
 }
 
+/// Validates a composite task's plan YAML, checking for parse errors,
+/// validation errors (cycles, invalid deps, etc.), and resource limits.
+///
+/// Returns `Ok(plan)` if valid, or an appropriate `ServerError`.
+///
+/// NOTE: This validation is intentionally duplicated here (server API boundary)
+/// and in `LocalExecutor::execute_composite_task_graph` (executor). The server
+/// validates for immediate user feedback when approving via the remote API,
+/// while the executor validates for the desktop (Tauri) code path where
+/// approval bypasses the server. Both paths must reject invalid plans.
+fn validate_composite_task_plan(plan_yaml: &str) -> ServerResult<Plan> {
+    let plan = Plan::from_yaml(plan_yaml)
+        .map_err(|e| ServerError::Internal(format!("Failed to parse plan YAML: {}", e)))?;
+
+    let validation = validate_plan(&plan);
+    if !validation.is_valid() {
+        return Err(ServerError::InvalidRequest(format!(
+            "Invalid plan: {:?}",
+            validation.errors
+        )));
+    }
+
+    if plan.tasks.len() > MAX_TASKS_PER_PLAN {
+        return Err(ServerError::InvalidRequest(format!(
+            "Plan has {} tasks, exceeding the maximum of {}",
+            plan.tasks.len(),
+            MAX_TASKS_PER_PLAN
+        )));
+    }
+
+    Ok(plan)
+}
+
 /// Requests changes on a task.
 pub async fn request_changes<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
@@ -522,4 +592,427 @@ pub async fn request_changes<S: TaskStore>(
     Ok(Json(RequestChangesResponse {
         task: entity_to_rpc_unit_task(&task),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_valid_plan() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+  - id: "b"
+    prompt: "Task B"
+    dependsOn: ["a"]
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert_eq!(plan.tasks.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_plan_with_cycle() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+    dependsOn: ["b"]
+  - id: "b"
+    prompt: "Task B"
+    dependsOn: ["a"]
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("CyclicDependency"),
+            "Expected CyclicDependency error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_validate_plan_with_invalid_dependency() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+    dependsOn: ["non-existent"]
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("InvalidDependency"),
+            "Expected InvalidDependency error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_validate_plan_with_duplicate_ids() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+  - id: "a"
+    prompt: "Task A again"
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("DuplicateTaskId"),
+            "Expected DuplicateTaskId error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_validate_plan_with_empty_prompt() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: ""
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("EmptyPrompt"),
+            "Expected EmptyPrompt error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_validate_plan_invalid_yaml() {
+        let yaml = "this is not valid yaml for a plan";
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_plan_exceeds_max_tasks() {
+        // Create a plan with more than MAX_TASKS_PER_PLAN tasks
+        let mut tasks = String::from("tasks:\n");
+        for i in 0..(MAX_TASKS_PER_PLAN + 1) {
+            tasks.push_str(&format!(
+                "  - id: \"task-{}\"\n    prompt: \"Task {}\"\n",
+                i, i
+            ));
+        }
+        let result = validate_composite_task_plan(&tasks);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("exceeding the maximum"),
+            "Expected max tasks error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_validate_plan_at_max_tasks() {
+        // Create a plan with exactly MAX_TASKS_PER_PLAN tasks (should succeed)
+        let mut tasks = String::from("tasks:\n");
+        for i in 0..MAX_TASKS_PER_PLAN {
+            tasks.push_str(&format!(
+                "  - id: \"task-{}\"\n    prompt: \"Task {}\"\n",
+                i, i
+            ));
+        }
+        let result = validate_composite_task_plan(&tasks);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_plan_with_diamond_dependencies() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+  - id: "b"
+    prompt: "Task B"
+    dependsOn: ["a"]
+  - id: "c"
+    prompt: "Task C"
+    dependsOn: ["a"]
+  - id: "d"
+    prompt: "Task D"
+    dependsOn: ["b", "c"]
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert_eq!(plan.tasks.len(), 4);
+    }
+
+    #[test]
+    fn test_validate_plan_self_dependency() {
+        let yaml = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+    dependsOn: ["a"]
+"#;
+        let result = validate_composite_task_plan(yaml);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("CyclicDependency"),
+            "Expected CyclicDependency error, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_approve_composite_task_with_valid_plan() {
+        use task_store::MemoryTaskStore;
+
+        let store = MemoryTaskStore::new();
+        let config = crate::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 54871,
+            database_url: "sqlite::memory:".to_string(),
+            single_user_mode: true,
+            jwt_secret: None,
+            jwt_expiration_hours: 24,
+            oidc_issuer_url: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_redirect_url: None,
+            log_level: "info".to_string(),
+            webhook_secret: None,
+        };
+        let state = Arc::new(AppState::new(config, store, None));
+
+        // Create repository group
+        let workspace = entities::Workspace::new("Test Workspace");
+        let workspace = state.store.create_workspace(workspace).await.unwrap();
+        let repo = entities::Repository::new(
+            workspace.id,
+            "test-repo",
+            "https://github.com/test/repo.git",
+            entities::VcsProviderType::Github,
+        );
+        let repo = state.store.create_repository(repo).await.unwrap();
+        let mut repo_group = entities::RepositoryGroup::new(workspace.id);
+        repo_group.repository_ids.push(repo.id);
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
+
+        // Create a planning agent task
+        let planning_task = AgentTask::new();
+        let planning_task = state.store.create_agent_task(planning_task).await.unwrap();
+
+        // Create composite task in PendingApproval status with valid plan
+        let valid_plan = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+  - id: "b"
+    prompt: "Task B"
+    dependsOn: ["a"]
+"#;
+        let mut composite_task = CompositeTask::new(repo_group.id, planning_task.id, "Test task");
+        composite_task.status = EntityCompositeTaskStatus::PendingApproval;
+        composite_task.plan_yaml = Some(valid_plan.to_string());
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
+
+        // Approve the task
+        let request = ApproveTaskRequest {
+            task_id: composite_task.id.to_string(),
+        };
+        let result = approve_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify the status was updated to InProgress
+        let updated = state
+            .store
+            .get_composite_task(composite_task.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.status, EntityCompositeTaskStatus::InProgress);
+    }
+
+    #[tokio::test]
+    async fn test_approve_composite_task_with_invalid_plan_fails() {
+        use task_store::MemoryTaskStore;
+
+        let store = MemoryTaskStore::new();
+        let config = crate::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 54871,
+            database_url: "sqlite::memory:".to_string(),
+            single_user_mode: true,
+            jwt_secret: None,
+            jwt_expiration_hours: 24,
+            oidc_issuer_url: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_redirect_url: None,
+            log_level: "info".to_string(),
+            webhook_secret: None,
+        };
+        let state = Arc::new(AppState::new(config, store, None));
+
+        // Create repository group
+        let workspace = entities::Workspace::new("Test Workspace");
+        let workspace = state.store.create_workspace(workspace).await.unwrap();
+        let repo = entities::Repository::new(
+            workspace.id,
+            "test-repo",
+            "https://github.com/test/repo.git",
+            entities::VcsProviderType::Github,
+        );
+        let repo = state.store.create_repository(repo).await.unwrap();
+        let mut repo_group = entities::RepositoryGroup::new(workspace.id);
+        repo_group.repository_ids.push(repo.id);
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
+
+        // Create a planning agent task
+        let planning_task = AgentTask::new();
+        let planning_task = state.store.create_agent_task(planning_task).await.unwrap();
+
+        // Create composite task with cyclic plan
+        let cyclic_plan = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+    dependsOn: ["b"]
+  - id: "b"
+    prompt: "Task B"
+    dependsOn: ["a"]
+"#;
+        let mut composite_task = CompositeTask::new(repo_group.id, planning_task.id, "Test task");
+        composite_task.status = EntityCompositeTaskStatus::PendingApproval;
+        composite_task.plan_yaml = Some(cyclic_plan.to_string());
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
+
+        // Approve the task should fail
+        let request = ApproveTaskRequest {
+            task_id: composite_task.id.to_string(),
+        };
+        let result = approve_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+
+        // Verify the status was set to Failed
+        let updated = state
+            .store
+            .get_composite_task(composite_task.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.status, EntityCompositeTaskStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn test_approve_composite_task_no_node_creation() {
+        use task_store::MemoryTaskStore;
+
+        let store = MemoryTaskStore::new();
+        let config = crate::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 54871,
+            database_url: "sqlite::memory:".to_string(),
+            single_user_mode: true,
+            jwt_secret: None,
+            jwt_expiration_hours: 24,
+            oidc_issuer_url: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_redirect_url: None,
+            log_level: "info".to_string(),
+            webhook_secret: None,
+        };
+        let state = Arc::new(AppState::new(config, store, None));
+
+        // Create repository group
+        let workspace = entities::Workspace::new("Test Workspace");
+        let workspace = state.store.create_workspace(workspace).await.unwrap();
+        let repo = entities::Repository::new(
+            workspace.id,
+            "test-repo",
+            "https://github.com/test/repo.git",
+            entities::VcsProviderType::Github,
+        );
+        let repo = state.store.create_repository(repo).await.unwrap();
+        let mut repo_group = entities::RepositoryGroup::new(workspace.id);
+        repo_group.repository_ids.push(repo.id);
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
+
+        // Create a planning agent task
+        let planning_task = AgentTask::new();
+        let planning_task = state.store.create_agent_task(planning_task).await.unwrap();
+
+        // Create composite task with valid plan
+        let valid_plan = r#"
+tasks:
+  - id: "a"
+    prompt: "Task A"
+  - id: "b"
+    prompt: "Task B"
+    dependsOn: ["a"]
+"#;
+        let mut composite_task = CompositeTask::new(repo_group.id, planning_task.id, "Test task");
+        composite_task.status = EntityCompositeTaskStatus::PendingApproval;
+        composite_task.plan_yaml = Some(valid_plan.to_string());
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
+
+        // Approve the task
+        let request = ApproveTaskRequest {
+            task_id: composite_task.id.to_string(),
+        };
+        let _result = approve_task(State(state.clone()), Json(request))
+            .await
+            .unwrap();
+
+        // Verify that no CompositeTaskNodes were created
+        // (node creation is delegated to the executor)
+        let nodes = state
+            .store
+            .list_composite_task_nodes(composite_task.id)
+            .await
+            .unwrap();
+        assert!(
+            nodes.is_empty(),
+            "Server approval should not create nodes; expected 0, got {}",
+            nodes.len()
+        );
+    }
 }

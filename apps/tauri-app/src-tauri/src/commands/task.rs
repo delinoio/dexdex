@@ -14,7 +14,7 @@ use rpc_protocol::requests;
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use task_store::{TaskFilter, TaskStore};
-use tauri::State;
+use tauri::{Emitter, State};
 use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
@@ -24,6 +24,7 @@ use crate::state::ERR_LOCAL_MODE_NOT_SUPPORTED;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
+    events::{event_names, TaskStatusChangedEvent, TaskType},
     remote_client::{
         entity_to_rpc_agent_type, entity_to_rpc_composite_status, entity_to_rpc_unit_status,
         rpc_to_entity_composite_task, rpc_to_entity_unit_task, validate_optional_name,
@@ -859,6 +860,7 @@ pub async fn list_tasks(
 #[tauri::command]
 pub async fn approve_task(
     state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
     task_id: String,
 ) -> AppResult<()> {
     let state = state.read().await;
@@ -886,10 +888,23 @@ pub async fn approve_task(
 
     // Try to find and update unit task
     if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+        let old_status = format!("{:?}", task.status).to_lowercase();
         task.status = UnitTaskStatus::Approved;
         task.updated_at = chrono::Utc::now();
         runtime.task_store_arc().update_unit_task(task).await?;
         info!("Approved unit task: {}", id);
+
+        // Emit task-status-changed so the frontend auto-updates
+        let _ = app_handle.emit(
+            event_names::TASK_STATUS_CHANGED,
+            &TaskStatusChangedEvent {
+                task_id: task_id.clone(),
+                task_type: TaskType::UnitTask,
+                old_status,
+                new_status: "approved".to_string(),
+            },
+        );
+
         return Ok(());
     }
 
@@ -897,12 +912,64 @@ pub async fn approve_task(
     if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
         if task.status == CompositeTaskStatus::PendingApproval {
             task.status = CompositeTaskStatus::InProgress;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_composite_task(task).await?;
+            info!("Approved composite task: {}", id);
+
+            // Emit task-status-changed so the frontend auto-updates immediately
+            let _ = app_handle.emit(
+                event_names::TASK_STATUS_CHANGED,
+                &TaskStatusChangedEvent {
+                    task_id: task_id.clone(),
+                    task_type: TaskType::CompositeTask,
+                    old_status: "pending_approval".to_string(),
+                    new_status: "in_progress".to_string(),
+                },
+            );
+
+            // Trigger composite task graph execution: parse plan_yaml, create
+            // nodes and unit tasks, and start executing root tasks.
+            if let Some(executor) = runtime.executor().await {
+                let composite_task_id = id;
+                tokio::spawn(async move {
+                    if let Err(e) = executor
+                        .execute_composite_task_graph(composite_task_id)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to start composite task graph execution for {}: {}",
+                            composite_task_id,
+                            e
+                        );
+                    }
+                });
+            } else {
+                tracing::warn!(
+                    "Executor not initialized, composite task {} graph will not be executed",
+                    id
+                );
+            }
         } else {
+            let old_status = serde_json::to_string(&task.status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
             task.status = CompositeTaskStatus::Done;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_composite_task(task).await?;
+            info!("Approved composite task (marked done): {}", id);
+
+            // Emit task-status-changed so the frontend auto-updates
+            let _ = app_handle.emit(
+                event_names::TASK_STATUS_CHANGED,
+                &TaskStatusChangedEvent {
+                    task_id: task_id.clone(),
+                    task_type: TaskType::CompositeTask,
+                    old_status,
+                    new_status: "done".to_string(),
+                },
+            );
         }
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_composite_task(task).await?;
-        info!("Approved composite task: {}", id);
         return Ok(());
     }
 

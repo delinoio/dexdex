@@ -4,7 +4,7 @@
 //! from the `coding_agents` crate with platform-specific event emission.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -18,7 +18,11 @@ use coding_agents::{
         TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent,
     },
 };
-use entities::{AgentSession, AiAgentType, CompositeTaskStatus, UnitTaskStatus};
+use entities::{
+    AgentSession, AgentTask, AiAgentType, CompositeTaskNode, CompositeTaskStatus, UnitTask,
+    UnitTaskStatus,
+};
+use plan_parser::{Plan, validate_plan};
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -29,6 +33,23 @@ use crate::{
     error::WorkerError,
     planning_prompt::{build_planning_prompt, generate_plan_yaml_suffix, plan_yaml_filename},
 };
+
+/// Maximum number of tasks allowed in a single composite task plan.
+/// This prevents resource exhaustion from excessively large plans.
+const MAX_TASKS_PER_PLAN: usize = 100;
+
+/// Default polling interval in seconds for the composite task graph monitor.
+const DEFAULT_GRAPH_MONITOR_INTERVAL_SECS: u64 = 3;
+
+/// Maximum number of consecutive failures in the graph monitor before giving
+/// up. This prevents infinite error loops that consume resources when the
+/// database becomes persistently unavailable.
+const MAX_CONSECUTIVE_MONITOR_FAILURES: u32 = 10;
+
+/// Default timeout in seconds for the planning phase of a composite task.
+/// If the planning agent doesn't complete within this time, the composite task
+/// is marked as Failed. Defaults to 30 minutes.
+const DEFAULT_PLANNING_TIMEOUT_SECS: u64 = 30 * 60;
 
 /// A wrapper emitter that both emits events to an inner emitter AND persists
 /// them to the database incrementally.
@@ -178,6 +199,8 @@ pub struct LocalExecutor<E: EventEmitter> {
     /// Active execution handles keyed by task ID.
     /// This stores handles for spawned tasks so they can be cancelled.
     execution_handles: Arc<RwLock<HashMap<Uuid, JoinHandle<()>>>>,
+    /// Polling interval in seconds for the composite task graph monitor.
+    graph_monitor_interval_secs: u64,
 }
 
 impl<E: EventEmitter + 'static> LocalExecutor<E> {
@@ -191,12 +214,24 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             emitter,
             data_dir,
             execution_handles: Arc::new(RwLock::new(HashMap::new())),
+            graph_monitor_interval_secs: DEFAULT_GRAPH_MONITOR_INTERVAL_SECS,
         }
     }
 
     /// Returns the TTY request manager for responding to input requests.
     pub fn tty_request_manager(&self) -> Arc<TtyInputRequestManager> {
         self.executor.tty_request_manager()
+    }
+
+    /// Returns the event emitter for emitting task lifecycle events.
+    pub fn emitter(&self) -> &Arc<E> {
+        &self.emitter
+    }
+
+    /// Sets the polling interval in seconds for the composite task graph
+    /// monitor.
+    pub fn set_graph_monitor_interval_secs(&mut self, secs: u64) {
+        self.graph_monitor_interval_secs = secs;
     }
 
     /// Executes a unit task asynchronously.
@@ -401,6 +436,35 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         }
     }
 
+    /// Returns `true` if the unit task status indicates the AI agent has
+    /// successfully finished its work (InReview or later positive states).
+    ///
+    /// This is the single source of truth for "successful completion" checks,
+    /// used by both the graph monitor and terminal-state logic to prevent
+    /// drift.
+    fn is_successfully_complete(status: &UnitTaskStatus) -> bool {
+        matches!(
+            status,
+            UnitTaskStatus::InReview
+                | UnitTaskStatus::Approved
+                | UnitTaskStatus::PrOpen
+                | UnitTaskStatus::Done
+        )
+    }
+
+    /// Returns `true` if the unit task status is terminal (no further state
+    /// transitions expected). Includes both successful and failed states.
+    ///
+    /// This is the single source of truth for "terminal state" checks, used
+    /// by the graph monitor to determine when the composite task is complete.
+    fn is_terminal_status(status: &UnitTaskStatus) -> bool {
+        Self::is_successfully_complete(status)
+            || matches!(
+                status,
+                UnitTaskStatus::Failed | UnitTaskStatus::Rejected | UnitTaskStatus::Cancelled
+            )
+    }
+
     /// Executes the planning phase of a composite task asynchronously.
     ///
     /// This spawns a background task that:
@@ -521,13 +585,40 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let branch_name_clone = branch_name.clone();
         let plan_filename_clone = plan_filename.clone();
 
-        // Spawn the planning execution task
+        // Spawn the planning execution task with a timeout to prevent
+        // indefinite hangs during the planning phase
+        let planning_timeout = tokio::time::Duration::from_secs(DEFAULT_PLANNING_TIMEOUT_SECS);
         let handle = tokio::spawn(async move {
-            // Execute without cleanup so we can read PLAN.yaml from the worktree
-            let ExecutionResultWithWorktree {
-                result,
-                worktree_path,
-            } = executor.execute_and_wait_without_cleanup(config).await;
+            // Execute without cleanup so we can read PLAN.yaml from the worktree.
+            // Wrap in a timeout so a hung planning agent doesn't block forever.
+            let timed_result = tokio::time::timeout(
+                planning_timeout,
+                executor.execute_and_wait_without_cleanup(config),
+            )
+            .await;
+
+            let (result, worktree_path) = match timed_result {
+                Ok(ExecutionResultWithWorktree {
+                    result,
+                    worktree_path,
+                }) => (result, worktree_path),
+                Err(_elapsed) => {
+                    error!(
+                        "Planning for composite task {} timed out after {} seconds",
+                        composite_task_id, DEFAULT_PLANNING_TIMEOUT_SECS
+                    );
+                    (
+                        ExecutionResult::Failed {
+                            error: format!(
+                                "Planning timed out after {} seconds",
+                                DEFAULT_PLANNING_TIMEOUT_SECS
+                            ),
+                            logs: vec![],
+                        },
+                        None,
+                    )
+                }
+            };
 
             // Final persist of all logs
             persisting_emitter.persist_logs().await;
@@ -832,6 +923,660 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             Err(e) => {
                 warn!("Failed to glob for PLAN.yaml files: {}", e);
                 None
+            }
+        }
+    }
+
+    /// Executes the task graph for a composite task after approval.
+    ///
+    /// This method:
+    /// 1. Parses the `plan_yaml` from the composite task
+    /// 2. Creates `UnitTask` and `CompositeTaskNode` records for each plan task
+    /// 3. Starts executing tasks that have no dependencies (root tasks)
+    /// 4. Spawns a monitoring task that checks for newly ready tasks as
+    ///    dependencies complete
+    pub async fn execute_composite_task_graph(
+        self: &Arc<Self>,
+        composite_task_id: Uuid,
+    ) -> Result<(), String> {
+        info!(
+            "Starting composite task graph execution for: {}",
+            composite_task_id
+        );
+
+        // Get the composite task
+        let composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        // Parse plan_yaml
+        let plan_yaml = composite_task
+            .plan_yaml
+            .as_ref()
+            .ok_or_else(|| "Composite task has no plan_yaml".to_string())?;
+
+        let plan =
+            Plan::from_yaml(plan_yaml).map_err(|e| format!("Failed to parse plan YAML: {}", e))?;
+
+        // Validate the plan for cycles, invalid dependencies, duplicate IDs,
+        // etc.
+        //
+        // NOTE: This validation is intentionally duplicated here and in the
+        // server's `approve_task` endpoint (`validate_composite_task_plan`).
+        // The server validates on the API boundary for immediate user
+        // feedback, while this validation guards the executor for the desktop
+        // (Tauri) code path where approval bypasses the server.
+        let validation = validate_plan(&plan);
+        if !validation.is_valid() {
+            let err_msg = format!("Plan validation failed: {:?}", validation.errors);
+            error!(
+                composite_task_id = %composite_task_id,
+                errors = ?validation.errors,
+                "Plan validation failed"
+            );
+            // Mark composite task as failed
+            if let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await {
+                ct.status = CompositeTaskStatus::Failed;
+                ct.updated_at = chrono::Utc::now();
+                let _ = self.task_store.update_composite_task(ct).await;
+            }
+            return Err(err_msg);
+        }
+
+        // Check resource limits
+        if plan.tasks.len() > MAX_TASKS_PER_PLAN {
+            let err_msg = format!(
+                "Plan has {} tasks, exceeding the maximum of {}",
+                plan.tasks.len(),
+                MAX_TASKS_PER_PLAN
+            );
+            error!(
+                composite_task_id = %composite_task_id,
+                task_count = plan.tasks.len(),
+                max = MAX_TASKS_PER_PLAN,
+                "Plan exceeds maximum task limit"
+            );
+            if let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await {
+                ct.status = CompositeTaskStatus::Failed;
+                ct.updated_at = chrono::Utc::now();
+                let _ = self.task_store.update_composite_task(ct).await;
+            }
+            return Err(err_msg);
+        }
+
+        info!(
+            "Parsed plan with {} tasks for composite task {}",
+            plan.tasks.len(),
+            composite_task_id
+        );
+
+        // Get the repository group to find repositories
+        let repo_group = self
+            .task_store
+            .get_repository_group(composite_task.repository_group_id)
+            .await
+            .map_err(|e| format!("Failed to get repository group: {}", e))?
+            .ok_or_else(|| {
+                format!(
+                    "Repository group not found: {}",
+                    composite_task.repository_group_id
+                )
+            })?;
+
+        let repo_id = repo_group
+            .repository_ids
+            .first()
+            .ok_or_else(|| "Repository group has no repositories".to_string())?;
+
+        // Verify repository exists
+        self.task_store
+            .get_repository(*repo_id)
+            .await
+            .map_err(|e| format!("Failed to get repository: {}", e))?
+            .ok_or_else(|| format!("Repository not found: {}", repo_id))?;
+
+        let agent_type = composite_task
+            .execution_agent_type
+            .unwrap_or(AiAgentType::ClaudeCode);
+
+        // Create all nodes with cleanup on error. If any node creation fails,
+        // we delete all previously created nodes and unit tasks to avoid orphaned
+        // records.
+        let create_result = self
+            .create_task_graph_nodes(
+                composite_task_id,
+                composite_task.repository_group_id,
+                agent_type,
+                &plan,
+            )
+            .await;
+
+        let (node_ids, plan_id_to_unit_task_id) = match create_result {
+            Ok(result) => result,
+            Err(e) => {
+                error!(
+                    "Failed to create task graph nodes for composite task {}: {}",
+                    composite_task_id, e
+                );
+                // Mark composite task as failed
+                if let Ok(Some(mut ct)) =
+                    self.task_store.get_composite_task(composite_task_id).await
+                {
+                    ct.status = CompositeTaskStatus::Failed;
+                    ct.updated_at = chrono::Utc::now();
+                    let _ = self.task_store.update_composite_task(ct).await;
+                }
+                return Err(e);
+            }
+        };
+
+        // Update composite task with node_ids
+        let mut composite_task = self
+            .task_store
+            .get_composite_task(composite_task_id)
+            .await
+            .map_err(|e| format!("Failed to get composite task: {}", e))?
+            .ok_or_else(|| format!("Composite task not found: {}", composite_task_id))?;
+
+        composite_task.node_ids = node_ids;
+        composite_task.updated_at = chrono::Utc::now();
+        self.task_store
+            .update_composite_task(composite_task)
+            .await
+            .map_err(|e| format!("Failed to update composite task node_ids: {}", e))?;
+
+        // Emit task-status-changed so the frontend refreshes the composite task
+        // detail view and picks up the newly created nodes and graph data.
+        if let Err(e) = self
+            .emitter
+            .emit_task_status_changed(TaskStatusChangedEvent {
+                task_id: composite_task_id.to_string(),
+                task_type: TaskType::CompositeTask,
+                old_status: "in_progress".to_string(),
+                new_status: "in_progress".to_string(),
+            })
+        {
+            warn!(
+                "Failed to emit status changed event after node creation for composite task {}: {}",
+                composite_task_id, e
+            );
+        }
+
+        // Find root tasks (no dependencies) and start them
+        let root_unit_task_ids: Vec<Uuid> = plan
+            .tasks
+            .iter()
+            .filter(|t| t.depends_on.is_empty())
+            .filter_map(|t| plan_id_to_unit_task_id.get(&t.id).copied())
+            .collect();
+
+        info!(
+            "Starting {} root tasks for composite task {}",
+            root_unit_task_ids.len(),
+            composite_task_id
+        );
+
+        for unit_task_id in &root_unit_task_ids {
+            // Guard against duplicate execution (idempotency). This is
+            // defensive: root tasks are freshly created so they shouldn't be
+            // running yet, but the check prevents issues if
+            // execute_composite_task_graph is called twice for the same task.
+            if self.is_executing(*unit_task_id).await {
+                warn!(
+                    "Root unit task {} is already executing, skipping",
+                    unit_task_id
+                );
+                continue;
+            }
+            if let Err(e) = self.execute_unit_task(*unit_task_id).await {
+                error!(
+                    "Failed to start unit task {} for composite task {}: {}",
+                    unit_task_id, composite_task_id, e
+                );
+            }
+        }
+
+        // Spawn a monitoring task that periodically checks for newly ready
+        // tasks and starts them. This runs until all tasks are complete.
+        let executor = Arc::clone(self);
+        let monitor_interval_secs = self.graph_monitor_interval_secs;
+        tokio::spawn(async move {
+            Self::monitor_composite_task_graph(executor, composite_task_id, monitor_interval_secs)
+                .await;
+        });
+
+        Ok(())
+    }
+
+    /// Creates AgentTask + UnitTask + CompositeTaskNode records for each plan
+    /// task. If any creation fails, cleans up all previously created records
+    /// to avoid orphaned data.
+    ///
+    /// Returns `(node_ids, plan_id_to_unit_task_id)` on success.
+    async fn create_task_graph_nodes(
+        &self,
+        composite_task_id: Uuid,
+        repository_group_id: Uuid,
+        agent_type: AiAgentType,
+        plan: &Plan,
+    ) -> Result<(Vec<Uuid>, HashMap<String, Uuid>), String> {
+        let mut plan_id_to_node_id: HashMap<String, Uuid> = HashMap::new();
+        let mut node_ids: Vec<Uuid> = Vec::new();
+        let mut plan_id_to_unit_task_id: HashMap<String, Uuid> = HashMap::new();
+        // Track created records for cleanup on error
+        let mut created_node_ids: Vec<Uuid> = Vec::new();
+        let mut created_unit_task_ids: Vec<Uuid> = Vec::new();
+        let mut created_agent_task_ids: Vec<Uuid> = Vec::new();
+
+        // First pass: Create AgentTask + UnitTask + CompositeTaskNode for each
+        // plan task (without dependencies set yet)
+        let first_pass_result: Result<(), String> = async {
+            for plan_task in &plan.tasks {
+                // Create agent task
+                let mut agent_task = AgentTask::new();
+                agent_task.ai_agent_type = Some(agent_type);
+                let agent_task = self
+                    .task_store
+                    .create_agent_task(agent_task)
+                    .await
+                    .map_err(|e| format!("Failed to create agent task: {}", e))?;
+                created_agent_task_ids.push(agent_task.id);
+
+                // Create unit task
+                let mut unit_task =
+                    UnitTask::new(repository_group_id, agent_task.id, &plan_task.prompt);
+                if let Some(title) = &plan_task.title {
+                    unit_task = unit_task.with_title(title);
+                }
+                if let Some(branch_name) = &plan_task.branch_name {
+                    unit_task = unit_task.with_branch_name(branch_name);
+                }
+
+                let unit_task = self
+                    .task_store
+                    .create_unit_task(unit_task)
+                    .await
+                    .map_err(|e| format!("Failed to create unit task: {}", e))?;
+                created_unit_task_ids.push(unit_task.id);
+
+                // Create composite task node
+                let node = CompositeTaskNode::new(composite_task_id, unit_task.id);
+                let node = self
+                    .task_store
+                    .create_composite_task_node(node)
+                    .await
+                    .map_err(|e| format!("Failed to create composite task node: {}", e))?;
+                created_node_ids.push(node.id);
+
+                info!(
+                    "Created node {} (unit task {}) for plan task '{}'",
+                    node.id, unit_task.id, plan_task.id
+                );
+
+                plan_id_to_node_id.insert(plan_task.id.clone(), node.id);
+                plan_id_to_unit_task_id.insert(plan_task.id.clone(), unit_task.id);
+                node_ids.push(node.id);
+            }
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = first_pass_result {
+            self.cleanup_created_records(
+                &created_node_ids,
+                &created_unit_task_ids,
+                &created_agent_task_ids,
+            )
+            .await;
+            return Err(e);
+        }
+
+        // Second pass: Set dependencies on nodes
+        let second_pass_result: Result<(), String> = async {
+            for plan_task in &plan.tasks {
+                if plan_task.depends_on.is_empty() {
+                    continue;
+                }
+
+                let node_id = plan_id_to_node_id[&plan_task.id];
+                let mut node = self
+                    .task_store
+                    .get_composite_task_node(node_id)
+                    .await
+                    .map_err(|e| format!("Failed to get composite task node: {}", e))?
+                    .ok_or_else(|| format!("Composite task node not found: {}", node_id))?;
+
+                for dep_plan_id in &plan_task.depends_on {
+                    let dep_node_id = plan_id_to_node_id.get(dep_plan_id).ok_or_else(|| {
+                        format!("Dependency plan task not found: {}", dep_plan_id)
+                    })?;
+                    node.depends_on(dep_node_id.to_owned());
+                }
+
+                self.task_store
+                    .update_composite_task_node(node)
+                    .await
+                    .map_err(|e| format!("Failed to update composite task node deps: {}", e))?;
+            }
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = second_pass_result {
+            self.cleanup_created_records(
+                &created_node_ids,
+                &created_unit_task_ids,
+                &created_agent_task_ids,
+            )
+            .await;
+            return Err(e);
+        }
+
+        Ok((node_ids, plan_id_to_unit_task_id))
+    }
+
+    /// Best-effort cleanup of records created during a failed node creation.
+    async fn cleanup_created_records(
+        &self,
+        node_ids: &[Uuid],
+        unit_task_ids: &[Uuid],
+        agent_task_ids: &[Uuid],
+    ) {
+        warn!(
+            "Cleaning up {} nodes, {} unit tasks, {} agent tasks after failed node creation",
+            node_ids.len(),
+            unit_task_ids.len(),
+            agent_task_ids.len()
+        );
+
+        for id in node_ids {
+            if let Err(e) = self.task_store.delete_composite_task_node(*id).await {
+                warn!("Failed to cleanup composite task node {}: {}", id, e);
+            }
+        }
+        for id in unit_task_ids {
+            if let Err(e) = self.task_store.delete_unit_task(*id).await {
+                warn!("Failed to cleanup unit task {}: {}", id, e);
+            }
+        }
+        for id in agent_task_ids {
+            if let Err(e) = self.task_store.delete_agent_task(*id).await {
+                warn!("Failed to cleanup agent task {}: {}", id, e);
+            }
+        }
+    }
+
+    /// Monitors a composite task graph and starts dependent tasks as their
+    /// dependencies complete. Runs until all tasks reach a terminal state.
+    ///
+    /// Uses a `started_tasks` set to prevent the race condition where multiple
+    /// monitor iterations could start the same task before it registers in
+    /// `execution_handles`. The set is checked atomically with the start call
+    /// to guarantee each task is started at most once.
+    async fn monitor_composite_task_graph(
+        executor: Arc<Self>,
+        composite_task_id: Uuid,
+        monitor_interval_secs: u64,
+    ) {
+        info!(
+            "Starting graph monitor for composite task {}",
+            composite_task_id
+        );
+
+        // Track which tasks we have already started to prevent duplicate
+        // executions across monitor iterations (solves the race between
+        // checking `is_executing()` and actually calling `execute_unit_task`).
+        let mut started_tasks: HashSet<Uuid> = HashSet::new();
+
+        // Count consecutive failures to bail out if the database becomes
+        // persistently unavailable.
+        let mut consecutive_failures: u32 = 0;
+
+        loop {
+            // Wait before checking again (configurable interval)
+            tokio::time::sleep(tokio::time::Duration::from_secs(monitor_interval_secs)).await;
+
+            // Get all nodes for this composite task
+            let nodes = match executor
+                .task_store
+                .list_composite_task_nodes(composite_task_id)
+                .await
+            {
+                Ok(nodes) => {
+                    // Reset failure counter on success
+                    consecutive_failures = 0;
+                    nodes
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    error!(
+                        "Graph monitor: Failed to list nodes for composite task {} (consecutive \
+                         failure {}/{}): {}",
+                        composite_task_id,
+                        consecutive_failures,
+                        MAX_CONSECUTIVE_MONITOR_FAILURES,
+                        e
+                    );
+                    if consecutive_failures >= MAX_CONSECUTIVE_MONITOR_FAILURES {
+                        error!(
+                            "Graph monitor: Giving up after {} consecutive failures for composite \
+                             task {}. Marking as failed.",
+                            MAX_CONSECUTIVE_MONITOR_FAILURES, composite_task_id
+                        );
+                        if let Ok(Some(mut ct)) = executor
+                            .task_store
+                            .get_composite_task(composite_task_id)
+                            .await
+                        {
+                            let old_status = serde_json::to_string(&ct.status)
+                                .unwrap_or_default()
+                                .trim_matches('"')
+                                .to_string();
+                            ct.status = CompositeTaskStatus::Failed;
+                            ct.updated_at = chrono::Utc::now();
+                            if executor.task_store.update_composite_task(ct).await.is_ok() {
+                                // Emit task-status-changed so the frontend updates
+                                if let Err(e) = executor.emitter.emit_task_status_changed(
+                                    TaskStatusChangedEvent {
+                                        task_id: composite_task_id.to_string(),
+                                        task_type: TaskType::CompositeTask,
+                                        old_status,
+                                        new_status: "failed".to_string(),
+                                    },
+                                ) {
+                                    warn!(
+                                        "Graph monitor: Failed to emit status changed event for \
+                                         composite task {}: {}",
+                                        composite_task_id, e
+                                    );
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    continue;
+                }
+            };
+
+            if nodes.is_empty() {
+                debug!(
+                    "Graph monitor: No nodes found for composite task {}",
+                    composite_task_id
+                );
+                break;
+            }
+
+            // Build a mapping from node_id to its unit_task status
+            let mut node_statuses: HashMap<Uuid, UnitTaskStatus> = HashMap::new();
+            for node in &nodes {
+                match executor.task_store.get_unit_task(node.unit_task_id).await {
+                    Ok(Some(ut)) => {
+                        node_statuses.insert(node.id, ut.status);
+                    }
+                    Ok(None) => {
+                        warn!(
+                            "Graph monitor: Unit task {} not found for node {}",
+                            node.unit_task_id, node.id
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            "Graph monitor: Failed to get unit task {} for node {}: {}",
+                            node.unit_task_id, node.id, e
+                        );
+                    }
+                }
+            }
+
+            // Find dependent nodes whose dependencies are all complete but
+            // haven't started yet.
+            //
+            // NOTE: Root tasks (nodes with empty depends_on_ids) are excluded
+            // here because they are started separately during graph
+            // initialization in `execute_composite_task_graph`. Only tasks
+            // with dependencies need to be monitored for readiness.
+            let mut newly_ready: Vec<Uuid> = Vec::new();
+            for node in &nodes {
+                let status = match node_statuses.get(&node.id) {
+                    Some(s) => s,
+                    None => continue,
+                };
+
+                // Only consider tasks that are InProgress (initial state) and
+                // not yet being executed
+                if *status != UnitTaskStatus::InProgress {
+                    continue;
+                }
+
+                // Skip root tasks — they are started during initialization,
+                // not by the monitor.
+                if node.depends_on_ids.is_empty() {
+                    continue;
+                }
+
+                // Use the started_tasks set as the primary guard against
+                // duplicate starts. This is checked before is_executing() to
+                // avoid the TOCTOU race between checking the execution handles
+                // and actually spawning the task.
+                if started_tasks.contains(&node.unit_task_id) {
+                    continue;
+                }
+
+                // Also check is_executing as a secondary guard (e.g., if a
+                // task was started outside this monitor)
+                if executor.is_executing(node.unit_task_id).await {
+                    started_tasks.insert(node.unit_task_id);
+                    continue;
+                }
+
+                // Check if all dependencies are successfully complete
+                let all_deps_complete = node.depends_on_ids.iter().all(|dep_id| {
+                    node_statuses
+                        .get(dep_id)
+                        .is_some_and(|s| Self::is_successfully_complete(s))
+                });
+
+                if all_deps_complete {
+                    newly_ready.push(node.unit_task_id);
+                }
+            }
+
+            // Start newly ready tasks, marking them in the started set
+            // *before* calling execute to prevent the next iteration from
+            // starting the same task.
+            for unit_task_id in &newly_ready {
+                started_tasks.insert(*unit_task_id);
+                info!(
+                    "Graph monitor: Starting dependent task {} for composite task {}",
+                    unit_task_id, composite_task_id
+                );
+                if let Err(e) = executor.execute_unit_task(*unit_task_id).await {
+                    error!(
+                        "Graph monitor: Failed to start unit task {} for composite task {}: {}",
+                        unit_task_id, composite_task_id, e
+                    );
+                }
+            }
+
+            // Check if all tasks are in a terminal state using the shared
+            // helper to stay in sync with `is_successfully_complete`.
+            let all_terminal = node_statuses
+                .values()
+                .all(|status| Self::is_terminal_status(status));
+
+            if all_terminal && newly_ready.is_empty() {
+                // All tasks reached terminal state - update composite task
+                // status
+                let any_failed = node_statuses.values().any(|status| {
+                    matches!(
+                        status,
+                        UnitTaskStatus::Failed
+                            | UnitTaskStatus::Rejected
+                            | UnitTaskStatus::Cancelled
+                    )
+                });
+
+                let new_status = if any_failed {
+                    CompositeTaskStatus::Failed
+                } else {
+                    CompositeTaskStatus::Done
+                };
+
+                info!(
+                    "Graph monitor: All tasks in composite task {} are terminal, setting status \
+                     to {:?}",
+                    composite_task_id, new_status
+                );
+
+                if let Ok(Some(mut ct)) = executor
+                    .task_store
+                    .get_composite_task(composite_task_id)
+                    .await
+                {
+                    let old_status = serde_json::to_string(&ct.status)
+                        .unwrap_or_default()
+                        .trim_matches('"')
+                        .to_string();
+                    ct.status = new_status;
+                    ct.updated_at = chrono::Utc::now();
+                    if let Err(e) = executor.task_store.update_composite_task(ct).await {
+                        error!(
+                            "Graph monitor: Failed to update composite task {} status: {}",
+                            composite_task_id, e
+                        );
+                    } else {
+                        // Emit task-status-changed so the frontend updates
+                        let new_status_str = serde_json::to_string(&new_status)
+                            .unwrap_or_default()
+                            .trim_matches('"')
+                            .to_string();
+                        if let Err(e) =
+                            executor
+                                .emitter
+                                .emit_task_status_changed(TaskStatusChangedEvent {
+                                    task_id: composite_task_id.to_string(),
+                                    task_type: TaskType::CompositeTask,
+                                    old_status,
+                                    new_status: new_status_str,
+                                })
+                        {
+                            warn!(
+                                "Graph monitor: Failed to emit status changed event for composite \
+                                 task {}: {}",
+                                composite_task_id, e
+                            );
+                        }
+                    }
+                }
+
+                info!(
+                    "Graph monitor: Composite task {} completed with status {:?}",
+                    composite_task_id, new_status
+                );
+                break;
             }
         }
     }

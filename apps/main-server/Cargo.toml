@@ -9,6 +9,7 @@ publish = false
 entities = { path = "../../crates/entities" }
 rpc_protocol = { path = "../../crates/rpc_protocol" }
 task_store = { path = "../../crates/task_store" }
+plan_parser = { path = "../../crates/plan_parser" }
 auth = { path = "../../crates/auth" }
 
 # Async runtime
