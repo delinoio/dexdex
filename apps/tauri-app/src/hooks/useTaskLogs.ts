@@ -107,7 +107,12 @@ export function useTaskLogs({
   // Poll for logs
   const { data, isLoading, error } = useQuery({
     queryKey: [...taskLogsKeys.logs(agentTaskId), lastEventId],
-    queryFn: () => getTaskLogs(agentTaskId, lastEventId),
+    queryFn: async () => {
+      console.log("[useTaskLogs] Fetching logs for agentTaskId:", agentTaskId, "afterEventId:", lastEventId);
+      const result = await getTaskLogs(agentTaskId, lastEventId);
+      console.log("[useTaskLogs] Received", result.events.length, "events, isComplete:", result.isComplete);
+      return result;
+    },
     enabled: enabled && !!agentTaskId,
     refetchInterval: isComplete ? false : pollingInterval,
   });
