@@ -24,7 +24,11 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::{TtyInputRequestManager, error::WorkerError, planning_prompt::build_planning_prompt};
+use crate::{
+    TtyInputRequestManager,
+    error::WorkerError,
+    planning_prompt::{build_planning_prompt, generate_plan_yaml_suffix, plan_yaml_filename},
+};
 
 /// A wrapper emitter that both emits events to an inner emitter AND persists
 /// them to the database incrementally.
@@ -478,8 +482,14 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         // Use a branch name for the composite planning
         let branch_name = format!("delidev/composite/{}", composite_task_id);
 
+        // Generate the plan YAML filename before creating the prompt, so the
+        // agent is told exactly which file to create (instead of choosing its own
+        // random suffix).
+        let plan_suffix = generate_plan_yaml_suffix();
+        let plan_filename = plan_yaml_filename(&plan_suffix);
+
         // Build the full planning prompt with PLAN.yaml format instructions
-        let planning_prompt = build_planning_prompt(&composite_task.prompt);
+        let planning_prompt = build_planning_prompt(&composite_task.prompt, &plan_filename);
 
         // Create the execution config using the planning prompt
         let config = TaskExecutionConfig {
@@ -506,9 +516,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let executor = TaskExecutor::with_repo_cache(repo_cache, persisting_emitter.clone());
         let execution_handles = self.execution_handles.clone();
 
-        // Store remote_url and branch_name for worktree cleanup
+        // Store remote_url, branch_name, and plan_filename for the spawned task
         let remote_url = repository.remote_url.clone();
         let branch_name_clone = branch_name.clone();
+        let plan_filename_clone = plan_filename.clone();
 
         // Spawn the planning execution task
         let handle = tokio::spawn(async move {
@@ -539,7 +550,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
                     // Read PLAN.yaml from the worktree before cleanup
                     let plan_yaml_content = if let Some(ref worktree) = worktree_path {
-                        Self::read_plan_yaml_from_worktree(worktree).await
+                        Self::read_plan_yaml_from_worktree(worktree, &plan_filename_clone).await
                     } else {
                         warn!(
                             "No worktree path available for composite task {}",
@@ -747,21 +758,46 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
     /// Reads the PLAN.yaml file from a worktree directory.
     ///
-    /// The planning agent generates a file named `PLAN-{random}.yaml` in the
-    /// worktree root. This method finds and reads the first matching file.
-    /// If multiple files match, they are sorted alphabetically for
-    /// deterministic behavior.
-    async fn read_plan_yaml_from_worktree(worktree_path: &Path) -> Option<String> {
-        // Look for PLAN-*.yaml files in the worktree root
+    /// The executor determines the exact filename (e.g., `PLAN-a1b2c3.yaml`)
+    /// before creating the planning prompt, so we know which file to read.
+    /// Falls back to glob matching if the exact file is not found, in case the
+    /// agent created the file with a different name.
+    async fn read_plan_yaml_from_worktree(
+        worktree_path: &Path,
+        plan_filename: &str,
+    ) -> Option<String> {
+        // First, try to read the exact file we told the agent to create
+        let exact_path = worktree_path.join(plan_filename);
+        debug!("Looking for plan YAML file: {:?}", exact_path);
+
+        match tokio::fs::read_to_string(&exact_path).await {
+            Ok(content) => {
+                info!(
+                    "Read PLAN.yaml content ({} bytes) from {:?}",
+                    content.len(),
+                    exact_path
+                );
+                return Some(content);
+            }
+            Err(e) => {
+                warn!(
+                    "Expected plan file {:?} not found ({}), falling back to glob search",
+                    exact_path, e
+                );
+            }
+        }
+
+        // Fallback: glob for PLAN-*.yaml in case the agent used a different name
         let pattern = worktree_path.join("PLAN-*.yaml");
         let pattern_str = pattern.to_string_lossy();
 
-        debug!("Looking for PLAN.yaml files matching: {}", pattern_str);
+        debug!(
+            "Falling back to glob search for PLAN.yaml files: {}",
+            pattern_str
+        );
 
-        // Use glob to find matching files
         match glob::glob(&pattern_str) {
             Ok(paths) => {
-                // Collect all valid paths and sort them for deterministic behavior
                 let mut valid_paths: Vec<PathBuf> = paths.filter_map(|entry| entry.ok()).collect();
                 valid_paths.sort();
 
