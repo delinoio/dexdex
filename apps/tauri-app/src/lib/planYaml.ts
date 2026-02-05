@@ -31,7 +31,7 @@ export function parsePlanYamlToNodes(
   compositeTaskId: string
 ): CompositeTaskNodeWithUnitTask[] {
   try {
-    const parsed = yaml.load(planYaml) as PlanYaml;
+    const parsed = yaml.load(planYaml, { schema: yaml.JSON_SCHEMA }) as PlanYaml;
     if (!parsed?.tasks || !Array.isArray(parsed.tasks)) {
       return [];
     }
