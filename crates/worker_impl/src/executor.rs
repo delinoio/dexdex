@@ -20,7 +20,7 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::{TtyInputRequestManager, error::WorkerError};
+use crate::{TtyInputRequestManager, error::WorkerError, planning_prompt::build_planning_prompt};
 
 /// A wrapper emitter that both emits events to an inner emitter AND persists
 /// them to the database incrementally.
@@ -474,7 +474,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         // Use a branch name for the composite planning
         let branch_name = format!("delidev/composite/{}", composite_task_id);
 
-        // Create the execution config using the composite task's prompt
+        // Build the full planning prompt with PLAN.yaml format instructions
+        let planning_prompt = build_planning_prompt(&composite_task.prompt);
+
+        // Create the execution config using the planning prompt
         let config = TaskExecutionConfig {
             task_id: composite_task_id,
             session_id,
@@ -482,7 +485,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             branch_name: branch_name.clone(),
             agent_type,
             agent_model,
-            prompt: composite_task.prompt.clone(),
+            prompt: planning_prompt,
         };
 
         // Clone values needed for the spawned task
