@@ -41,6 +41,19 @@ pub enum ExecutionResult {
     Cancelled,
 }
 
+/// Result of a task execution with worktree path.
+///
+/// This is returned by `execute_and_wait_without_cleanup` and includes the
+/// worktree path so the caller can access files in the worktree before cleaning
+/// it up.
+#[derive(Debug, Clone)]
+pub struct ExecutionResultWithWorktree {
+    /// The execution result.
+    pub result: ExecutionResult,
+    /// The worktree path (if worktree was created successfully).
+    pub worktree_path: Option<PathBuf>,
+}
+
 impl ExecutionResult {
     /// Returns the collected logs, if any.
     pub fn logs(&self) -> &[String] {
@@ -206,7 +219,7 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
 
         // Spawn the execution task
         let handle = tokio::spawn(async move {
-            let result = Self::run_agent_task(config, emitter, tty_manager, repo_cache).await;
+            let result = Self::run_agent_task(config, emitter, tty_manager, repo_cache, true).await;
 
             // Clean up the cleanup info after task completion
             let mut cleanup_info = task_cleanup_info.write().await;
@@ -239,7 +252,71 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         };
         let repo_cache = RepositoryCache::new(cache_parent);
 
-        Self::run_agent_task(config, emitter, tty_manager, repo_cache).await
+        Self::run_agent_task(config, emitter, tty_manager, repo_cache, true).await
+    }
+
+    /// Executes a task without automatically cleaning up the worktree.
+    ///
+    /// This method is useful when the caller needs to access files in the
+    /// worktree after execution completes (e.g., reading PLAN.yaml for
+    /// composite tasks). The caller is responsible for cleaning up the
+    /// worktree using `RepositoryCache::remove_worktree_for_task`.
+    ///
+    /// Returns the execution result along with the worktree path.
+    pub async fn execute_and_wait_without_cleanup(
+        &self,
+        config: TaskExecutionConfig,
+    ) -> ExecutionResultWithWorktree {
+        let emitter = self.emitter.clone();
+        let tty_manager = self.tty_request_manager.clone();
+        let cache_parent = match self.repo_cache.cache_dir().parent() {
+            Some(parent) => parent,
+            None => {
+                return ExecutionResultWithWorktree {
+                    result: ExecutionResult::Failed {
+                        error: "Invalid cache directory path: no parent directory".to_string(),
+                        logs: Vec::new(),
+                    },
+                    worktree_path: None,
+                };
+            }
+        };
+        let repo_cache = RepositoryCache::new(cache_parent);
+
+        // Compute the expected worktree path
+        let task_id = config.task_id;
+        let worktree_path = git_ops::worktree_path_for_task_with_cache(
+            repo_cache.worktrees_dir(),
+            &task_id.to_string(),
+            &config.branch_name,
+        );
+
+        let result = Self::run_agent_task(config, emitter, tty_manager, repo_cache, false).await;
+
+        // Only return worktree_path if execution succeeded AND worktree actually
+        // exists. This prevents the caller from trying to access a non-existent
+        // worktree if the execution failed before worktree creation.
+        let final_worktree_path = if result.is_success() && worktree_path.exists() {
+            Some(worktree_path)
+        } else {
+            if !result.is_success() {
+                debug!(
+                    "Execution failed, not returning worktree path for task {}",
+                    task_id
+                );
+            } else if !worktree_path.exists() {
+                warn!(
+                    "Worktree path does not exist after successful execution: {:?}",
+                    worktree_path
+                );
+            }
+            None
+        };
+
+        ExecutionResultWithWorktree {
+            result,
+            worktree_path: final_worktree_path,
+        }
     }
 
     /// Cleans up finished execution handles to prevent memory leaks.
@@ -280,11 +357,17 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
     }
 
     /// Runs the agent task (internal implementation).
+    ///
+    /// # Arguments
+    /// * `cleanup_worktree` - If true, the worktree will be cleaned up after
+    ///   execution. Set to false when the caller needs to access files in the
+    ///   worktree after execution.
     async fn run_agent_task(
         config: TaskExecutionConfig,
         emitter: Arc<E>,
         tty_manager: Arc<TtyInputRequestManager>,
         repo_cache: RepositoryCache,
+        cleanup_worktree: bool,
     ) -> ExecutionResult {
         let task_id = config.task_id;
         let session_id = config.session_id;
@@ -403,18 +486,25 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
             task_id
         );
 
-        // Clean up the worktree after task completion
-        if let Err(e) = repo_cache.remove_worktree_for_task(
-            &config.remote_url,
-            &task_id.to_string(),
-            &config.branch_name,
-        ) {
-            warn!(
-                "Failed to cleanup worktree for task {}: {}. Manual cleanup may be required.",
-                task_id, e
-            );
+        // Clean up the worktree after task completion (unless caller will handle it)
+        if cleanup_worktree {
+            if let Err(e) = repo_cache.remove_worktree_for_task(
+                &config.remote_url,
+                &task_id.to_string(),
+                &config.branch_name,
+            ) {
+                warn!(
+                    "Failed to cleanup worktree for task {}: {}. Manual cleanup may be required.",
+                    task_id, e
+                );
+            } else {
+                info!("Cleaned up worktree for task {}", task_id);
+            }
         } else {
-            info!("Cleaned up worktree for task {}", task_id);
+            debug!(
+                "Skipping worktree cleanup for task {} (caller will handle it)",
+                task_id
+            );
         }
 
         match run_result {

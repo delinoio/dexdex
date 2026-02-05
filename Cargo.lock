@@ -7312,6 +7312,8 @@ dependencies = [
  "config",
  "dirs 5.0.1",
  "entities",
+ "git_ops",
+ "glob",
  "serde",
  "serde_json",
  "task_store",

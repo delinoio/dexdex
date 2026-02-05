@@ -153,6 +153,8 @@ export interface CompositeTask {
   planningTaskId: string;
   prompt: string;
   title?: string;
+  /** Raw PLAN.yaml content persisted after planning completes. */
+  planYaml?: string;
   nodeIds: string[];
   status: CompositeTaskStatus;
   executionAgentType?: AiAgentType;

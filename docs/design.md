@@ -338,6 +338,7 @@ Task graph-based Agent Orchestrator.
 | id | string | Y | Unique identifier |
 | repositoryGroupId | string | Y | Associated RepositoryGroup ID |
 | planningTask | AgentTask | Y | AgentTask for generating PLAN.yaml |
+| planYaml | string | N | Raw PLAN.yaml content (persisted after planning) |
 | tasks | CompositeTaskNode[] | Y | List of task nodes |
 | status | CompositeTaskStatus | Y | Current status |
 | executionAgentType | AIAgentType | N | Agent type for UnitTasks |
@@ -684,6 +685,18 @@ Planning agent starts immediately (status: planning)
 │ - Logs persisted incrementally to database         │
 └────────────────────────────────────────────────────┘
         ▼
+┌────────────────────────────────────────────────────┐
+│ On Success:                                        │
+│ 1. PLAN.yaml content read from worktree            │
+│ 2. Content persisted to database (plan_yaml field) │
+│ 3. Planning worktree cleaned up immediately        │
+│ 4. Status → pending_approval                       │
+├────────────────────────────────────────────────────┤
+│ On Failure:                                        │
+│ 1. Planning worktree cleaned up                    │
+│ 2. Status → failed                                 │
+└────────────────────────────────────────────────────┘
+        ▼
 ┌──────────────────────────────────────┐
 │ Success         │ Failure            │
 │ pending_approval│ failed             │
@@ -704,7 +717,14 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 1. Creates an agent session for the planning task
 2. Spawns a background task for execution
 3. Uses `PersistingEventEmitter` for real-time streaming and incremental log persistence
-4. Updates composite task status to `pending_approval` on success or `failed` on error
+4. On success, reads `PLAN-{random}.yaml` from the worktree and persists to `plan_yaml` field
+5. Cleans up the planning worktree immediately after persisting (not kept until task completion)
+6. Updates composite task status to `pending_approval` on success or `failed` on error
+
+**PLAN.yaml Persistence:**
+- The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`
+- This allows the plan to be accessed without the worktree (which is cleaned up immediately)
+- The worktree is cleaned up right after the PLAN.yaml is persisted to conserve disk space
 
 ### PR Auto-Management
 
