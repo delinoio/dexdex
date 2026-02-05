@@ -10,11 +10,12 @@ pub use coding_agents::executor::ExecutionResult;
 use coding_agents::{
     AgentResult, TimestampedEvent,
     executor::{
-        AgentOutputEvent, EventEmitter, TaskCompletedEvent, TaskExecutionConfig, TaskExecutor,
-        TaskStatusChangedEvent, TtyInputRequestEvent,
+        AgentOutputEvent, EventEmitter, ExecutionResultWithWorktree, TaskCompletedEvent,
+        TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent, TtyInputRequestEvent,
     },
 };
 use entities::{AgentSession, AiAgentType, CompositeTaskStatus, UnitTaskStatus};
+use git_ops::RepositoryCache;
 use task_store::{SqliteTaskStore, TaskStore};
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::{debug, error, info, warn};
@@ -502,9 +503,17 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let executor = TaskExecutor::with_repo_cache(repo_cache, persisting_emitter.clone());
         let execution_handles = self.execution_handles.clone();
 
+        // Store remote_url and branch_name for worktree cleanup
+        let remote_url = repository.remote_url.clone();
+        let branch_name_clone = branch_name.clone();
+
         // Spawn the planning execution task
         let handle = tokio::spawn(async move {
-            let result = executor.execute_and_wait(config).await;
+            // Execute without cleanup so we can read PLAN.yaml from the worktree
+            let ExecutionResultWithWorktree {
+                result,
+                worktree_path,
+            } = executor.execute_and_wait_without_cleanup(config).await;
 
             // Final persist of all logs
             persisting_emitter.persist_logs().await;
@@ -524,16 +533,34 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                         "Planning for composite task {} completed successfully",
                         composite_task_id
                     );
-                    // Update composite task status to PendingApproval
+
+                    // Read PLAN.yaml from the worktree before cleanup
+                    let plan_yaml_content = if let Some(ref worktree) = worktree_path {
+                        Self::read_plan_yaml_from_worktree(worktree).await
+                    } else {
+                        warn!(
+                            "No worktree path available for composite task {}",
+                            composite_task_id
+                        );
+                        None
+                    };
+
+                    // Update composite task with plan_yaml and status
                     if let Ok(Some(mut composite_task)) =
                         task_store.get_composite_task(composite_task_id).await
                     {
                         composite_task.status = CompositeTaskStatus::PendingApproval;
+                        composite_task.plan_yaml = plan_yaml_content;
                         composite_task.updated_at = Utc::now();
                         if let Err(e) = task_store.update_composite_task(composite_task).await {
                             error!(
                                 "Failed to update composite task status to PendingApproval: {}",
                                 e
+                            );
+                        } else {
+                            info!(
+                                "Persisted PLAN.yaml for composite task {}",
+                                composite_task_id
                             );
                         }
                     }
@@ -563,6 +590,28 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             }
 
+            // Clean up the planning worktree now that we've persisted the PLAN.yaml
+            // We use the repo_cache from the executor to clean up
+            let cache_parent = executor.repo_cache().cache_dir().parent();
+            if let Some(parent) = cache_parent {
+                let repo_cache = RepositoryCache::new(parent);
+                if let Err(e) = repo_cache.remove_worktree_for_task(
+                    &remote_url,
+                    &composite_task_id.to_string(),
+                    &branch_name_clone,
+                ) {
+                    warn!(
+                        "Failed to cleanup planning worktree for composite task {}: {}",
+                        composite_task_id, e
+                    );
+                } else {
+                    info!(
+                        "Cleaned up planning worktree for composite task {}",
+                        composite_task_id
+                    );
+                }
+            }
+
             // Remove handle from the map after completion
             execution_handles.write().await.remove(&composite_task_id);
         });
@@ -574,6 +623,56 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             .insert(composite_task_id, handle);
 
         Ok(())
+    }
+
+    /// Reads the PLAN.yaml file from a worktree directory.
+    ///
+    /// The planning agent generates a file named `PLAN-{random}.yaml` in the worktree root.
+    /// This method finds and reads the first matching file.
+    async fn read_plan_yaml_from_worktree(worktree_path: &PathBuf) -> Option<String> {
+        // Look for PLAN-*.yaml files in the worktree root
+        let pattern = worktree_path.join("PLAN-*.yaml");
+        let pattern_str = pattern.to_string_lossy();
+
+        debug!("Looking for PLAN.yaml files matching: {}", pattern_str);
+
+        // Use glob to find matching files
+        match glob::glob(&pattern_str) {
+            Ok(paths) => {
+                for entry in paths {
+                    match entry {
+                        Ok(path) => {
+                            debug!("Found PLAN.yaml file: {:?}", path);
+                            match tokio::fs::read_to_string(&path).await {
+                                Ok(content) => {
+                                    info!(
+                                        "Read PLAN.yaml content ({} bytes) from {:?}",
+                                        content.len(),
+                                        path
+                                    );
+                                    return Some(content);
+                                }
+                                Err(e) => {
+                                    warn!("Failed to read PLAN.yaml file {:?}: {}", path, e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Error processing glob result: {}", e);
+                        }
+                    }
+                }
+                warn!(
+                    "No PLAN.yaml files found matching pattern: {}",
+                    pattern_str
+                );
+                None
+            }
+            Err(e) => {
+                warn!("Failed to glob for PLAN.yaml files: {}", e);
+                None
+            }
+        }
     }
 
     /// Cancels execution of a task.

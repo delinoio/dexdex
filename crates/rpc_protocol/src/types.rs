@@ -451,6 +451,8 @@ pub struct CompositeTask {
     pub planning_task_id: String,
     pub prompt: String,
     pub title: Option<String>,
+    /// Raw PLAN.yaml content persisted after planning completes.
+    pub plan_yaml: Option<String>,
     pub node_ids: Vec<String>,
     pub status: CompositeTaskStatus,
     pub execution_agent_type: Option<AiAgentType>,
