@@ -188,7 +188,7 @@ pnpm dev
 ```
 
 This starts:
-- Vite dev server at `http://localhost:1420` (Tauri-specific port)
+- Vite dev server at `http://localhost:38492` (Tauri-specific port)
 - Tauri desktop window with hot reload
 
 ### Running Frontend Only

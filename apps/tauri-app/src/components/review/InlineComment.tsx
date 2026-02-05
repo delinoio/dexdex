@@ -1,7 +1,7 @@
 // Inline comment component for code review
 // Displays a single comment with edit/delete actions
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
@@ -38,6 +38,16 @@ export function InlineComment({
     if (editContent.trim()) {
       onEdit(comment.id, editContent.trim());
       setIsEditing(false);
+    }
+  };
+
+  const handleEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (editContent.trim()) {
+        onEdit(comment.id, editContent.trim());
+        setIsEditing(false);
+      }
     }
   };
 
@@ -133,6 +143,7 @@ export function InlineComment({
           <Textarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
+            onKeyDown={handleEditKeyDown}
             placeholder="Write a comment..."
             rows={3}
             autoFocus
@@ -185,6 +196,16 @@ export function CommentInputForm({
     }
   };
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (content.trim()) {
+        onSubmit(content.trim());
+        setContent("");
+      }
+    }
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -197,6 +218,7 @@ export function CommentInputForm({
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={3}
         autoFocus
