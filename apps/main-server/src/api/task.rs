@@ -457,13 +457,14 @@ pub async fn update_plan<S: TaskStore>(
         )));
     }
 
-    // Sanitize the feedback prompt: remove null bytes and other control characters
-    // (except newlines and tabs which are valid in prompts)
-    let sanitized_prompt: String = request
-        .prompt
-        .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
-        .collect();
+    // Sanitize and validate the feedback prompt
+    let sanitized_prompt = entities::sanitize_user_input(&request.prompt);
+    if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
+        return Err(ServerError::InvalidRequest(format!(
+            "Feedback exceeds maximum length of {} characters",
+            entities::MAX_FEEDBACK_LENGTH
+        )));
+    }
 
     // Store the feedback for re-planning. The executor will use the existing
     // plan_yaml together with this feedback (instead of the original prompt)

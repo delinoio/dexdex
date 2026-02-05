@@ -6,6 +6,7 @@
 
 mod agent;
 mod repository;
+mod sanitize;
 mod task;
 mod todo;
 mod token_usage;
@@ -15,6 +16,7 @@ mod workspace;
 
 pub use agent::*;
 pub use repository::*;
+pub use sanitize::*;
 pub use task::*;
 pub use todo::*;
 pub use token_usage::*;

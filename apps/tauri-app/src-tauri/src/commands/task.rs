@@ -1084,12 +1084,14 @@ pub async fn update_plan_with_prompt(
     // Save updated_at for optimistic concurrency check
     let expected_updated_at = composite_task.updated_at;
 
-    // Sanitize the feedback prompt: remove null bytes and other control characters
-    // (except newlines and tabs which are valid in prompts)
-    let sanitized_prompt: String = prompt
-        .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
-        .collect();
+    // Sanitize and validate the feedback prompt
+    let sanitized_prompt = entities::sanitize_user_input(&prompt);
+    if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
+        return Err(AppError::InvalidRequest(format!(
+            "Feedback exceeds maximum length of {} characters",
+            entities::MAX_FEEDBACK_LENGTH
+        )));
+    }
 
     // Store the feedback for re-planning. The executor will use the existing
     // plan_yaml together with this feedback (instead of the original prompt)

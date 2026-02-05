@@ -172,6 +172,24 @@ impl SqliteTaskStore {
         .execute(&self.pool)
         .await?;
 
+        // Run migrations for columns added after initial schema creation.
+        // Each ALTER TABLE is wrapped in .ok() so it silently succeeds if the
+        // column already exists (e.g., on a fresh database).
+        self.run_migrations().await?;
+
+        Ok(())
+    }
+
+    /// Runs incremental schema migrations for columns added after the initial
+    /// CREATE TABLE statements.
+    async fn run_migrations(&self) -> TaskStoreResult<()> {
+        // Migration: Add update_plan_feedback column to composite_tasks
+        // Added in PR #191 for storing user feedback during plan updates.
+        sqlx::query("ALTER TABLE composite_tasks ADD COLUMN update_plan_feedback TEXT")
+            .execute(&self.pool)
+            .await
+            .ok();
+
         Ok(())
     }
 

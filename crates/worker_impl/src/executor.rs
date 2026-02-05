@@ -498,8 +498,25 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             &composite_task.update_plan_feedback,
             &composite_task.plan_yaml,
         ) {
-            build_update_planning_prompt(existing_plan, feedback, &plan_filename)
+            if feedback.trim().is_empty() || existing_plan.trim().is_empty() {
+                warn!(
+                    "Empty feedback or plan for composite task {}, falling back to initial \
+                     planning prompt",
+                    composite_task_id
+                );
+                build_planning_prompt(&composite_task.prompt, &plan_filename)
+            } else {
+                info!(
+                    "Using update planning prompt for composite task {}",
+                    composite_task_id
+                );
+                build_update_planning_prompt(existing_plan, feedback, &plan_filename)
+            }
         } else {
+            info!(
+                "Using initial planning prompt for composite task {}",
+                composite_task_id
+            );
             build_planning_prompt(&composite_task.prompt, &plan_filename)
         };
 
