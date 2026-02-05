@@ -150,6 +150,7 @@ pub fn run() {
             commands::task::approve_task,
             commands::task::reject_task,
             commands::task::request_changes,
+            commands::task::update_composite_task_plan,
             commands::task::cancel_task,
             commands::task::get_task_logs,
             commands::task::respond_tty_input,

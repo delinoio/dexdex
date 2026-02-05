@@ -327,6 +327,20 @@ Requests changes on a task.
   ```
 - **Response**: Updated task object with feedback appended to prompt
 
+### Update Composite Task Plan
+
+Updates a composite task's plan by appending a prompt and resetting to planning status. This triggers re-planning with the updated prompt. Available when the task is in `pending_approval`, `rejected`, or `failed` status.
+
+- **URL**: `POST /api/task/update-plan`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "uuid",
+    "prompt": "Split the authentication task into separate login and registration tasks"
+  }
+  ```
+- **Response**: Updated composite task object with status reset to `planning`
+
 ---
 
 ## Session Management

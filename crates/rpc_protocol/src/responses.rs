@@ -58,6 +58,11 @@ pub struct RequestChangesResponse {
     pub task: UnitTask,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCompositeTaskPlanResponse {
+    pub task: CompositeTask,
+}
+
 // ============================================================================
 // Session Service Responses
 // ============================================================================

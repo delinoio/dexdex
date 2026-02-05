@@ -1106,6 +1106,139 @@ pub async fn request_changes(
     ))
 }
 
+/// Parameters for updating a composite task's plan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCompositeTaskPlanParams {
+    pub task_id: String,
+    pub prompt: String,
+}
+
+/// Updates a composite task's plan with a new prompt, triggering re-planning.
+///
+/// This resets the composite task to Planning status with an updated prompt
+/// and creates a new planning agent task to re-generate the plan.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn update_composite_task_plan(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    params: UpdateCompositeTaskPlanParams,
+) -> AppResult<CompositeTask> {
+    let state = state.read().await;
+
+    // Validate input parameters
+    validate_uuid_string(&params.task_id, "task ID")?;
+    validate_prompt(&params.prompt)?;
+
+    if state.mode == AppMode::Remote {
+        // Remote mode: make API call to main server
+        let client = state.get_remote_client()?;
+
+        let request = requests::UpdateCompositeTaskPlanRequest {
+            task_id: params.task_id.clone(),
+            prompt: params.prompt,
+        };
+
+        let response = client.update_composite_task_plan(request).await?;
+        let task = rpc_to_entity_composite_task(response.task)?;
+        info!("Updated composite task plan via remote: {}", params.task_id);
+        return Ok(task);
+    }
+
+    let id = Uuid::parse_str(&params.task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the composite task
+    let mut task = runtime
+        .task_store_arc()
+        .get_composite_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", id)))?;
+
+    // Append the update prompt to the original prompt
+    task.prompt = format!(
+        "{}\n\n--- Plan Update Request ---\n{}",
+        task.prompt, params.prompt
+    );
+
+    // Create a new planning agent task
+    let mut planning_task = AgentTask::new();
+    planning_task.ai_agent_type =
+        Some(task.execution_agent_type.unwrap_or(AiAgentType::ClaudeCode));
+    let planning_task = runtime
+        .task_store_arc()
+        .create_agent_task(planning_task)
+        .await?;
+
+    // Reset task to planning status with the new planning task
+    task.planning_task_id = planning_task.id;
+    task.status = CompositeTaskStatus::Planning;
+    task.plan_yaml = None;
+    task.node_ids = Vec::new();
+    task.updated_at = chrono::Utc::now();
+
+    let updated = runtime.task_store_arc().update_composite_task(task).await?;
+    info!("Updated composite task plan: {}", id);
+
+    // Trigger re-planning execution if executor is initialized
+    if let Some(executor) = runtime.executor().await {
+        let composite_task_id = updated.id;
+        tokio::spawn(async move {
+            if let Err(e) = executor.execute_composite_task(composite_task_id).await {
+                tracing::error!(
+                    "Failed to start re-planning execution for composite task {}: {}",
+                    composite_task_id,
+                    e
+                );
+            }
+        });
+    } else {
+        tracing::warn!(
+            "Executor not initialized, composite task {} re-planning will not be executed",
+            updated.id
+        );
+    }
+
+    Ok(updated)
+}
+
+/// Updates a composite task's plan (mobile - remote mode only).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn update_composite_task_plan(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    params: UpdateCompositeTaskPlanParams,
+) -> AppResult<CompositeTask> {
+    let state = state.read().await;
+
+    // Validate input parameters
+    validate_uuid_string(&params.task_id, "task ID")?;
+
+    if state.mode == AppMode::Remote {
+        // Remote mode: make API call to main server
+        let client = state.get_remote_client()?;
+
+        let request = requests::UpdateCompositeTaskPlanRequest {
+            task_id: params.task_id.clone(),
+            prompt: params.prompt,
+        };
+
+        let response = client.update_composite_task_plan(request).await?;
+        let task = rpc_to_entity_composite_task(response.task)?;
+        info!("Updated composite task plan via remote: {}", params.task_id);
+        return Ok(task);
+    }
+
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
 /// Gets logs for an agent task.
 ///
 /// Returns normalized events from the agent session output.

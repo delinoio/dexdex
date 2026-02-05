@@ -24,6 +24,7 @@ import type {
   TaskLogsResponse,
   TaskResponse,
   UnitTask,
+  UpdateCompositeTaskPlanParams,
   UpdateRepositoryGroupParams,
   UpdateWorkspaceParams,
   Workspace,
@@ -80,6 +81,12 @@ export async function requestChanges(
   feedback: string
 ): Promise<void> {
   return invoke<void>("request_changes", { taskId, feedback });
+}
+
+export async function updateCompositeTaskPlan(
+  params: UpdateCompositeTaskPlanParams
+): Promise<CompositeTask> {
+  return invoke<CompositeTask>("update_composite_task_plan", { params });
 }
 
 export async function cancelTask(taskId: string): Promise<void> {

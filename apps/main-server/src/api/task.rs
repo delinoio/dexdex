@@ -428,6 +428,48 @@ pub async fn reject_task<S: TaskStore>(
     Err(ServerError::NotFound("Task not found".to_string()))
 }
 
+/// Updates a composite task's plan by appending a prompt and resetting to
+/// planning status.
+pub async fn update_composite_task_plan<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<UpdateCompositeTaskPlanRequest>,
+) -> ServerResult<Json<UpdateCompositeTaskPlanResponse>> {
+    let task_id: Uuid = request
+        .task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    let mut task = state
+        .store
+        .get_composite_task(task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Composite task not found".to_string()))?;
+
+    // Append the update prompt to the original prompt
+    task.prompt = format!(
+        "{}\n\n--- Plan Update Request ---\n{}",
+        task.prompt, request.prompt
+    );
+
+    // Create a new planning agent task
+    let planning_task = AgentTask::new();
+    let planning_task = state.store.create_agent_task(planning_task).await?;
+
+    // Reset task to planning status with the new planning task
+    task.planning_task_id = planning_task.id;
+    task.status = EntityCompositeTaskStatus::Planning;
+    task.plan_yaml = None;
+    task.node_ids = Vec::new();
+    task.updated_at = chrono::Utc::now();
+    let task = state.store.update_composite_task(task).await?;
+
+    tracing::info!(task_id = %task_id, "Composite task plan update requested, re-planning");
+
+    Ok(Json(UpdateCompositeTaskPlanResponse {
+        task: entity_to_rpc_composite_task(&task),
+    }))
+}
+
 /// Requests changes on a task.
 pub async fn request_changes<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,

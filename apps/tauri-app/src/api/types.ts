@@ -490,6 +490,11 @@ export interface TaskLogsResponse {
   lastEventId?: number;
 }
 
+export interface UpdateCompositeTaskPlanParams {
+  taskId: string;
+  prompt: string;
+}
+
 export interface RespondTtyInputParams {
   requestId: string;
   response: string;

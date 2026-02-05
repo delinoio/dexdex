@@ -10,11 +10,13 @@ import {
   listTasks,
   rejectTask,
   requestChanges,
+  updateCompositeTaskPlan,
 } from "@/api/client";
 import type {
   CreateCompositeTaskParams,
   CreateUnitTaskParams,
   ListTasksParams,
+  UpdateCompositeTaskPlanParams,
 } from "@/api/types";
 
 // Query keys
@@ -122,6 +124,20 @@ export function useCancelTask() {
     mutationFn: (taskId: string) => cancelTask(taskId),
     onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useUpdateCompositeTaskPlan() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (params: UpdateCompositeTaskPlanParams) =>
+      updateCompositeTaskPlan(params),
+    onSuccess: (_data, params) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(params.taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.compositeNodes(params.taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
   });

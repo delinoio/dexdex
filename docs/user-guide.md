@@ -193,8 +193,13 @@ For complex features requiring multiple steps:
 2. Select a **Repository Group**
 3. Describe the overall feature
 4. The AI will create a PLAN.yaml breaking it into steps
-5. Review and approve the plan
-6. DeliDev executes the tasks in dependency order
+5. Review the plan:
+   - **Approve**: Accept the plan and start execution
+   - **Update Plan**: Provide additional instructions to refine the plan. The AI will re-generate the plan incorporating your feedback
+   - **Reject**: Discard the plan entirely
+6. DeliDev executes the approved tasks in dependency order
+
+> **Tip**: If the plan needs adjustments, use **Update Plan** instead of rejecting. You can also update the plan after rejection or failure by clicking **Update Plan** on the task details page.
 
 ---
 

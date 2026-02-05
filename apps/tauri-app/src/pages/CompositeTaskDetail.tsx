@@ -6,12 +6,14 @@ import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
-import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes } from "@/hooks/useTasks";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/Dialog";
+import { Textarea } from "@/components/ui/Textarea";
+import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes, useUpdateCompositeTaskPlan } from "@/hooks/useTasks";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
         
 interface ProgressSectionProps {
   nodes: CompositeTaskNodeWithUnitTask[];
@@ -48,6 +50,10 @@ export function CompositeTaskDetail() {
   const { data: nodesData, isLoading: nodesLoading, error: nodesError } = useCompositeTaskNodes(id ?? "");
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
+  const updatePlanMutation = useUpdateCompositeTaskPlan();
+
+  const [updatePlanOpen, setUpdatePlanOpen] = useState(false);
+  const [updatePlanPrompt, setUpdatePlanPrompt] = useState("");
 
   const task = data?.compositeTask;
 
@@ -109,6 +115,16 @@ export function CompositeTaskDetail() {
 
   const handleRejectPlan = async () => {
     await rejectMutation.mutateAsync({ taskId: task.id });
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!updatePlanPrompt.trim()) return;
+    await updatePlanMutation.mutateAsync({
+      taskId: task.id,
+      prompt: updatePlanPrompt.trim(),
+    });
+    setUpdatePlanPrompt("");
+    setUpdatePlanOpen(false);
   };
 
   const getStatusBadgeVariant = (status: CompositeTaskStatus) => {
@@ -270,6 +286,39 @@ export function CompositeTaskDetail() {
                 <Button onClick={handleApprovePlan} disabled={approveMutation.isPending}>
                   {approveMutation.isPending ? "Approving..." : "Approve Plan"}
                 </Button>
+                <Dialog open={updatePlanOpen} onOpenChange={setUpdatePlanOpen}>
+                  <DialogTrigger>
+                    <Button variant="outline" type="button">Update Plan</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Update Plan</DialogTitle>
+                      <DialogDescription>
+                        Describe the changes you want to the plan. The AI will re-generate the plan with your feedback.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                      placeholder="e.g., Split the authentication task into separate login and registration tasks..."
+                      value={updatePlanPrompt}
+                      onChange={(e) => setUpdatePlanPrompt(e.target.value)}
+                      rows={4}
+                    />
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setUpdatePlanOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleUpdatePlan}
+                        disabled={updatePlanMutation.isPending || !updatePlanPrompt.trim()}
+                      >
+                        {updatePlanMutation.isPending ? "Updating..." : "Update Plan"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 <Button variant="outline">View PLAN.yaml</Button>
                 <Button
                   variant="destructive"
@@ -278,6 +327,56 @@ export function CompositeTaskDetail() {
                 >
                   {rejectMutation.isPending ? "Rejecting..." : "Reject"}
                 </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {(task.status === CompositeTaskStatus.Rejected || task.status === CompositeTaskStatus.Failed) && (
+            <Card className="border-[hsl(var(--destructive))]">
+              <CardHeader>
+                <CardTitle>
+                  {task.status === CompositeTaskStatus.Rejected ? "Plan Rejected" : "Planning Failed"}
+                </CardTitle>
+                <CardDescription>
+                  {task.status === CompositeTaskStatus.Rejected
+                    ? "This plan was rejected. You can update the plan with new instructions to re-generate it."
+                    : "The planning phase failed. You can update the plan with new instructions to try again."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Dialog open={updatePlanOpen} onOpenChange={setUpdatePlanOpen}>
+                  <DialogTrigger>
+                    <Button type="button">Update Plan</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Update Plan</DialogTitle>
+                      <DialogDescription>
+                        Describe the changes you want to the plan. The AI will re-generate the plan with your feedback.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                      placeholder="e.g., Split the authentication task into separate login and registration tasks..."
+                      value={updatePlanPrompt}
+                      onChange={(e) => setUpdatePlanPrompt(e.target.value)}
+                      rows={4}
+                    />
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setUpdatePlanOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleUpdatePlan}
+                        disabled={updatePlanMutation.isPending || !updatePlanPrompt.trim()}
+                      >
+                        {updatePlanMutation.isPending ? "Updating..." : "Update Plan"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardContent>
             </Card>
           )}
