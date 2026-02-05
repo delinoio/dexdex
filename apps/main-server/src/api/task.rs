@@ -439,11 +439,43 @@ pub async fn update_composite_task_plan<S: TaskStore>(
         .parse()
         .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
 
+    // Validate prompt
+    if request.prompt.trim().is_empty() {
+        return Err(ServerError::InvalidRequest(
+            "Prompt cannot be empty".to_string(),
+        ));
+    }
+    if request.prompt.len() > 100_000 {
+        return Err(ServerError::InvalidRequest(
+            "Prompt exceeds maximum length".to_string(),
+        ));
+    }
+    if request.prompt.contains('\0') {
+        return Err(ServerError::InvalidRequest(
+            "Prompt cannot contain null bytes".to_string(),
+        ));
+    }
+
     let mut task = state
         .store
         .get_composite_task(task_id)
         .await?
         .ok_or_else(|| ServerError::NotFound("Composite task not found".to_string()))?;
+
+    // Validate task state - only allow updates from certain states
+    match task.status {
+        EntityCompositeTaskStatus::PendingApproval
+        | EntityCompositeTaskStatus::Rejected
+        | EntityCompositeTaskStatus::Failed => {
+            // OK to proceed
+        }
+        _ => {
+            return Err(ServerError::InvalidRequest(format!(
+                "Cannot update plan for task in {:?} status. Only pending_approval, rejected, or failed tasks can be updated.",
+                task.status
+            )));
+        }
+    }
 
     // Append the update prompt to the original prompt
     task.prompt = format!(
@@ -452,7 +484,8 @@ pub async fn update_composite_task_plan<S: TaskStore>(
     );
 
     // Create a new planning agent task
-    let planning_task = AgentTask::new();
+    let mut planning_task = AgentTask::new();
+    planning_task.ai_agent_type = task.execution_agent_type;
     let planning_task = state.store.create_agent_task(planning_task).await?;
 
     // Reset task to planning status with the new planning task

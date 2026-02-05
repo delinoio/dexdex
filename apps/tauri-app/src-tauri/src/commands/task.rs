@@ -1160,6 +1160,21 @@ pub async fn update_composite_task_plan(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", id)))?;
 
+    // Validate task state - only allow updates from certain states
+    match task.status {
+        CompositeTaskStatus::PendingApproval
+        | CompositeTaskStatus::Rejected
+        | CompositeTaskStatus::Failed => {
+            // OK to proceed
+        }
+        _ => {
+            return Err(AppError::InvalidRequest(format!(
+                "Cannot update plan for task in {:?} status. Only pending_approval, rejected, or failed tasks can be updated.",
+                task.status
+            )));
+        }
+    }
+
     // Append the update prompt to the original prompt
     task.prompt = format!(
         "{}\n\n--- Plan Update Request ---\n{}",
@@ -1218,6 +1233,7 @@ pub async fn update_composite_task_plan(
 
     // Validate input parameters
     validate_uuid_string(&params.task_id, "task ID")?;
+    validate_prompt(&params.prompt)?;
 
     if state.mode == AppMode::Remote {
         // Remote mode: make API call to main server
