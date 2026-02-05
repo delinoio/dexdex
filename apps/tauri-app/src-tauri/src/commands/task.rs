@@ -1081,9 +1081,6 @@ pub async fn update_plan_with_prompt(
         )));
     }
 
-    // Save updated_at for optimistic concurrency check
-    let expected_updated_at = composite_task.updated_at;
-
     // Sanitize and validate the feedback prompt
     let sanitized_prompt = entities::sanitize_user_input(&prompt);
     if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
@@ -1091,6 +1088,23 @@ pub async fn update_plan_with_prompt(
             "Feedback exceeds maximum length of {} characters",
             entities::MAX_FEEDBACK_LENGTH
         )));
+    }
+
+    // Save updated_at for optimistic concurrency check
+    let expected_updated_at = composite_task.updated_at;
+
+    // Re-fetch the task to check for concurrent modifications (optimistic lock)
+    // This check is done BEFORE creating the agent task or mutating the
+    // composite task to avoid side effects if a conflict is detected.
+    let current_task = runtime
+        .task_store_arc()
+        .get_composite_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
+    if current_task.updated_at != expected_updated_at {
+        return Err(AppError::InvalidRequest(
+            "Task was modified concurrently. Please try again.".to_string(),
+        ));
     }
 
     // Store the feedback for re-planning. The executor will use the existing
@@ -1105,18 +1119,6 @@ pub async fn update_plan_with_prompt(
         .task_store_arc()
         .create_agent_task(planning_task)
         .await?;
-
-    // Re-fetch the task to check for concurrent modifications (optimistic lock)
-    let current_task = runtime
-        .task_store_arc()
-        .get_composite_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
-    if current_task.updated_at != expected_updated_at {
-        return Err(AppError::InvalidRequest(
-            "Task was modified concurrently. Please try again.".to_string(),
-        ));
-    }
 
     // Update the composite task with the new planning task and reset status
     composite_task.planning_task_id = planning_task.id;

@@ -185,10 +185,18 @@ impl SqliteTaskStore {
     async fn run_migrations(&self) -> TaskStoreResult<()> {
         // Migration: Add update_plan_feedback column to composite_tasks
         // Added in PR #191 for storing user feedback during plan updates.
-        sqlx::query("ALTER TABLE composite_tasks ADD COLUMN update_plan_feedback TEXT")
+        match sqlx::query("ALTER TABLE composite_tasks ADD COLUMN update_plan_feedback TEXT")
             .execute(&self.pool)
             .await
-            .ok();
+        {
+            Ok(_) => {}
+            Err(sqlx::Error::Database(db_err))
+                if db_err.message().contains("duplicate column") =>
+            {
+                // Column already exists, this is expected on subsequent runs
+            }
+            Err(e) => return Err(e.into()),
+        }
 
         Ok(())
     }
