@@ -2,6 +2,7 @@
 export * from "./CompositeTaskDetail";
 export * from "./Dashboard";
 export * from "./ModeSelection";
+export * from "./Notifications";
 export * from "./Onboarding";
 export * from "./Repositories";
 export * from "./RepositoryGroups";

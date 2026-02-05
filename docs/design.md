@@ -745,6 +745,25 @@ When user requests changes on a task:
 3. Agent considers if feedback is generalizable
 4. If yes, updates AGENTS.md or CLAUDE.md
 
+### Notification Flow
+
+The notification system provides persistent, actionable notifications for system events:
+
+```
+Tauri Backend Events ──► useNotificationEvents hook
+                              ├── notificationCenterStore (persistent, localStorage)
+                              └── Desktop notification (if window unfocused)
+
+User Interface:
+  Sidebar bell icon (unread badge) ──► NotificationPanel (slide-out)
+  /notifications route ──────────────► Notifications page (full list)
+  'n' keyboard shortcut ─────────────► Toggle NotificationPanel
+```
+
+Notification categories: `task_review_ready`, `plan_approval`, `task_failed`, `tty_input_request`, `task_completed`.
+
+Each notification links to the relevant task page. See [Notification System](./notifications.md) for full details.
+
 ---
 
 ## Error Handling
@@ -883,4 +902,5 @@ Toggles chat window visibility from anywhere in the app.
 - [Tauri App](./tauri-app.md) - Desktop/Mobile app details
 - [Local vs Remote Mode](./client-local-vs-remote.md) - Mode comparison
 - [UI Design](./ui.md) - User interface specifications
+- [Notification System](./notifications.md) - Notification center, desktop notifications, and event handling
 - [PLAN.yaml Specification](./plan-yaml.md) - Task plan format

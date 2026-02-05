@@ -3,6 +3,7 @@ import { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUiStore } from "@/stores/uiStore";
 import { useChatStore } from "@/stores/chatStore";
+import { useNotificationCenterStore } from "@/stores/notificationCenterStore";
 
 interface ShortcutHandler {
   key: string;
@@ -31,6 +32,8 @@ export function useKeyboardShortcuts() {
     setActiveTab,
   } = useUiStore();
   const { toggleChat, setOpen: setChatOpen } = useChatStore();
+  const { toggleOpen: toggleNotifications, setOpen: setNotificationsOpen } =
+    useNotificationCenterStore();
 
   // Memoize shortcuts array to prevent recreation on every render
   const shortcuts = useMemo<ShortcutHandler[]>(() => [
@@ -86,6 +89,13 @@ export function useKeyboardShortcuts() {
         navigate("/tasks/new");
       },
       description: "Create Task",
+    },
+    {
+      key: "n",
+      handler: () => {
+        toggleNotifications();
+      },
+      description: "Notifications",
     },
 
     // Tab navigation
@@ -157,6 +167,7 @@ export function useKeyboardShortcuts() {
         setSettingsOpen(false);
         setChatOpen(false);
         setKeyboardShortcutsOpen(false);
+        setNotificationsOpen(false);
       },
       description: "Close Dialog",
     },
@@ -169,6 +180,8 @@ export function useKeyboardShortcuts() {
     setKeyboardShortcutsOpen,
     toggleChat,
     setChatOpen,
+    toggleNotifications,
+    setNotificationsOpen,
     tabs,
     activeTabId,
     addTab,
@@ -229,6 +242,7 @@ export const KEYBOARD_SHORTCUTS = {
   global: [
     { keys: ["?"], description: "Show Keyboard Shortcuts" },
     { keys: ["c"], description: "Create Task" },
+    { keys: ["n"], description: "Notifications" },
     { keys: ["⌥/Alt", "Z"], description: "Open Chat" },
     { keys: ["⌘/Ctrl", "N"], description: "New Task" },
     { keys: ["⌘/Ctrl", ","], description: "Settings" },
