@@ -390,12 +390,21 @@ export function CompositeTaskDetail() {
               the plan based on your feedback.
             </DialogDescription>
           </DialogHeader>
-          <Textarea
-            placeholder="e.g., Split the database task into schema and migration tasks, add a testing task..."
-            value={updatePlanPrompt}
-            onChange={(e) => setUpdatePlanPrompt(e.target.value)}
-            className="min-h-[120px]"
-          />
+          <div>
+            <Textarea
+              placeholder="e.g., Split the database task into schema and migration tasks, add a testing task..."
+              value={updatePlanPrompt}
+              onChange={(e) => {
+                if (e.target.value.length <= 100000) {
+                  setUpdatePlanPrompt(e.target.value);
+                }
+              }}
+              className="min-h-[120px]"
+            />
+            <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+              {updatePlanPrompt.length.toLocaleString()} / 100,000 characters
+            </p>
+          </div>
           <DialogFooter>
             <Button
               variant="outline"

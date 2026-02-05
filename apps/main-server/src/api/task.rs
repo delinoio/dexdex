@@ -461,6 +461,10 @@ pub async fn request_changes<S: TaskStore>(
 }
 
 /// Updates the plan for a composite task by transitioning it back to planning.
+///
+/// The update prompt is appended to the task's prompt so that workers (in
+/// remote mode) have context about the requested changes when re-running the
+/// planning agent.
 pub async fn update_plan<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<UpdatePlanRequest>,
@@ -469,6 +473,25 @@ pub async fn update_plan<S: TaskStore>(
         .task_id
         .parse()
         .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    // Validate prompt
+    let prompt = request.prompt.trim();
+    if prompt.is_empty() {
+        return Err(ServerError::InvalidRequest(
+            "Update prompt cannot be empty".to_string(),
+        ));
+    }
+    if request.prompt.len() > 100_000 {
+        return Err(ServerError::InvalidRequest(format!(
+            "Update prompt exceeds maximum length of 100000 characters (got {} characters)",
+            request.prompt.len()
+        )));
+    }
+    if request.prompt.contains('\0') {
+        return Err(ServerError::InvalidRequest(
+            "Update prompt cannot contain null bytes".to_string(),
+        ));
+    }
 
     let mut task = state
         .store
@@ -488,13 +511,25 @@ pub async fn update_plan<S: TaskStore>(
     planning_task.ai_agent_type = task.execution_agent_type;
     let planning_task = state.store.create_agent_task(planning_task).await?;
 
+    // Store the previous plan in the prompt so the worker has context for
+    // re-planning
+    let previous_plan = task.plan_yaml.as_deref().unwrap_or("(no previous plan)");
+    task.prompt = format!(
+        "{}\n\n--- Plan Update Request ---\nPrevious plan:\n{}\n\nRequested changes:\n{}",
+        task.prompt, previous_plan, prompt
+    );
+
     task.planning_task_id = planning_task.id;
     task.status = EntityCompositeTaskStatus::Planning;
     task.plan_yaml = None;
     task.updated_at = chrono::Utc::now();
     let task = state.store.update_composite_task(task).await?;
 
-    tracing::info!(task_id = %task_id, "Plan update requested, transitioning back to planning");
+    tracing::info!(
+        task_id = %task_id,
+        prompt_len = prompt.len(),
+        "Plan update requested, transitioning back to planning"
+    );
 
     Ok(Json(UpdatePlanResponse {
         task: entity_to_rpc_composite_task(&task),

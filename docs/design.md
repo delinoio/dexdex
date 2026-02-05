@@ -740,10 +740,13 @@ The planning agent execution is handled by `LocalExecutor::execute_composite_tas
 
 **Plan Update Flow:**
 - When a composite task is in `pending_approval` status, the user can request plan updates via an "Update Plan" button
-- The user provides a prompt describing the desired changes to the plan
-- The system creates a new planning agent task with `build_update_planning_prompt()`, which includes the original prompt, previous PLAN.yaml, and update instructions
+- The user provides a prompt describing the desired changes to the plan (max 100,000 characters, validated on both client and server)
+- A race condition guard (`is_executing()`) prevents duplicate update requests while a task is already being processed
+- In local mode, the system creates a new planning agent task with `build_update_planning_prompt()`, which includes the original prompt, previous PLAN.yaml, and update instructions
+- In remote mode, the main server stores the update prompt (along with the previous plan context) in the task's prompt field for the worker to use
 - The composite task transitions back to `planning` status and `plan_yaml` is cleared
-- On completion, the updated PLAN.yaml is persisted and the task returns to `pending_approval`
+- On success, the updated PLAN.yaml is persisted and the task returns to `pending_approval`
+- On failure or cancellation, the task is restored to `pending_approval` with the previous plan so the user can retry
 - This is handled by `LocalExecutor::update_composite_task_plan()`
 
 ### PR Auto-Management

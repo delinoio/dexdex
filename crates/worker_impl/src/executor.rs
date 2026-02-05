@@ -764,6 +764,9 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let remote_url = repository.remote_url.clone();
         let branch_name_clone = branch_name.clone();
 
+        // Save the previous plan so we can restore it on failure
+        let saved_previous_plan = composite_task.plan_yaml.clone();
+
         // Spawn the planning execution task (reuses the same logic as
         // execute_composite_task)
         let handle = tokio::spawn(async move {
@@ -783,7 +786,9 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             }
 
-            // Update composite task status based on planning result
+            // Update composite task status based on planning result.
+            // On failure, restore to PendingApproval with the previous plan
+            // so the user can try again.
             match &result {
                 ExecutionResult::Success { .. } => {
                     info!(
@@ -820,39 +825,61 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                                 );
                             }
                         } else {
-                            error!(
-                                "PLAN.yaml not found after update for composite task {} - marking \
-                                 as failed",
+                            // PLAN.yaml not found - restore to PendingApproval
+                            // with old plan so user can retry
+                            warn!(
+                                "PLAN.yaml not found after update for composite task {} - \
+                                 restoring to PendingApproval with previous plan",
                                 composite_task_id
                             );
-                            composite_task.status = CompositeTaskStatus::Failed;
+                            composite_task.status = CompositeTaskStatus::PendingApproval;
+                            composite_task.plan_yaml = saved_previous_plan.clone();
                             composite_task.updated_at = Utc::now();
                             if let Err(e) = task_store.update_composite_task(composite_task).await {
-                                error!("Failed to update composite task status to Failed: {}", e);
+                                error!(
+                                    "Failed to restore composite task to PendingApproval: {}",
+                                    e
+                                );
                             }
                         }
                     }
                 }
                 ExecutionResult::Failed { error, .. } => {
+                    // Restore to PendingApproval with the previous plan so the
+                    // user can retry the update
                     error!(
-                        "Plan update for composite task {} failed: {}",
+                        "Plan update for composite task {} failed: {} - restoring to \
+                         PendingApproval",
                         composite_task_id, error
                     );
                     if let Ok(Some(mut composite_task)) =
                         task_store.get_composite_task(composite_task_id).await
                     {
-                        composite_task.status = CompositeTaskStatus::Failed;
+                        composite_task.status = CompositeTaskStatus::PendingApproval;
+                        composite_task.plan_yaml = saved_previous_plan.clone();
                         composite_task.updated_at = Utc::now();
                         if let Err(e) = task_store.update_composite_task(composite_task).await {
-                            error!("Failed to update composite task status to Failed: {}", e);
+                            error!("Failed to restore composite task to PendingApproval: {}", e);
                         }
                     }
                 }
                 ExecutionResult::Cancelled => {
+                    // Restore to PendingApproval with the previous plan
                     info!(
-                        "Plan update for composite task {} was cancelled",
+                        "Plan update for composite task {} was cancelled - restoring to \
+                         PendingApproval",
                         composite_task_id
                     );
+                    if let Ok(Some(mut composite_task)) =
+                        task_store.get_composite_task(composite_task_id).await
+                    {
+                        composite_task.status = CompositeTaskStatus::PendingApproval;
+                        composite_task.plan_yaml = saved_previous_plan.clone();
+                        composite_task.updated_at = Utc::now();
+                        if let Err(e) = task_store.update_composite_task(composite_task).await {
+                            error!("Failed to restore composite task to PendingApproval: {}", e);
+                        }
+                    }
                 }
             }
 

@@ -1166,6 +1166,23 @@ pub async fn update_plan(
         ));
     }
 
+    // Check if this task is already being executed (race condition guard)
+    if let Some(executor) = runtime.executor().await {
+        if executor.is_executing(id).await {
+            return Err(AppError::InvalidRequest(
+                "Task is already being processed. Please wait for the current operation to \
+                 complete."
+                    .to_string(),
+            ));
+        }
+    }
+
+    // Store the previous plan for the update prompt context
+    let previous_plan = task
+        .plan_yaml
+        .clone()
+        .unwrap_or_else(|| "(no previous plan)".to_string());
+
     // Create a new planning agent task
     let mut planning_task = entities::AgentTask::new();
     planning_task.ai_agent_type = task.execution_agent_type;
@@ -1182,7 +1199,11 @@ pub async fn update_plan(
     task.updated_at = chrono::Utc::now();
 
     let updated = runtime.task_store_arc().update_composite_task(task).await?;
-    info!("Updated composite task for re-planning: {}", id);
+    info!(
+        task_id = %id,
+        prompt_len = prompt.len(),
+        "Updated composite task for re-planning"
+    );
 
     // Trigger planning task execution with update prompt
     if let Some(executor) = runtime.executor().await {
@@ -1218,6 +1239,9 @@ pub async fn update_plan(
     task_id: String,
     prompt: String,
 ) -> AppResult<CompositeTask> {
+    // SECURITY: Validate prompt to prevent oversized inputs
+    validate_prompt(&prompt)?;
+
     let state = state.read().await;
 
     // Validate input parameters
