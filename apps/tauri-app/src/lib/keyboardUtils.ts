@@ -3,7 +3,7 @@
 // This allows shortcuts to work regardless of the active keyboard layout (e.g., Korean, Russian, etc.).
 
 // Mapping from KeyboardEvent.code to the Latin character on a standard QWERTY layout
-const CODE_TO_LATIN_KEY: Record<string, string> = {
+const CODE_TO_LATIN_KEY: Readonly<Record<string, string>> = Object.freeze({
   KeyA: "a",
   KeyB: "b",
   KeyC: "c",
@@ -51,7 +51,7 @@ const CODE_TO_LATIN_KEY: Record<string, string> = {
   Backquote: "`",
   Minus: "-",
   Equal: "=",
-};
+});
 
 /**
  * Returns the Latin key character for a given KeyboardEvent.code.
@@ -59,7 +59,29 @@ const CODE_TO_LATIN_KEY: Record<string, string> = {
  *
  * This is used as a fallback when event.key returns a non-Latin character
  * (e.g., Korean ㅊ instead of 'c') due to the active keyboard layout.
+ *
+ * @example
+ * getLatinKeyFromCode('KeyC') // returns 'c'
+ * getLatinKeyFromCode('Digit1') // returns '1'
+ * getLatinKeyFromCode('Escape') // returns undefined
  */
 export function getLatinKeyFromCode(code: string): string | undefined {
   return CODE_TO_LATIN_KEY[code];
+}
+
+/**
+ * Returns the effective Latin key for a keyboard event, accounting for
+ * non-Latin keyboard layouts. If event.key is a non-Latin single character,
+ * falls back to the physical key code mapping.
+ *
+ * @example
+ * // Korean layout: physical 'C' key produces 'ㅊ'
+ * getEffectiveKey({ key: 'ㅊ', code: 'KeyC' }) // returns 'c'
+ * // English layout: physical 'C' key produces 'c'
+ * getEffectiveKey({ key: 'c', code: 'KeyC' }) // returns 'c'
+ */
+export function getEffectiveKey(event: Pick<KeyboardEvent, "key" | "code">): string {
+  const key = event.key.toLowerCase();
+  const latinKey = getLatinKeyFromCode(event.code);
+  return key.length === 1 && !/[a-z0-9]/.test(key) && latinKey ? latinKey : key;
 }

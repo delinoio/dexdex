@@ -507,6 +507,28 @@ describe("useKeyboardShortcuts", () => {
       expect(mockNavigate).not.toHaveBeenCalled();
     });
 
+    it("should handle shifted keys on non-Latin layouts", () => {
+      renderHook(() => useKeyboardShortcuts());
+
+      // Shift+KeyC on Russian layout produces uppercase Cyrillic 'С'
+      // event.code is still 'KeyC', so it should fall back to physical key
+      // But since shift is pressed and 'c' shortcut requires no shift, it should NOT trigger
+      act(() => {
+        const event = new KeyboardEvent("keydown", {
+          key: "С",
+          code: "KeyC",
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          shiftKey: true,
+        });
+
+        window.dispatchEvent(event);
+      });
+
+      expect(mockSetTaskCreationOpen).not.toHaveBeenCalled();
+    });
+
     it("should trigger Ctrl+, (Settings) shortcut via event.code on non-Latin layout", () => {
       renderHook(() => useKeyboardShortcuts());
 
