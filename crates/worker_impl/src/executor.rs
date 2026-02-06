@@ -374,8 +374,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     .to_string(),
                 _ => {
                     warn!(
-                        "Could not fetch current status for unit task {}, \
-                         defaulting to in_progress",
+                        "Could not fetch current status for unit task {}, defaulting to \
+                         in_progress",
                         task_id
                     );
                     "in_progress".to_string()
@@ -395,14 +395,12 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 .unwrap_or_default()
                 .trim_matches('"')
                 .to_string();
-            if let Err(e) =
-                persisting_emitter.emit_task_status_changed(TaskStatusChangedEvent {
-                    task_id: task_id.to_string(),
-                    task_type: TaskType::UnitTask,
-                    old_status,
-                    new_status: new_status_str,
-                })
-            {
+            if let Err(e) = persisting_emitter.emit_task_status_changed(TaskStatusChangedEvent {
+                task_id: task_id.to_string(),
+                task_type: TaskType::UnitTask,
+                old_status,
+                new_status: new_status_str,
+            }) {
                 warn!(
                     "Failed to emit status changed event for unit task {}: {}",
                     task_id, e
@@ -1709,16 +1707,10 @@ mod tests {
             status_to_event_string(UnitTaskStatus::InReview),
             "in_review"
         );
-        assert_eq!(
-            status_to_event_string(UnitTaskStatus::Approved),
-            "approved"
-        );
+        assert_eq!(status_to_event_string(UnitTaskStatus::Approved), "approved");
         assert_eq!(status_to_event_string(UnitTaskStatus::PrOpen), "pr_open");
         assert_eq!(status_to_event_string(UnitTaskStatus::Done), "done");
-        assert_eq!(
-            status_to_event_string(UnitTaskStatus::Rejected),
-            "rejected"
-        );
+        assert_eq!(status_to_event_string(UnitTaskStatus::Rejected), "rejected");
         assert_eq!(status_to_event_string(UnitTaskStatus::Failed), "failed");
         assert_eq!(
             status_to_event_string(UnitTaskStatus::Cancelled),
@@ -1799,12 +1791,15 @@ mod tests {
         fn emit_task_status_changed(&self, _event: TaskStatusChangedEvent) -> AgentResult<()> {
             Ok(())
         }
+
         fn emit_agent_output(&self, _event: AgentOutputEvent) -> AgentResult<()> {
             Ok(())
         }
+
         fn emit_tty_input_request(&self, _event: TtyInputRequestEvent) -> AgentResult<()> {
             Ok(())
         }
+
         fn emit_task_completed(&self, _event: TaskCompletedEvent) -> AgentResult<()> {
             Ok(())
         }
