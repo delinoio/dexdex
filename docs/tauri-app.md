@@ -413,6 +413,12 @@ async fn reject_task(task_id: String) -> Result<(), Error>;
 
 #[tauri::command]
 async fn request_changes(task_id: String, feedback: String) -> Result<(), Error>;
+
+#[tauri::command]
+async fn get_task_diff(task_id: String) -> Result<TaskDiffResponse, Error>;
+
+#[tauri::command]
+async fn get_task_worktree_path(task_id: String) -> Result<TaskWorktreePathResponse, Error>;
 ```
 
 ### Repository Management

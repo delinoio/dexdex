@@ -10,6 +10,7 @@ import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTas
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
+import { getTaskDiff, getTaskWorktreePath } from "@/api/client";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
 import { useState, useCallback, useMemo } from "react";
@@ -20,6 +21,11 @@ export function UnitTaskDetail() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showLog, setShowLog] = useState(true);
+  const [showDiff, setShowDiff] = useState(false);
+  const [diffContent, setDiffContent] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
+  const [editorLoading, setEditorLoading] = useState(false);
 
   const { data, isLoading, error } = useTask(id ?? "");
   const approveMutation = useApproveTask();
@@ -80,6 +86,52 @@ export function UnitTaskDetail() {
       }
     }
   }, [task?.id, cancelMutation]);
+
+  const handleViewDiff = useCallback(async () => {
+    if (!task?.id) return;
+    if (showDiff && diffContent !== null) {
+      // Toggle off if already showing
+      setShowDiff(false);
+      return;
+    }
+    setDiffLoading(true);
+    setDiffError(null);
+    try {
+      const response = await getTaskDiff(task.id);
+      setDiffContent(response.diff);
+      setShowDiff(true);
+      if (!response.hasDiff) {
+        setDiffError("No changes found for this task.");
+      }
+    } catch (error) {
+      console.error("Failed to get task diff:", error);
+      setDiffError(
+        error instanceof Error ? error.message : "Failed to load diff"
+      );
+      setShowDiff(true);
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [task?.id, showDiff, diffContent]);
+
+  const handleOpenInEditor = useCallback(async () => {
+    if (!task?.id) return;
+    setEditorLoading(true);
+    try {
+      const response = await getTaskWorktreePath(task.id);
+      if (response.exists && response.path) {
+        // Use the Tauri opener plugin to open the directory
+        const { openPath } = await import("@tauri-apps/plugin-opener");
+        await openPath(response.path);
+      } else {
+        console.warn("Worktree not found for task:", task.id);
+      }
+    } catch (error) {
+      console.error("Failed to open in editor:", error);
+    } finally {
+      setEditorLoading(false);
+    }
+  }, [task?.id]);
 
   // Register keyboard shortcuts
   useTaskDetailShortcuts({
@@ -328,10 +380,71 @@ export function UnitTaskDetail() {
           {task.status !== UnitTaskStatus.InProgress &&
             task.status !== UnitTaskStatus.Unspecified && (
               <div className="flex gap-2">
-                <Button variant="outline">View Diff</Button>
-                <Button variant="outline">Open in Editor</Button>
+                <Button
+                  variant="outline"
+                  onClick={handleViewDiff}
+                  disabled={diffLoading}
+                >
+                  {diffLoading ? "Loading..." : showDiff ? "Hide Diff" : "View Diff"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleOpenInEditor}
+                  disabled={editorLoading}
+                >
+                  {editorLoading ? "Opening..." : "Open in Editor"}
+                </Button>
               </div>
             )}
+
+          {showDiff && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Changes</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDiff(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+                {diffError && (
+                  <CardDescription className="text-[hsl(var(--muted-foreground))]">
+                    {diffError}
+                  </CardDescription>
+                )}
+              </CardHeader>
+              <CardContent>
+                {diffContent ? (
+                  <pre className="overflow-x-auto rounded-md bg-[hsl(var(--muted))]/50 p-4 text-xs font-mono leading-relaxed">
+                    {diffContent.split("\n").map((line, i) => {
+                      let className = "";
+                      if (line.startsWith("+") && !line.startsWith("+++")) {
+                        className = "text-green-600 dark:text-green-400";
+                      } else if (line.startsWith("-") && !line.startsWith("---")) {
+                        className = "text-red-600 dark:text-red-400";
+                      } else if (line.startsWith("@@")) {
+                        className = "text-blue-600 dark:text-blue-400";
+                      } else if (line.startsWith("diff ") || line.startsWith("index ")) {
+                        className = "text-[hsl(var(--muted-foreground))] font-bold";
+                      }
+                      return (
+                        <div key={i} className={className}>
+                          {line}
+                        </div>
+                      );
+                    })}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                    No diff available.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

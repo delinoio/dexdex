@@ -112,6 +112,24 @@ export async function respondTtyInput(params: RespondTtyInputParams): Promise<vo
   return invoke<void>("respond_tty_input", { params });
 }
 
+export interface TaskDiffResponse {
+  diff: string;
+  hasDiff: boolean;
+}
+
+export async function getTaskDiff(taskId: string): Promise<TaskDiffResponse> {
+  return invoke<TaskDiffResponse>("get_task_diff", { taskId });
+}
+
+export interface TaskWorktreePathResponse {
+  path: string | null;
+  exists: boolean;
+}
+
+export async function getTaskWorktreePath(taskId: string): Promise<TaskWorktreePathResponse> {
+  return invoke<TaskWorktreePathResponse>("get_task_worktree_path", { taskId });
+}
+
 // Repository commands
 
 export async function addRepository(

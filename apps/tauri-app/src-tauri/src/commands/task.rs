@@ -1778,6 +1778,300 @@ fn parse_composite_status(s: &str) -> AppResult<CompositeTaskStatus> {
     }
 }
 
+/// Response for get_task_diff command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDiffResponse {
+    /// Raw unified diff output from git.
+    pub diff: String,
+    /// Whether the diff could be computed.
+    pub has_diff: bool,
+}
+
+/// Gets the git diff for a unit task by running `git diff` in the task's
+/// worktree.
+///
+/// This computes the diff between the base commit and the current HEAD of the
+/// task's branch. If base_commit is not set on the task, falls back to diffing
+/// against the default branch (main/master).
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn get_task_diff(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<TaskDiffResponse> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "View Diff is not yet supported in remote mode".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the unit task
+    let task = runtime
+        .task_store_arc()
+        .get_unit_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+
+    // Get the branch name
+    let default_branch = format!("delidev/{}", task_id);
+    let branch_name = task.branch_name.as_deref().unwrap_or(&default_branch);
+
+    // Compute worktree path
+    let data_dir = runtime.data_dir();
+    // The worktree is in the parent of data_dir (data_dir is ~/.delidev/data,
+    // worktrees is ~/.delidev/worktrees)
+    let base_dir = data_dir
+        .parent()
+        .ok_or_else(|| AppError::Internal("Cannot determine base directory".to_string()))?;
+    let worktree_path = git_ops::worktree_path_for_task_with_cache(
+        base_dir.join("worktrees"),
+        &task_id,
+        branch_name,
+    );
+
+    if !worktree_path.exists() {
+        info!(
+            "Worktree not found at {:?} for task {}, returning empty diff",
+            worktree_path, task_id
+        );
+        return Ok(TaskDiffResponse {
+            diff: String::new(),
+            has_diff: false,
+        });
+    }
+
+    // Run git diff in the worktree
+    // If base_commit is available, diff from base_commit to HEAD
+    // Otherwise, diff against the merge-base with the default branch
+    let diff_output = if let Some(ref base_commit) = task.base_commit {
+        info!(
+            "Computing diff from base commit {} for task {}",
+            base_commit, task_id
+        );
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&worktree_path)
+            .arg("diff")
+            .arg(base_commit)
+            .arg("HEAD")
+            .output()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!("git diff failed for task {}: {}", task_id, stderr);
+            // Fall back to showing all changes in the worktree
+            let fallback = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("diff")
+                .arg("HEAD")
+                .output()
+                .await
+                .map_err(|e| {
+                    AppError::Internal(format!("Failed to execute fallback git diff: {}", e))
+                })?;
+            String::from_utf8_lossy(&fallback.stdout).to_string()
+        } else {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        }
+    } else {
+        info!(
+            "No base commit for task {}, computing diff against default branch",
+            task_id
+        );
+        // Try to find the merge-base with main/master
+        let merge_base_output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(&worktree_path)
+            .arg("merge-base")
+            .arg("HEAD")
+            .arg("main")
+            .output()
+            .await;
+
+        let merge_base = match merge_base_output {
+            Ok(output) if output.status.success() => {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            }
+            _ => {
+                // Try master
+                let output = tokio::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&worktree_path)
+                    .arg("merge-base")
+                    .arg("HEAD")
+                    .arg("master")
+                    .output()
+                    .await;
+                match output {
+                    Ok(o) if o.status.success() => {
+                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    }
+                    _ => None,
+                }
+            }
+        };
+
+        if let Some(base) = merge_base {
+            let output = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("diff")
+                .arg(&base)
+                .arg("HEAD")
+                .output()
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
+            String::from_utf8_lossy(&output.stdout).to_string()
+        } else {
+            // Last fallback: show all uncommitted changes
+            let output = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("log")
+                .arg("--oneline")
+                .arg("-1")
+                .output()
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to execute git log: {}", e)))?;
+            let head_info = String::from_utf8_lossy(&output.stdout).to_string();
+            info!("HEAD info for task {}: {}", task_id, head_info.trim());
+
+            // Just show the diff of the last commit
+            let output = tokio::process::Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("diff")
+                .arg("HEAD~1")
+                .arg("HEAD")
+                .output()
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
+            String::from_utf8_lossy(&output.stdout).to_string()
+        }
+    };
+
+    let has_diff = !diff_output.trim().is_empty();
+    info!(
+        "Computed diff for task {} (has_diff: {}, length: {} bytes)",
+        task_id,
+        has_diff,
+        diff_output.len()
+    );
+
+    Ok(TaskDiffResponse {
+        diff: diff_output,
+        has_diff,
+    })
+}
+
+/// Gets the git diff for a unit task (mobile - not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn get_task_diff(
+    _state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<TaskDiffResponse> {
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
+/// Response for get_task_worktree_path command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskWorktreePathResponse {
+    /// The absolute path to the task's worktree directory.
+    pub path: Option<String>,
+    /// Whether the worktree exists.
+    pub exists: bool,
+}
+
+/// Gets the worktree path for a unit task so it can be opened in an editor.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn get_task_worktree_path(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<TaskWorktreePathResponse> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "Open in Editor is not yet supported in remote mode".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Get the unit task
+    let task = runtime
+        .task_store_arc()
+        .get_unit_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+
+    // Get the branch name
+    let default_branch = format!("delidev/{}", task_id);
+    let branch_name = task.branch_name.as_deref().unwrap_or(&default_branch);
+
+    // Compute worktree path
+    let data_dir = runtime.data_dir();
+    let base_dir = data_dir
+        .parent()
+        .ok_or_else(|| AppError::Internal("Cannot determine base directory".to_string()))?;
+    let worktree_path = git_ops::worktree_path_for_task_with_cache(
+        base_dir.join("worktrees"),
+        &task_id,
+        branch_name,
+    );
+
+    let exists = worktree_path.exists();
+    let path = if exists {
+        Some(worktree_path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    info!(
+        "Worktree path for task {}: {:?} (exists: {})",
+        task_id, path, exists
+    );
+
+    Ok(TaskWorktreePathResponse { path, exists })
+}
+
+/// Gets the worktree path for a unit task (mobile - not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn get_task_worktree_path(
+    _state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<TaskWorktreePathResponse> {
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
