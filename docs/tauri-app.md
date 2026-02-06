@@ -418,10 +418,14 @@ async fn request_changes(task_id: String, feedback: String) -> Result<(), Error>
 async fn get_task_diff(task_id: String) -> Result<TaskDiffResponse, Error>;
 // TaskDiffResponse { diff: String, has_diff: bool, truncated: bool }
 // Diffs over 1 MB are truncated. The `truncated` field indicates this.
+// When the worktree has been cleaned up, falls back to computing the diff
+// from the cached bare repository using the task's branch name.
 
 #[tauri::command]
 async fn get_task_worktree_path(task_id: String) -> Result<TaskWorktreePathResponse, Error>;
-// TaskWorktreePathResponse { path: Option<String>, exists: bool }
+// TaskWorktreePathResponse { path: Option<String>, exists: bool, branch_name: Option<String> }
+// The `branch_name` field is provided even when the worktree doesn't exist,
+// so the UI can display which branch to check out manually.
 ```
 
 ### Repository Management

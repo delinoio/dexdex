@@ -117,7 +117,7 @@ export function UnitTaskDetail() {
       } else if (message.includes("not initialized")) {
         setDiffError("The local runtime is not ready. Please restart the app.");
       } else {
-        setDiffError("Failed to load diff. Check that the worktree still exists.");
+        setDiffError("Failed to load diff. The repository cache may have been removed.");
       }
       setShowDiff(true);
     } finally {
@@ -138,7 +138,12 @@ export function UnitTaskDetail() {
         const { openPath } = await import("@tauri-apps/plugin-opener");
         await openPath(response.path);
       } else {
-        setEditorError("The worktree for this task no longer exists on disk.");
+        const branchHint = response.branchName
+          ? ` The branch "${response.branchName}" may still exist in the repository.`
+          : "";
+        setEditorError(
+          `The worktree for this task no longer exists on disk. Changes should be pushed to the branch before cleaning the worktree.${branchHint}`
+        );
       }
     } catch (error) {
       console.error("Failed to open in editor:", error);

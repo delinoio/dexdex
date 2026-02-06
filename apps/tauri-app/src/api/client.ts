@@ -125,6 +125,7 @@ export async function getTaskDiff(taskId: string): Promise<TaskDiffResponse> {
 export interface TaskWorktreePathResponse {
   path: string | null;
   exists: boolean;
+  branchName: string | null;
 }
 
 export async function getTaskWorktreePath(taskId: string): Promise<TaskWorktreePathResponse> {

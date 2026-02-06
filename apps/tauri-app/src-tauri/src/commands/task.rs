@@ -1794,15 +1794,25 @@ pub struct TaskDiffResponse {
     pub truncated: bool,
 }
 
+/// Result of resolving task paths.
+///
+/// Contains the worktree path, the task itself, and the base directory
+/// (parent of data_dir) needed for constructing additional paths like
+/// the repo cache.
+#[cfg(desktop)]
+struct ResolvedTaskPaths {
+    worktree_path: std::path::PathBuf,
+    task: UnitTask,
+    /// The base directory (e.g. `~/.delidev`), parent of data_dir.
+    base_dir: std::path::PathBuf,
+}
+
 /// Resolves the worktree path for a given task.
 ///
 /// This is a shared helper used by both `get_task_diff` and
 /// `get_task_worktree_path` to avoid duplicating the lookup logic.
 #[cfg(desktop)]
-async fn resolve_worktree_path(
-    state: &AppState,
-    task_id: &str,
-) -> AppResult<(std::path::PathBuf, UnitTask)> {
+async fn resolve_worktree_path(state: &AppState, task_id: &str) -> AppResult<ResolvedTaskPaths> {
     if state.mode == AppMode::Remote {
         return Err(AppError::InvalidRequest(
             "This operation is not yet supported in remote mode".to_string(),
@@ -1853,21 +1863,238 @@ async fn resolve_worktree_path(
         }
     }
 
-    Ok((worktree_path, task))
+    Ok(ResolvedTaskPaths {
+        worktree_path,
+        task,
+        base_dir: base_dir.to_path_buf(),
+    })
 }
 
-/// Gets the git diff for a unit task by running `git diff` in the task's
-/// worktree.
+/// Resolves the cached bare repository path for a task by looking up the
+/// repository through the task's repository group.
 ///
-/// This computes the diff between the base commit and the current HEAD of the
-/// task's branch. If base_commit is not set on the task, falls back to diffing
-/// against the default branch (main/master).
+/// Returns `None` if the repository cannot be found or the cache path
+/// doesn't exist on disk.
+#[cfg(desktop)]
+async fn resolve_cached_repo_path(
+    state: &AppState,
+    task: &UnitTask,
+    base_dir: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    let runtime = state.local_runtime.as_ref()?;
+    let task_store = runtime.task_store_arc();
+
+    let repo_group = match task_store
+        .get_repository_group(task.repository_group_id)
+        .await
+    {
+        Ok(Some(rg)) => rg,
+        Ok(None) => {
+            tracing::warn!(
+                "Repository group {} not found for task {}",
+                task.repository_group_id,
+                task.id
+            );
+            return None;
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load repository group {} for task {}: {}",
+                task.repository_group_id,
+                task.id,
+                e
+            );
+            return None;
+        }
+    };
+
+    let repo_id = repo_group.repository_ids.first()?;
+
+    let repository = match task_store.get_repository(*repo_id).await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            tracing::warn!("Repository {} not found", repo_id);
+            return None;
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load repository {}: {}", repo_id, e);
+            return None;
+        }
+    };
+
+    let repo_cache = git_ops::RepositoryCache::new(base_dir);
+    let cached_path = repo_cache.cached_repo_path(&repository.remote_url);
+
+    if cached_path.exists() {
+        info!(
+            "Found cached bare repo at {:?} for task {}",
+            cached_path, task.id
+        );
+        Some(cached_path)
+    } else {
+        tracing::warn!(
+            "Cached bare repo not found at {:?} for task {}",
+            cached_path,
+            task.id
+        );
+        None
+    }
+}
+
+/// Computes the diff for a task in the given git directory.
+///
+/// `git_dir` can be either a worktree or a bare repo cache. When using a bare
+/// repo, `branch_ref` must be provided to identify the task's branch.
 ///
 /// Fallback chain:
-/// 1. `git diff <base_commit> HEAD` if `base_commit` is set on the task
-/// 2. `git diff <merge-base with main> HEAD` using merge-base with main
-/// 3. `git diff <merge-base with master> HEAD` using merge-base with master
-/// 4. `git diff HEAD~1 HEAD` showing only the last commit
+/// 1. `git diff <base_commit> <branch_ref>` if `base_commit` is set
+/// 2. `git diff <merge-base with main> <branch_ref>` using merge-base
+/// 3. `git diff <merge-base with master> <branch_ref>` using merge-base
+/// 4. `git diff <branch_ref>~1 <branch_ref>` showing only the last commit
+#[cfg(desktop)]
+async fn compute_diff_in_dir(
+    git_dir: &std::path::Path,
+    task: &UnitTask,
+    task_id: &str,
+    branch_ref: &str,
+) -> AppResult<String> {
+    if let Some(ref base_commit) = task.base_commit {
+        info!(
+            "Computing diff from base commit {} for task {} (ref: {})",
+            base_commit, task_id, branch_ref
+        );
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(git_dir)
+            .arg("diff")
+            .arg(base_commit)
+            .arg(branch_ref)
+            .output()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
+
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(
+            "git diff with base_commit {} failed for task {}: {}. Trying merge-base fallback.",
+            base_commit,
+            task_id,
+            stderr
+        );
+    } else {
+        info!(
+            "No base commit for task {}, computing diff against default branch",
+            task_id
+        );
+    }
+
+    // Try to find the merge-base with main/master
+    let merge_base = find_merge_base(git_dir, branch_ref, task_id).await;
+
+    if let Some(base) = merge_base {
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(git_dir)
+            .arg("diff")
+            .arg(&base)
+            .arg(branch_ref)
+            .output()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
+        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+
+    // Last fallback: show diff of the last commit on the branch
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(git_dir)
+        .arg("log")
+        .arg("--oneline")
+        .arg("-1")
+        .arg(branch_ref)
+        .output()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to execute git log: {}", e)))?;
+    let head_info = String::from_utf8_lossy(&output.stdout).to_string();
+    info!("HEAD info for task {}: {}", task_id, head_info.trim());
+
+    let parent_ref = format!("{}~1", branch_ref);
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(git_dir)
+        .arg("diff")
+        .arg(&parent_ref)
+        .arg(branch_ref)
+        .output()
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        // If even parent_ref~1 fails (single commit), try `git show`
+        let show_output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(git_dir)
+            .arg("show")
+            .arg("--format=")
+            .arg(branch_ref)
+            .output()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to execute git show: {}", e)))?;
+        Ok(String::from_utf8_lossy(&show_output.stdout).to_string())
+    }
+}
+
+/// Finds the merge-base between a branch ref and main/master.
+#[cfg(desktop)]
+async fn find_merge_base(
+    git_dir: &std::path::Path,
+    branch_ref: &str,
+    task_id: &str,
+) -> Option<String> {
+    for default_branch in &["main", "master", "origin/main", "origin/master"] {
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(git_dir)
+            .arg("merge-base")
+            .arg(branch_ref)
+            .arg(default_branch)
+            .output()
+            .await;
+        match output {
+            Ok(o) if o.status.success() => {
+                let base = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                info!(
+                    "Found merge-base {} with '{}' for task {}",
+                    base, default_branch, task_id
+                );
+                return Some(base);
+            }
+            _ => {
+                tracing::warn!(
+                    "merge-base with '{}' failed for task {}",
+                    default_branch,
+                    task_id
+                );
+            }
+        }
+    }
+    tracing::warn!(
+        "All merge-base attempts failed for task {}. Falling back to showing last commit only.",
+        task_id
+    );
+    None
+}
+
+/// Gets the git diff for a unit task.
+///
+/// First tries to compute the diff from the task's worktree. If the worktree
+/// has been cleaned up, falls back to computing the diff from the cached bare
+/// repository using the task's branch name.
 ///
 /// Large diffs (over 1 MB) are truncated with a warning.
 #[cfg(desktop)]
@@ -1877,144 +2104,43 @@ pub async fn get_task_diff(
     task_id: String,
 ) -> AppResult<TaskDiffResponse> {
     let state = state.read().await;
-    let (worktree_path, task) = resolve_worktree_path(&state, &task_id).await?;
+    let resolved = resolve_worktree_path(&state, &task_id).await?;
 
-    if !worktree_path.exists() {
+    let default_branch = format!("delidev/{}", task_id);
+    let branch_name = resolved
+        .task
+        .branch_name
+        .as_deref()
+        .unwrap_or(&default_branch);
+
+    let diff_output = if resolved.worktree_path.exists() {
+        // Worktree exists: compute diff there, using HEAD as the branch ref
         info!(
-            "Worktree not found at {:?} for task {}, returning empty diff",
-            worktree_path, task_id
+            "Computing diff from worktree at {:?} for task {}",
+            resolved.worktree_path, task_id
         );
-        return Ok(TaskDiffResponse {
-            diff: String::new(),
-            has_diff: false,
-            truncated: false,
-        });
-    }
-
-    // Run git diff in the worktree
-    // If base_commit is available, diff from base_commit to HEAD
-    // Otherwise, diff against the merge-base with the default branch
-    let diff_output = if let Some(ref base_commit) = task.base_commit {
-        info!(
-            "Computing diff from base commit {} for task {}",
-            base_commit, task_id
-        );
-        let output = tokio::process::Command::new("git")
-            .arg("-C")
-            .arg(&worktree_path)
-            .arg("diff")
-            .arg(base_commit)
-            .arg("HEAD")
-            .output()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!(
-                "git diff with base_commit {} failed for task {}: {}. Falling back to `git diff \
-                 HEAD`.",
-                base_commit,
-                task_id,
-                stderr
-            );
-            let fallback = tokio::process::Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .arg("diff")
-                .arg("HEAD")
-                .output()
-                .await
-                .map_err(|e| {
-                    AppError::Internal(format!("Failed to execute fallback git diff: {}", e))
-                })?;
-            String::from_utf8_lossy(&fallback.stdout).to_string()
-        } else {
-            String::from_utf8_lossy(&output.stdout).to_string()
-        }
+        compute_diff_in_dir(&resolved.worktree_path, &resolved.task, &task_id, "HEAD").await?
     } else {
+        // Worktree doesn't exist: try using the cached bare repo
         info!(
-            "No base commit for task {}, computing diff against default branch",
-            task_id
+            "Worktree not found at {:?} for task {}, trying cached bare repo",
+            resolved.worktree_path, task_id
         );
-        // Try to find the merge-base with main/master
-        let merge_base_output = tokio::process::Command::new("git")
-            .arg("-C")
-            .arg(&worktree_path)
-            .arg("merge-base")
-            .arg("HEAD")
-            .arg("main")
-            .output()
-            .await;
 
-        let merge_base = match merge_base_output {
-            Ok(output) if output.status.success() => {
-                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-            }
-            _ => {
-                tracing::warn!(
-                    "merge-base with 'main' failed for task {}, trying 'master'",
-                    task_id
-                );
-                let output = tokio::process::Command::new("git")
-                    .arg("-C")
-                    .arg(&worktree_path)
-                    .arg("merge-base")
-                    .arg("HEAD")
-                    .arg("master")
-                    .output()
-                    .await;
-                match output {
-                    Ok(o) if o.status.success() => {
-                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    }
-                    _ => {
-                        tracing::warn!(
-                            "merge-base with 'master' also failed for task {}. Falling back to \
-                             showing diff of last commit only.",
-                            task_id
-                        );
-                        None
-                    }
-                }
-            }
-        };
-
-        if let Some(base) = merge_base {
-            let output = tokio::process::Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .arg("diff")
-                .arg(&base)
-                .arg("HEAD")
-                .output()
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
-            String::from_utf8_lossy(&output.stdout).to_string()
+        if let Some(cached_repo) =
+            resolve_cached_repo_path(&state, &resolved.task, &resolved.base_dir).await
+        {
+            compute_diff_in_dir(&cached_repo, &resolved.task, &task_id, branch_name).await?
         } else {
-            // Last fallback: show diff of the last commit
-            let output = tokio::process::Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .arg("log")
-                .arg("--oneline")
-                .arg("-1")
-                .output()
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to execute git log: {}", e)))?;
-            let head_info = String::from_utf8_lossy(&output.stdout).to_string();
-            info!("HEAD info for task {}: {}", task_id, head_info.trim());
-
-            let output = tokio::process::Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .arg("diff")
-                .arg("HEAD~1")
-                .arg("HEAD")
-                .output()
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
-            String::from_utf8_lossy(&output.stdout).to_string()
+            info!(
+                "No cached repo found for task {}, returning empty diff",
+                task_id
+            );
+            return Ok(TaskDiffResponse {
+                diff: String::new(),
+                has_diff: false,
+                truncated: false,
+            });
         }
     };
 
@@ -2072,6 +2198,8 @@ pub struct TaskWorktreePathResponse {
     pub path: Option<String>,
     /// Whether the worktree exists.
     pub exists: bool,
+    /// The branch name for this task (useful when worktree is missing).
+    pub branch_name: Option<String>,
 }
 
 /// Gets the worktree path for a unit task so it can be opened in an editor.
@@ -2082,7 +2210,9 @@ pub async fn get_task_worktree_path(
     task_id: String,
 ) -> AppResult<TaskWorktreePathResponse> {
     let state = state.read().await;
-    let (worktree_path, _task) = resolve_worktree_path(&state, &task_id).await?;
+    let resolved = resolve_worktree_path(&state, &task_id).await?;
+    let worktree_path = resolved.worktree_path;
+    let branch_name = resolved.task.branch_name.clone();
 
     let exists = worktree_path.exists();
     let path = if exists {
@@ -2101,7 +2231,11 @@ pub async fn get_task_worktree_path(
         task_id, path, exists
     );
 
-    Ok(TaskWorktreePathResponse { path, exists })
+    Ok(TaskWorktreePathResponse {
+        path,
+        exists,
+        branch_name,
+    })
 }
 
 /// Gets the worktree path for a unit task (mobile - not supported).
@@ -2424,10 +2558,12 @@ mod tests {
         let response = TaskWorktreePathResponse {
             path: Some("/home/user/.delidev/worktrees/abc-branch".to_string()),
             exists: true,
+            branch_name: Some("delidev/abc".to_string()),
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"exists\":true"));
         assert!(json.contains("\"path\":"));
+        assert!(json.contains("\"branchName\":\"delidev/abc\""));
     }
 
     #[test]
@@ -2435,18 +2571,41 @@ mod tests {
         let response = TaskWorktreePathResponse {
             path: None,
             exists: false,
+            branch_name: Some("delidev/abc".to_string()),
         };
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"exists\":false"));
         assert!(json.contains("\"path\":null"));
+        assert!(json.contains("\"branchName\":"));
+    }
+
+    #[test]
+    fn test_task_worktree_path_response_no_branch() {
+        let response = TaskWorktreePathResponse {
+            path: None,
+            exists: false,
+            branch_name: None,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"branchName\":null"));
     }
 
     #[test]
     fn test_task_worktree_path_response_deserialization() {
-        let json = r#"{"path":"/some/path","exists":true}"#;
+        let json = r#"{"path":"/some/path","exists":true,"branchName":"my-branch"}"#;
         let response: TaskWorktreePathResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.path.as_deref(), Some("/some/path"));
         assert!(response.exists);
+        assert_eq!(response.branch_name.as_deref(), Some("my-branch"));
+    }
+
+    #[test]
+    fn test_task_worktree_path_response_deserialization_null_branch() {
+        let json = r#"{"path":null,"exists":false,"branchName":null}"#;
+        let response: TaskWorktreePathResponse = serde_json::from_str(json).unwrap();
+        assert!(response.path.is_none());
+        assert!(!response.exists);
+        assert!(response.branch_name.is_none());
     }
 
     // =========================================================================
