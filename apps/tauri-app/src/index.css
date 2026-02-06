@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Use class-based dark mode so that the .dark class on <html> activates dark: variants */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* CSS Variables for theming */
 :root {
   --background: 0 0% 100%;
