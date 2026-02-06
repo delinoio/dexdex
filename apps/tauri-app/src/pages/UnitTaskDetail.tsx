@@ -12,7 +12,7 @@ import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
@@ -36,6 +36,25 @@ export function UnitTaskDetail() {
     taskStatus: task?.status ?? UnitTaskStatus.Unspecified,
     enabled: !!task?.agentTaskId,
   });
+
+  // Auto-collapse the session log when the task transitions out of InProgress.
+  // We track the previous status so that only a genuine transition triggers the
+  // collapse (e.g. going from InProgress -> InReview), rather than collapsing
+  // every time the component re-renders with a non-InProgress status.
+  const prevTaskStatusRef = useRef(task?.status);
+  useEffect(() => {
+    const prevStatus = prevTaskStatusRef.current;
+    const currentStatus = task?.status;
+    prevTaskStatusRef.current = currentStatus;
+
+    if (
+      prevStatus === UnitTaskStatus.InProgress &&
+      currentStatus !== undefined &&
+      currentStatus !== UnitTaskStatus.InProgress
+    ) {
+      setShowLog(false);
+    }
+  }, [task?.status]);
 
   // Extract token usage from session_end events
   const tokenUsage = useMemo<TokenUsage | null>(() => {
