@@ -51,7 +51,6 @@ jobs:
               - 'package.json'
               - 'turbo.json'
             mobile:
-              - 'apps/tauri-app/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - '**/*.rs'
