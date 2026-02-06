@@ -115,6 +115,7 @@ export async function respondTtyInput(params: RespondTtyInputParams): Promise<vo
 export interface TaskDiffResponse {
   diff: string;
   hasDiff: boolean;
+  truncated: boolean;
 }
 
 export async function getTaskDiff(taskId: string): Promise<TaskDiffResponse> {

@@ -416,9 +416,12 @@ async fn request_changes(task_id: String, feedback: String) -> Result<(), Error>
 
 #[tauri::command]
 async fn get_task_diff(task_id: String) -> Result<TaskDiffResponse, Error>;
+// TaskDiffResponse { diff: String, has_diff: bool, truncated: bool }
+// Diffs over 1 MB are truncated. The `truncated` field indicates this.
 
 #[tauri::command]
 async fn get_task_worktree_path(task_id: String) -> Result<TaskWorktreePathResponse, Error>;
+// TaskWorktreePathResponse { path: Option<String>, exists: bool }
 ```
 
 ### Repository Management

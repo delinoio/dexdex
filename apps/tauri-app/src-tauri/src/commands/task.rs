@@ -1778,6 +1778,10 @@ fn parse_composite_status(s: &str) -> AppResult<CompositeTaskStatus> {
     }
 }
 
+/// Maximum diff output size in bytes (1 MB).
+/// Diffs larger than this are truncated to prevent UI freezes.
+const MAX_DIFF_SIZE: usize = 1_024 * 1_024;
+
 /// Response for get_task_diff command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1786,6 +1790,70 @@ pub struct TaskDiffResponse {
     pub diff: String,
     /// Whether the diff could be computed.
     pub has_diff: bool,
+    /// Whether the diff was truncated due to size limits.
+    pub truncated: bool,
+}
+
+/// Resolves the worktree path for a given task.
+///
+/// This is a shared helper used by both `get_task_diff` and
+/// `get_task_worktree_path` to avoid duplicating the lookup logic.
+#[cfg(desktop)]
+async fn resolve_worktree_path(
+    state: &AppState,
+    task_id: &str,
+) -> AppResult<(std::path::PathBuf, UnitTask)> {
+    if state.mode == AppMode::Remote {
+        return Err(AppError::InvalidRequest(
+            "This operation is not yet supported in remote mode".to_string(),
+        ));
+    }
+
+    let id = Uuid::parse_str(task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    let task = runtime
+        .task_store_arc()
+        .get_unit_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+
+    let default_branch = format!("delidev/{}", task_id);
+    let branch_name = task.branch_name.as_deref().unwrap_or(&default_branch);
+
+    let data_dir = runtime.data_dir();
+    let base_dir = data_dir
+        .parent()
+        .ok_or_else(|| AppError::Internal("Cannot determine base directory".to_string()))?;
+    let worktrees_dir = base_dir.join("worktrees");
+    let worktree_path =
+        git_ops::worktree_path_for_task_with_cache(&worktrees_dir, task_id, branch_name);
+
+    // Defense-in-depth: verify the resolved path is under the expected
+    // worktrees directory. The git_ops function already sanitizes inputs, but
+    // this provides an additional layer of protection.
+    let canonical_worktrees = worktrees_dir
+        .canonicalize()
+        .unwrap_or(worktrees_dir.clone());
+    if let Ok(canonical_wt) = worktree_path.canonicalize() {
+        if !canonical_wt.starts_with(&canonical_worktrees) {
+            tracing::error!(
+                "Worktree path {:?} is outside expected directory {:?}",
+                canonical_wt,
+                canonical_worktrees
+            );
+            return Err(AppError::Internal(
+                "Worktree path resolved outside expected directory".to_string(),
+            ));
+        }
+    }
+
+    Ok((worktree_path, task))
 }
 
 /// Gets the git diff for a unit task by running `git diff` in the task's
@@ -1794,6 +1862,14 @@ pub struct TaskDiffResponse {
 /// This computes the diff between the base commit and the current HEAD of the
 /// task's branch. If base_commit is not set on the task, falls back to diffing
 /// against the default branch (main/master).
+///
+/// Fallback chain:
+/// 1. `git diff <base_commit> HEAD` if `base_commit` is set on the task
+/// 2. `git diff <merge-base with main> HEAD` using merge-base with main
+/// 3. `git diff <merge-base with master> HEAD` using merge-base with master
+/// 4. `git diff HEAD~1 HEAD` showing only the last commit
+///
+/// Large diffs (over 1 MB) are truncated with a warning.
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task_diff(
@@ -1801,44 +1877,7 @@ pub async fn get_task_diff(
     task_id: String,
 ) -> AppResult<TaskDiffResponse> {
     let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "View Diff is not yet supported in remote mode".to_string(),
-        ));
-    }
-
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
-
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    // Get the unit task
-    let task = runtime
-        .task_store_arc()
-        .get_unit_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
-
-    // Get the branch name
-    let default_branch = format!("delidev/{}", task_id);
-    let branch_name = task.branch_name.as_deref().unwrap_or(&default_branch);
-
-    // Compute worktree path
-    let data_dir = runtime.data_dir();
-    // The worktree is in the parent of data_dir (data_dir is ~/.delidev/data,
-    // worktrees is ~/.delidev/worktrees)
-    let base_dir = data_dir
-        .parent()
-        .ok_or_else(|| AppError::Internal("Cannot determine base directory".to_string()))?;
-    let worktree_path = git_ops::worktree_path_for_task_with_cache(
-        base_dir.join("worktrees"),
-        &task_id,
-        branch_name,
-    );
+    let (worktree_path, task) = resolve_worktree_path(&state, &task_id).await?;
 
     if !worktree_path.exists() {
         info!(
@@ -1848,6 +1887,7 @@ pub async fn get_task_diff(
         return Ok(TaskDiffResponse {
             diff: String::new(),
             has_diff: false,
+            truncated: false,
         });
     }
 
@@ -1871,8 +1911,13 @@ pub async fn get_task_diff(
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!("git diff failed for task {}: {}", task_id, stderr);
-            // Fall back to showing all changes in the worktree
+            tracing::warn!(
+                "git diff with base_commit {} failed for task {}: {}. Falling back to `git diff \
+                 HEAD`.",
+                base_commit,
+                task_id,
+                stderr
+            );
             let fallback = tokio::process::Command::new("git")
                 .arg("-C")
                 .arg(&worktree_path)
@@ -1907,7 +1952,10 @@ pub async fn get_task_diff(
                 Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
             }
             _ => {
-                // Try master
+                tracing::warn!(
+                    "merge-base with 'main' failed for task {}, trying 'master'",
+                    task_id
+                );
                 let output = tokio::process::Command::new("git")
                     .arg("-C")
                     .arg(&worktree_path)
@@ -1920,7 +1968,14 @@ pub async fn get_task_diff(
                     Ok(o) if o.status.success() => {
                         Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
                     }
-                    _ => None,
+                    _ => {
+                        tracing::warn!(
+                            "merge-base with 'master' also failed for task {}. Falling back to \
+                             showing diff of last commit only.",
+                            task_id
+                        );
+                        None
+                    }
                 }
             }
         };
@@ -1937,7 +1992,7 @@ pub async fn get_task_diff(
                 .map_err(|e| AppError::Internal(format!("Failed to execute git diff: {}", e)))?;
             String::from_utf8_lossy(&output.stdout).to_string()
         } else {
-            // Last fallback: show all uncommitted changes
+            // Last fallback: show diff of the last commit
             let output = tokio::process::Command::new("git")
                 .arg("-C")
                 .arg(&worktree_path)
@@ -1950,7 +2005,6 @@ pub async fn get_task_diff(
             let head_info = String::from_utf8_lossy(&output.stdout).to_string();
             info!("HEAD info for task {}: {}", task_id, head_info.trim());
 
-            // Just show the diff of the last commit
             let output = tokio::process::Command::new("git")
                 .arg("-C")
                 .arg(&worktree_path)
@@ -1965,16 +2019,36 @@ pub async fn get_task_diff(
     };
 
     let has_diff = !diff_output.trim().is_empty();
+    let truncated = diff_output.len() > MAX_DIFF_SIZE;
+    let diff = if truncated {
+        tracing::warn!(
+            "Diff for task {} is {} bytes, truncating to {} bytes",
+            task_id,
+            diff_output.len(),
+            MAX_DIFF_SIZE
+        );
+        // Truncate at a newline boundary to avoid splitting a line
+        let truncated_str = &diff_output[..MAX_DIFF_SIZE];
+        match truncated_str.rfind('\n') {
+            Some(pos) => diff_output[..pos].to_string(),
+            None => truncated_str.to_string(),
+        }
+    } else {
+        diff_output
+    };
+
     info!(
-        "Computed diff for task {} (has_diff: {}, length: {} bytes)",
+        "Computed diff for task {} (has_diff: {}, length: {} bytes, truncated: {})",
         task_id,
         has_diff,
-        diff_output.len()
+        diff.len(),
+        truncated
     );
 
     Ok(TaskDiffResponse {
-        diff: diff_output,
+        diff,
         has_diff,
+        truncated,
     })
 }
 
@@ -2008,47 +2082,17 @@ pub async fn get_task_worktree_path(
     task_id: String,
 ) -> AppResult<TaskWorktreePathResponse> {
     let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Open in Editor is not yet supported in remote mode".to_string(),
-        ));
-    }
-
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
-
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    // Get the unit task
-    let task = runtime
-        .task_store_arc()
-        .get_unit_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
-
-    // Get the branch name
-    let default_branch = format!("delidev/{}", task_id);
-    let branch_name = task.branch_name.as_deref().unwrap_or(&default_branch);
-
-    // Compute worktree path
-    let data_dir = runtime.data_dir();
-    let base_dir = data_dir
-        .parent()
-        .ok_or_else(|| AppError::Internal("Cannot determine base directory".to_string()))?;
-    let worktree_path = git_ops::worktree_path_for_task_with_cache(
-        base_dir.join("worktrees"),
-        &task_id,
-        branch_name,
-    );
+    let (worktree_path, _task) = resolve_worktree_path(&state, &task_id).await?;
 
     let exists = worktree_path.exists();
     let path = if exists {
         Some(worktree_path.to_string_lossy().to_string())
     } else {
+        tracing::warn!(
+            "Worktree path for task {} does not exist: {:?}",
+            task_id,
+            worktree_path
+        );
         None
     };
 
@@ -2316,6 +2360,102 @@ mod tests {
         let result = validate_title("Title\0with null");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("null bytes"));
+    }
+
+    // =========================================================================
+    // Rate Limiting Tests
+    // =========================================================================
+
+    // =========================================================================
+    // TaskDiffResponse Tests
+    // =========================================================================
+
+    #[test]
+    fn test_task_diff_response_serialization() {
+        let response = TaskDiffResponse {
+            diff: "--- a/file.rs\n+++ b/file.rs\n@@ -1 +1 @@\n-old\n+new".to_string(),
+            has_diff: true,
+            truncated: false,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"hasDiff\":true"));
+        assert!(json.contains("\"truncated\":false"));
+        assert!(json.contains("\"diff\":"));
+    }
+
+    #[test]
+    fn test_task_diff_response_truncated() {
+        let response = TaskDiffResponse {
+            diff: "truncated content".to_string(),
+            has_diff: true,
+            truncated: true,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"truncated\":true"));
+    }
+
+    #[test]
+    fn test_task_diff_response_empty() {
+        let response = TaskDiffResponse {
+            diff: String::new(),
+            has_diff: false,
+            truncated: false,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"hasDiff\":false"));
+        assert!(json.contains("\"diff\":\"\""));
+    }
+
+    #[test]
+    fn test_task_diff_response_deserialization() {
+        let json = r#"{"diff":"some diff","hasDiff":true,"truncated":false}"#;
+        let response: TaskDiffResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.diff, "some diff");
+        assert!(response.has_diff);
+        assert!(!response.truncated);
+    }
+
+    // =========================================================================
+    // TaskWorktreePathResponse Tests
+    // =========================================================================
+
+    #[test]
+    fn test_task_worktree_path_response_exists() {
+        let response = TaskWorktreePathResponse {
+            path: Some("/home/user/.delidev/worktrees/abc-branch".to_string()),
+            exists: true,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"exists\":true"));
+        assert!(json.contains("\"path\":"));
+    }
+
+    #[test]
+    fn test_task_worktree_path_response_not_exists() {
+        let response = TaskWorktreePathResponse {
+            path: None,
+            exists: false,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"exists\":false"));
+        assert!(json.contains("\"path\":null"));
+    }
+
+    #[test]
+    fn test_task_worktree_path_response_deserialization() {
+        let json = r#"{"path":"/some/path","exists":true}"#;
+        let response: TaskWorktreePathResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.path.as_deref(), Some("/some/path"));
+        assert!(response.exists);
+    }
+
+    // =========================================================================
+    // MAX_DIFF_SIZE Constant Test
+    // =========================================================================
+
+    #[test]
+    fn test_max_diff_size_is_one_mb() {
+        assert_eq!(MAX_DIFF_SIZE, 1_024 * 1_024);
     }
 
     // =========================================================================

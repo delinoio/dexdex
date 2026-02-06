@@ -25,6 +25,7 @@ export function UnitTaskDetail() {
   const [diffContent, setDiffContent] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [diffTruncated, setDiffTruncated] = useState(false);
   const [editorLoading, setEditorLoading] = useState(false);
 
   const { data, isLoading, error } = useTask(id ?? "");
@@ -96,27 +97,40 @@ export function UnitTaskDetail() {
     }
     setDiffLoading(true);
     setDiffError(null);
+    setDiffTruncated(false);
     try {
       const response = await getTaskDiff(task.id);
       setDiffContent(response.diff);
+      setDiffTruncated(response.truncated);
       setShowDiff(true);
       if (!response.hasDiff) {
         setDiffError("No changes found for this task.");
       }
     } catch (error) {
       console.error("Failed to get task diff:", error);
-      setDiffError(
-        error instanceof Error ? error.message : "Failed to load diff"
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      // Provide user-friendly messages for common errors
+      if (message.includes("not yet supported in remote mode")) {
+        setDiffError("Viewing diffs is not available in remote mode.");
+      } else if (message.includes("not found") || message.includes("NotFound")) {
+        setDiffError("Could not find the task. It may have been deleted.");
+      } else if (message.includes("not initialized")) {
+        setDiffError("The local runtime is not ready. Please restart the app.");
+      } else {
+        setDiffError("Failed to load diff. Check that the worktree still exists.");
+      }
       setShowDiff(true);
     } finally {
       setDiffLoading(false);
     }
   }, [task?.id, showDiff, diffContent]);
 
+  const [editorError, setEditorError] = useState<string | null>(null);
+
   const handleOpenInEditor = useCallback(async () => {
     if (!task?.id) return;
     setEditorLoading(true);
+    setEditorError(null);
     try {
       const response = await getTaskWorktreePath(task.id);
       if (response.exists && response.path) {
@@ -124,10 +138,16 @@ export function UnitTaskDetail() {
         const { openPath } = await import("@tauri-apps/plugin-opener");
         await openPath(response.path);
       } else {
-        console.warn("Worktree not found for task:", task.id);
+        setEditorError("The worktree for this task no longer exists on disk.");
       }
     } catch (error) {
       console.error("Failed to open in editor:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("not yet supported in remote mode")) {
+        setEditorError("Opening in editor is not available in remote mode.");
+      } else {
+        setEditorError("Failed to open the worktree in your editor.");
+      }
     } finally {
       setEditorLoading(false);
     }
@@ -397,6 +417,10 @@ export function UnitTaskDetail() {
               </div>
             )}
 
+          {editorError && (
+              <p className="text-sm text-[hsl(var(--destructive))]">{editorError}</p>
+            )}
+
           {showDiff && (
             <Card>
               <CardHeader>
@@ -411,8 +435,14 @@ export function UnitTaskDetail() {
                   </Button>
                 </div>
                 {diffError && (
-                  <CardDescription className="text-[hsl(var(--muted-foreground))]">
+                  <CardDescription className="text-[hsl(var(--destructive))]">
                     {diffError}
+                  </CardDescription>
+                )}
+                {diffTruncated && (
+                  <CardDescription className="text-[hsl(var(--muted-foreground))]">
+                    The diff output was truncated because it exceeds the 1 MB size limit.
+                    Use &quot;Open in Editor&quot; to view the full changes.
                   </CardDescription>
                 )}
               </CardHeader>
