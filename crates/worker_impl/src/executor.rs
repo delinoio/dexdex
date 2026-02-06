@@ -363,44 +363,64 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             };
 
+            // Retrieve the actual old status from the database before
+            // updating, matching the pattern used by composite tasks. This
+            // avoids hardcoding "in_progress" which would be wrong if the
+            // task was re-executed from a different state (e.g. cancelled).
+            let old_status = match task_store.get_unit_task(task_id).await {
+                Ok(Some(t)) => serde_json::to_string(&t.status)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string(),
+                _ => {
+                    warn!(
+                        "Could not fetch current status for unit task {}, \
+                         defaulting to in_progress",
+                        task_id
+                    );
+                    "in_progress".to_string()
+                }
+            };
+
             if let Err(e) =
                 Self::update_task_status(&task_store, task_id, session_id, new_status).await
             {
                 error!("Failed to update task status: {}", e);
-            } else {
-                // Emit task-status-changed so the frontend refreshes the task
-                // detail view and task list automatically.
-                let new_status_str = serde_json::to_string(&new_status)
-                    .unwrap_or_default()
-                    .trim_matches('"')
-                    .to_string();
-                if let Err(e) =
-                    persisting_emitter.emit_task_status_changed(TaskStatusChangedEvent {
-                        task_id: task_id.to_string(),
-                        task_type: TaskType::UnitTask,
-                        old_status: "in_progress".to_string(),
-                        new_status: new_status_str,
-                    })
-                {
-                    warn!(
-                        "Failed to emit status changed event for unit task {}: {}",
-                        task_id, e
-                    );
-                }
+            }
 
-                // Emit task-completed so the frontend knows the session has
-                // ended.
-                if let Err(e) = persisting_emitter.emit_task_completed(TaskCompletedEvent {
+            // Always emit events regardless of whether the DB update
+            // succeeded. This ensures the frontend is notified that the
+            // session has ended even if the persistence layer had an error.
+            let new_status_str = serde_json::to_string(&new_status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
+            if let Err(e) =
+                persisting_emitter.emit_task_status_changed(TaskStatusChangedEvent {
                     task_id: task_id.to_string(),
                     task_type: TaskType::UnitTask,
-                    success,
-                    error: error_msg,
-                }) {
-                    warn!(
-                        "Failed to emit task completed event for unit task {}: {}",
-                        task_id, e
-                    );
-                }
+                    old_status,
+                    new_status: new_status_str,
+                })
+            {
+                warn!(
+                    "Failed to emit status changed event for unit task {}: {}",
+                    task_id, e
+                );
+            }
+
+            // Emit task-completed so the frontend knows the session has
+            // ended.
+            if let Err(e) = persisting_emitter.emit_task_completed(TaskCompletedEvent {
+                task_id: task_id.to_string(),
+                task_type: TaskType::UnitTask,
+                success,
+                error: error_msg,
+            }) {
+                warn!(
+                    "Failed to emit task completed event for unit task {}: {}",
+                    task_id, e
+                );
             }
 
             // Remove handle from the map after completion
@@ -1666,5 +1686,127 @@ mod tests {
 
         let cancelled = ExecutionResult::Cancelled;
         assert!(format!("{:?}", cancelled).contains("Cancelled"));
+    }
+
+    /// Verifies that UnitTaskStatus variants serialize to the snake_case
+    /// strings expected by the frontend event handlers.
+    #[test]
+    fn test_unit_task_status_serialization_for_events() {
+        // Helper that mirrors the serialization pattern used in
+        // execute_unit_task when building TaskStatusChangedEvent payloads.
+        fn status_to_event_string(status: UnitTaskStatus) -> String {
+            serde_json::to_string(&status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string()
+        }
+
+        assert_eq!(
+            status_to_event_string(UnitTaskStatus::InProgress),
+            "in_progress"
+        );
+        assert_eq!(
+            status_to_event_string(UnitTaskStatus::InReview),
+            "in_review"
+        );
+        assert_eq!(
+            status_to_event_string(UnitTaskStatus::Approved),
+            "approved"
+        );
+        assert_eq!(status_to_event_string(UnitTaskStatus::PrOpen), "pr_open");
+        assert_eq!(status_to_event_string(UnitTaskStatus::Done), "done");
+        assert_eq!(
+            status_to_event_string(UnitTaskStatus::Rejected),
+            "rejected"
+        );
+        assert_eq!(status_to_event_string(UnitTaskStatus::Failed), "failed");
+        assert_eq!(
+            status_to_event_string(UnitTaskStatus::Cancelled),
+            "cancelled"
+        );
+    }
+
+    /// Verifies is_terminal_status correctly identifies all terminal states.
+    #[test]
+    fn test_is_terminal_status() {
+        // Terminal states
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::InReview
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::Approved
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::PrOpen
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::Done
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::Failed
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::Rejected
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::Cancelled
+        ));
+
+        // Non-terminal states
+        assert!(!LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::InProgress
+        ));
+    }
+
+    /// Verifies is_successfully_complete only includes positive completion
+    /// states.
+    #[test]
+    fn test_is_successfully_complete() {
+        // Successful completions
+        assert!(LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::InReview
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::Approved
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::PrOpen
+        ));
+        assert!(LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::Done
+        ));
+
+        // Not successful completions
+        assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::InProgress
+        ));
+        assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::Failed
+        ));
+        assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::Rejected
+        ));
+        assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::Cancelled
+        ));
+    }
+
+    /// A minimal EventEmitter implementation for testing static methods on
+    /// LocalExecutor that don't actually emit events.
+    struct DummyEmitter;
+
+    impl EventEmitter for DummyEmitter {
+        fn emit_task_status_changed(&self, _event: TaskStatusChangedEvent) -> AgentResult<()> {
+            Ok(())
+        }
+        fn emit_agent_output(&self, _event: AgentOutputEvent) -> AgentResult<()> {
+            Ok(())
+        }
+        fn emit_tty_input_request(&self, _event: TtyInputRequestEvent) -> AgentResult<()> {
+            Ok(())
+        }
+        fn emit_task_completed(&self, _event: TaskCompletedEvent) -> AgentResult<()> {
+            Ok(())
+        }
     }
 }
