@@ -325,6 +325,14 @@ export function UnitTaskDetail() {
             </Card>
           )}
 
+          {task.status !== UnitTaskStatus.InProgress &&
+            task.status !== UnitTaskStatus.Unspecified && (
+              <div className="flex gap-2">
+                <Button variant="outline">View Diff</Button>
+                <Button variant="outline">Open in Editor</Button>
+              </div>
+            )}
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -355,14 +363,6 @@ export function UnitTaskDetail() {
               </CardContent>
             )}
           </Card>
-
-          {task.status !== UnitTaskStatus.InProgress &&
-            task.status !== UnitTaskStatus.Unspecified && (
-              <div className="flex gap-2">
-                <Button variant="outline">View Diff</Button>
-                <Button variant="outline">Open in Editor</Button>
-              </div>
-            )}
         </div>
       </div>
     </div>
