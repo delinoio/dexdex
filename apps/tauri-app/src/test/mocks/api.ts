@@ -74,6 +74,7 @@ export function createMockWorkspace(overrides?: Partial<Workspace>): Workspace {
     id: crypto.randomUUID(),
     name: 'My Workspace',
     description: 'A test workspace',
+    kind: 'local' as const,
     userId: undefined,
     createdAt: now,
     updatedAt: now,
@@ -143,31 +144,10 @@ export function createMockTodoItem(overrides?: Partial<TodoItem>): TodoItem {
  */
 export function createMockGlobalSettings(overrides?: Partial<GlobalSettings>): GlobalSettings {
   return {
-    mode: 'local',
-    serverUrl: undefined,
-    hotkey: {
-      openChat: 'Option+Z',
-    },
-    notification: {
-      enabled: true,
-      approvalRequest: true,
-      userQuestion: true,
-      reviewReady: true,
-    },
-    agent: {
-      planning: {
-        type: 'claude_code' as AiAgentType,
-        model: 'claude-sonnet-4-20250514',
-      },
-      execution: {
-        type: 'claude_code' as AiAgentType,
-        model: 'claude-sonnet-4-20250514',
-      },
-      chat: {
-        type: 'claude_code' as AiAgentType,
-        model: 'claude-sonnet-4-20250514',
-      },
-    },
+    hotkey: 'Option+Z',
+    notificationsEnabled: true,
+    defaultAgentType: 'claude_code',
+    defaultAgentModel: 'claude-sonnet-4-20250514',
     ...overrides,
   };
 }

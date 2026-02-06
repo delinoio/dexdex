@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import type { GlobalSettings } from "../types";
 import {
   getMode,
   setMode,
@@ -212,7 +213,7 @@ describe("API Client", () => {
     });
 
     it("updateGlobalSettings calls invoke with correct parameters", async () => {
-      const settings = { mode: "remote" as const };
+      const settings: Partial<GlobalSettings> = { hotkey: "Option+X" };
       const mockResult = { ...settings };
       vi.mocked(invoke).mockResolvedValue(mockResult);
 

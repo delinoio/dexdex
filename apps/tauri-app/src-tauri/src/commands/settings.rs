@@ -67,7 +67,7 @@ pub async fn get_repository_settings(
             .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
         tracing::debug!("Returning default repository settings for {}", repo_id);
-        return Ok(RepositorySettings::default());
+        Ok(RepositorySettings::default())
     }
 
     #[cfg(not(desktop))]
@@ -102,11 +102,11 @@ pub async fn update_repository_settings(
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-        return Err(AppError::InvalidRequest(format!(
+        Err(AppError::InvalidRequest(format!(
             "Cannot save repository settings for '{}': repository settings must be edited \
              directly in the repository's .delidev/config.toml file.",
             repo_id
-        )));
+        )))
     }
 
     #[cfg(not(desktop))]

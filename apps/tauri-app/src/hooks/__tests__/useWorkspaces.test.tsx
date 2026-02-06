@@ -28,6 +28,7 @@ const mockWorkspace: Workspace = {
   id: "workspace-1",
   name: "Test Workspace",
   description: "A test workspace",
+  kind: "local",
   createdAt: "2024-01-15T10:00:00Z",
   updatedAt: "2024-01-15T12:00:00Z",
 };

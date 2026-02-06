@@ -6,10 +6,7 @@ use tauri::State;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::{
-    error::{AppError, AppResult},
-    state::AppState,
-};
+use crate::{error::AppResult, state::AppState};
 
 /// Gets a secret from the keychain.
 #[tauri::command]

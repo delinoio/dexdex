@@ -139,7 +139,7 @@ pub async fn add_repository(
             .create_repository(repository)
             .await?;
         info!("Added repository: {} ({})", created.name, created.id);
-        return Ok(created);
+        Ok(created)
     }
 
     #[cfg(not(desktop))]
@@ -219,10 +219,10 @@ pub async fn list_repositories(
         let (repositories, total) = runtime.task_store_arc().list_repositories(filter).await?;
 
         let total_count = i32::try_from(total).unwrap_or(i32::MAX);
-        return Ok(ListRepositoriesResult {
+        Ok(ListRepositoriesResult {
             repositories,
             total_count,
-        });
+        })
     }
 
     #[cfg(not(desktop))]
@@ -283,7 +283,7 @@ pub async fn remove_repository(
         // Local workspace or fallback
         runtime.task_store_arc().delete_repository(id).await?;
         info!("Removed repository: {}", id);
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(desktop))]
@@ -485,7 +485,7 @@ pub async fn create_repository_group(
             created.name.as_deref().unwrap_or("unnamed"),
             created.id
         );
-        return Ok(created);
+        Ok(created)
     }
 
     #[cfg(not(desktop))]
@@ -566,10 +566,10 @@ pub async fn list_repository_groups(
             .await?;
 
         let total_count = i32::try_from(total).unwrap_or(i32::MAX);
-        return Ok(ListRepositoryGroupsResult {
+        Ok(ListRepositoryGroupsResult {
             groups,
             total_count,
-        });
+        })
     }
 
     #[cfg(not(desktop))]
@@ -714,7 +714,7 @@ pub async fn update_repository_group(
             updated.name.as_deref().unwrap_or("unnamed"),
             updated.id
         );
-        return Ok(updated);
+        Ok(updated)
     }
 
     #[cfg(not(desktop))]
@@ -774,7 +774,7 @@ pub async fn delete_repository_group(
 
         runtime.task_store_arc().delete_repository_group(id).await?;
         info!("Deleted repository group: {}", id);
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(desktop))]

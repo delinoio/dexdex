@@ -6,7 +6,6 @@ use entities::WorkspaceKind;
 use secrets::{Keychain, NativeKeychain};
 #[cfg(desktop)]
 use task_store::TaskStore;
-use tracing::info;
 
 #[cfg(desktop)]
 use crate::single_process::SingleProcessRuntime;

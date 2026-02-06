@@ -197,7 +197,7 @@ pub async fn create_workspace(
             "Created workspace: {} ({}) kind={:?}",
             created.name, created.id, created.kind
         );
-        return Ok(created);
+        Ok(created)
     }
 
     #[cfg(not(desktop))]
@@ -235,10 +235,10 @@ pub async fn list_workspaces(
 
         let (workspaces, total) = runtime.task_store_arc().list_workspaces(filter).await?;
 
-        return Ok(ListWorkspacesResult {
+        Ok(ListWorkspacesResult {
             workspaces,
             total_count: total as i32,
-        });
+        })
     }
 
     #[cfg(not(desktop))]
@@ -274,7 +274,7 @@ pub async fn get_workspace(
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Workspace not found: {}", id)))?;
 
-        return Ok(workspace);
+        Ok(workspace)
     }
 
     #[cfg(not(desktop))]
@@ -335,7 +335,7 @@ pub async fn update_workspace(
 
         let updated = runtime.task_store_arc().update_workspace(workspace).await?;
         info!("Updated workspace: {} ({})", updated.name, updated.id);
-        return Ok(updated);
+        Ok(updated)
     }
 
     #[cfg(not(desktop))]
@@ -367,7 +367,7 @@ pub async fn delete_workspace(
 
         runtime.task_store_arc().delete_workspace(id).await?;
         info!("Deleted workspace: {}", id);
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(desktop))]
@@ -393,7 +393,7 @@ pub async fn get_default_workspace_id(
             .as_ref()
             .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-        return Ok(runtime.default_workspace_id().to_string());
+        Ok(runtime.default_workspace_id().to_string())
     }
 
     #[cfg(not(desktop))]
