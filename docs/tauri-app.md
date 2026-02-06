@@ -355,20 +355,20 @@ Mobile apps only support remote workspaces because:
 
 | Variable | Description |
 |----------|-------------|
-| `PUBLIC_DEFAULT_MODE` | Default mode: `local` or `remote` |
+| `PUBLIC_DEFAULT_WORKSPACE_KIND` | Default workspace kind: `local` or `remote` |
 | `PUBLIC_REMOTE_SERVER_URL` | Remote server URL |
-| `PUBLIC_SKIP_MODE_SELECTION` | Skip mode selection screen |
+| `PUBLIC_SKIP_WORKSPACE_SELECTION` | Skip workspace selection screen |
 
 ### Scripts
 
 ```bash
-# Default dev mode (shows mode selection)
+# Default dev mode (shows workspace selection)
 pnpm dev
 
-# Local mode (skip selection)
+# Local workspace (skip selection)
 pnpm dev:local
 
-# Remote mode (requires server URL)
+# Remote workspace (requires server URL)
 PUBLIC_REMOTE_SERVER_URL=http://localhost:54871 pnpm dev:remote
 ```
 

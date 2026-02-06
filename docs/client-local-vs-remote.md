@@ -318,18 +318,18 @@ Each workspace's data is isolated:
 ### Environment Variables
 
 ```bash
-# Force mode (skip selection)
-PUBLIC_DEFAULT_MODE=local   # or 'remote'
-PUBLIC_SKIP_MODE_SELECTION=true
+# Force workspace kind (skip selection)
+PUBLIC_DEFAULT_WORKSPACE_KIND=local   # or 'remote'
+PUBLIC_SKIP_WORKSPACE_SELECTION=true
 
-# Remote mode settings
+# Remote workspace settings
 PUBLIC_REMOTE_SERVER_URL=http://localhost:54871
 ```
 
 ### Scripts
 
 ```bash
-# Show mode selection (default)
+# Show workspace selection (default)
 pnpm dev
 
 # Force local workspace
