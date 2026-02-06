@@ -656,6 +656,9 @@ Human review ──┬──► Commit to repo (done)
 Note: While in `in_progress`, the user can cancel the task at any time,
 which transitions the status to `cancelled`. The agent execution is
 aborted and any partial work is preserved in the worktree.
+
+On each status transition, `task-status-changed` and `task-completed`
+events are emitted so the frontend updates automatically.
 ```
 
 ### Repository Caching

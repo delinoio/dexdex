@@ -346,48 +346,60 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             // PersistingEventEmitter has already been handling incremental persistence.
             persisting_emitter.persist_logs().await;
 
-            // Update task status based on result
-            match &result {
+            // Update task status based on result and emit events so the
+            // frontend updates without requiring a manual refresh.
+            let (new_status, success, error_msg) = match &result {
                 ExecutionResult::Success { .. } => {
                     info!("Task {} completed successfully", task_id);
-                    if let Err(e) = Self::update_task_status(
-                        &task_store,
-                        task_id,
-                        session_id,
-                        UnitTaskStatus::InReview,
-                    )
-                    .await
-                    {
-                        error!("Failed to update task status: {}", e);
-                    }
+                    (UnitTaskStatus::InReview, true, None)
                 }
                 ExecutionResult::Failed { error, .. } => {
                     error!("Task {} failed: {}", task_id, error);
-                    // Update task status to Failed
-                    if let Err(e) = Self::update_task_status(
-                        &task_store,
-                        task_id,
-                        session_id,
-                        UnitTaskStatus::Failed,
-                    )
-                    .await
-                    {
-                        error!("Failed to update task status to Failed: {}", e);
-                    }
+                    (UnitTaskStatus::Failed, false, Some(error.clone()))
                 }
                 ExecutionResult::Cancelled => {
                     info!("Task {} was cancelled", task_id);
-                    // Update task status to Cancelled
-                    if let Err(e) = Self::update_task_status(
-                        &task_store,
-                        task_id,
-                        session_id,
-                        UnitTaskStatus::Cancelled,
-                    )
-                    .await
-                    {
-                        error!("Failed to update task status to Cancelled: {}", e);
-                    }
+                    (UnitTaskStatus::Cancelled, false, None)
+                }
+            };
+
+            if let Err(e) =
+                Self::update_task_status(&task_store, task_id, session_id, new_status).await
+            {
+                error!("Failed to update task status: {}", e);
+            } else {
+                // Emit task-status-changed so the frontend refreshes the task
+                // detail view and task list automatically.
+                let new_status_str = serde_json::to_string(&new_status)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string();
+                if let Err(e) =
+                    persisting_emitter.emit_task_status_changed(TaskStatusChangedEvent {
+                        task_id: task_id.to_string(),
+                        task_type: TaskType::UnitTask,
+                        old_status: "in_progress".to_string(),
+                        new_status: new_status_str,
+                    })
+                {
+                    warn!(
+                        "Failed to emit status changed event for unit task {}: {}",
+                        task_id, e
+                    );
+                }
+
+                // Emit task-completed so the frontend knows the session has
+                // ended.
+                if let Err(e) = persisting_emitter.emit_task_completed(TaskCompletedEvent {
+                    task_id: task_id.to_string(),
+                    task_type: TaskType::UnitTask,
+                    success,
+                    error: error_msg,
+                }) {
+                    warn!(
+                        "Failed to emit task completed event for unit task {}: {}",
+                        task_id, e
+                    );
                 }
             }
 
