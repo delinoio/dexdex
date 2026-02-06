@@ -22,7 +22,6 @@ use uuid::Uuid;
 #[cfg(not(desktop))]
 use crate::state::ERR_LOCAL_MODE_NOT_SUPPORTED;
 use crate::{
-    config::AppMode,
     error::{AppError, AppResult},
     events::{event_names, TaskStatusChangedEvent, TaskType},
     remote_client::{
@@ -311,9 +310,11 @@ pub async fn create_unit_task(
     validate_optional_name(params.title.as_deref(), "title")?;
     validate_optional_name(params.branch_name.as_deref(), "branch name")?;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let agent_type = params
             .ai_agent_type
@@ -406,9 +407,11 @@ pub async fn create_unit_task(
     validate_optional_name(params.title.as_deref(), "title")?;
     validate_optional_name(params.branch_name.as_deref(), "branch name")?;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let agent_type = params
             .ai_agent_type
@@ -468,9 +471,11 @@ pub async fn create_composite_task(
     validate_text(&params.prompt, "prompt")?;
     validate_optional_name(params.title.as_deref(), "title")?;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let execution_agent_type = params
             .execution_agent_type
@@ -577,9 +582,11 @@ pub async fn create_composite_task(
     validate_text(&params.prompt, "prompt")?;
     validate_optional_name(params.title.as_deref(), "title")?;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let execution_agent_type = params
             .execution_agent_type
@@ -623,9 +630,11 @@ pub async fn get_task(
 ) -> AppResult<TaskResponse> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::GetTaskRequest {
             task_id: task_id.clone(),
@@ -682,9 +691,11 @@ pub async fn get_task(
 ) -> AppResult<TaskResponse> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::GetTaskRequest {
             task_id: task_id.clone(),
@@ -719,9 +730,11 @@ pub async fn list_tasks(
 ) -> AppResult<ListTasksResult> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let unit_status = params
             .unit_status
@@ -808,9 +821,11 @@ pub async fn list_tasks(
 ) -> AppResult<ListTasksResult> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let unit_status = params
             .unit_status
@@ -865,9 +880,11 @@ pub async fn approve_task(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::ApproveTaskRequest {
             task_id: task_id.clone(),
@@ -985,9 +1002,11 @@ pub async fn approve_task(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::ApproveTaskRequest {
             task_id: task_id.clone(),
@@ -1017,9 +1036,11 @@ pub async fn reject_task(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::RejectTaskRequest {
             task_id: task_id.clone(),
@@ -1070,9 +1091,11 @@ pub async fn reject_task(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::RejectTaskRequest {
             task_id: task_id.clone(),
@@ -1108,9 +1131,11 @@ pub async fn update_plan_with_prompt(
 
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::UpdatePlanRequest {
             task_id: task_id.clone(),
@@ -1235,8 +1260,10 @@ pub async fn update_plan_with_prompt(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::UpdatePlanRequest {
             task_id: task_id.clone(),
@@ -1267,9 +1294,11 @@ pub async fn request_changes(
     validate_uuid_string(&task_id, "task ID")?;
     validate_text(&feedback, "feedback")?;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::RequestChangesRequest {
             task_id: task_id.clone(),
@@ -1318,9 +1347,11 @@ pub async fn request_changes(
     validate_uuid_string(&task_id, "task ID")?;
     validate_text(&feedback, "feedback")?;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::RequestChangesRequest {
             task_id: task_id.clone(),
@@ -1350,7 +1381,9 @@ pub async fn get_task_logs(
 ) -> AppResult<TaskLogsResponse> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // In remote mode on desktop, we currently return minimal data
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
@@ -1468,7 +1501,9 @@ pub async fn get_task_logs(
 ) -> AppResult<TaskLogsResponse> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // In remote mode for mobile, we currently return minimal data
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
@@ -1494,7 +1529,9 @@ pub async fn cancel_task(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         return Err(AppError::InvalidRequest(
             "Remote mode not yet implemented".to_string(),
         ));
@@ -1556,7 +1593,9 @@ pub async fn cancel_task(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         return Err(AppError::InvalidRequest(
             "Remote mode not yet implemented".to_string(),
         ));
@@ -1576,9 +1615,11 @@ pub async fn respond_tty_input(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::SubmitTtyInputRequest {
             request_id: params.request_id.clone(),
@@ -1627,9 +1668,11 @@ pub async fn respond_tty_input(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let client = state.get_remote_client_for_url("unused")?;
 
         let request = requests::SubmitTtyInputRequest {
             request_id: params.request_id.clone(),
@@ -1662,7 +1705,9 @@ pub async fn get_composite_task_nodes(
 
     // In remote mode, return empty result for now as the server doesn't yet
     // have an endpoint for composite task nodes
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // TODO: Implement remote API call when server supports composite task nodes
         // endpoint (composite_task_id is unused in remote mode until the API is
         // implemented)
@@ -1718,7 +1763,9 @@ pub async fn get_composite_task_nodes(
 ) -> AppResult<CompositeTaskNodesResult> {
     let state = state.read().await;
 
-    if state.mode == AppMode::Remote {
+    // TODO(#197): Look up workspace kind from the task's repository group
+    // to route to remote. For now, always use local runtime on desktop.
+    if false {
         // TODO: Implement remote API call when server supports composite task nodes
         // endpoint For now, return an empty result
         return Ok(CompositeTaskNodesResult { nodes: Vec::new() });

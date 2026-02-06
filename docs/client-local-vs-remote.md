@@ -1,15 +1,15 @@
-# Local Mode vs Remote Mode
+# Local vs Remote Workspaces
 
-DeliDev supports two execution modes for desktop clients: Local Mode and Remote Mode. Mobile clients only support Remote Mode.
+DeliDev supports two kinds of workspaces: **Local** and **Remote**. Each workspace has its own `kind` field that determines how operations on that workspace's contents (repositories, tasks) are routed. A single app instance can have both local and remote workspaces simultaneously. Mobile clients only support remote workspaces.
 
-## Mode Comparison
+## Workspace Kind Comparison
 
-| Aspect | Local Mode | Remote Mode |
-|--------|------------|-------------|
+| Aspect | Local Workspace | Remote Workspace |
+|--------|----------------|-----------------|
 | **Architecture** | Single process | Distributed |
 | **Server** | Embedded | Remote Main Server |
 | **Worker** | Embedded | Remote Worker Server(s) |
-| **Database** | SQLite | PostgreSQL |
+| **Database** | SQLite (local) | PostgreSQL (remote) |
 | **Authentication** | Disabled | JWT + OIDC |
 | **Network** | Not required | Required |
 | **Secrets** | Direct keychain | Sent via RPC |
@@ -18,15 +18,15 @@ DeliDev supports two execution modes for desktop clients: Local Mode and Remote 
 
 ## Platform Support
 
-| Platform | Local Mode | Remote Mode |
-|----------|------------|-------------|
+| Platform | Local Workspace | Remote Workspace |
+|----------|----------------|-----------------|
 | Desktop (Windows) | Yes | Yes |
 | Desktop (macOS) | Yes | Yes |
 | Desktop (Linux) | Yes | Yes |
 | Mobile (iOS) | No | Yes |
 | Mobile (Android) | No | Yes |
 
-## Local Mode
+## Local Workspaces
 
 ### When to Use
 
@@ -98,7 +98,7 @@ Frontend updates via Tauri events
 | Git | Direct access to local repos |
 | Concurrency | Single worker (configurable) |
 
-## Remote Mode
+## Remote Workspaces
 
 ### When to Use
 
@@ -192,18 +192,19 @@ Frontend updates via WebSocket events
 | Git | Workers clone/access repos |
 | Concurrency | Multiple workers in parallel |
 
-## Mode Selection
+## Workspace Creation
 
 ### Desktop
 
-Users select mode on first launch (or in development on every launch):
+Users choose workspace kind on first launch (or when adding a new workspace):
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                     Choose Mode                                 │
+│                     Welcome to DeliDev                           │
+│              Choose how to set up your workspace                 │
 │                                                                │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │  [Monitor Icon]  Local Mode                               │  │
+│  │  [Monitor Icon]  Local Workspace                          │  │
 │  │                                                          │  │
 │  │  Run everything locally on your machine.                 │  │
 │  │  • Full privacy - code stays on your machine             │  │
@@ -212,7 +213,7 @@ Users select mode on first launch (or in development on every launch):
 │  └──────────────────────────────────────────────────────────┘  │
 │                                                                │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │  [Server Icon]  Remote Mode                               │  │
+│  │  [Server Icon]  Remote Workspace                          │  │
 │  │                                                          │  │
 │  │  Connect to a remote DeliDev server.                     │  │
 │  │  • Team collaboration                                    │  │
@@ -223,13 +224,16 @@ Users select mode on first launch (or in development on every launch):
 │  │                                   [Test Connection]       │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                                                                │
+│  You can add more workspaces later                             │
 │                                            [Continue →]        │
 └────────────────────────────────────────────────────────────────┘
 ```
 
+A single app instance can have multiple workspaces of different kinds. Users can switch between workspaces via the workspace selector in the sidebar.
+
 ### Mobile
 
-Mobile apps automatically use Remote Mode:
+Mobile apps automatically create remote workspaces:
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -247,9 +251,9 @@ Mobile apps automatically use Remote Mode:
 └────────────────────────────────────────────────────────────────┘
 ```
 
-## Why Mobile Only Supports Remote Mode
+## Why Mobile Only Supports Remote Workspaces
 
-Mobile platforms have fundamental limitations that prevent local mode:
+Mobile platforms have fundamental limitations that prevent local workspaces:
 
 ### Technical Limitations
 
@@ -285,26 +289,29 @@ Heavy lifting happens on remote servers:
 - Git operations
 - Large file handling
 
-## Switching Modes
+## Workspace Management
 
-### Desktop
+### Adding Workspaces
 
-Users can switch modes in Settings:
+Users can add new workspaces at any time via the workspace management UI. Each workspace can be either local or remote, allowing a mix of both.
 
-1. Open Settings (`Cmd+,` / `Ctrl+,`)
-2. Navigate to "Connection" section
-3. Select new mode
-4. Enter server URL (if switching to Remote)
-5. Restart app
+### Workspace Routing
 
-### Data Migration
+All workspace metadata (name, kind, server_url, etc.) is stored locally in SQLite. When performing operations on a workspace's contents (repositories, tasks), the workspace's `kind` field determines routing:
 
-| Direction | Behavior |
-|-----------|----------|
-| Local → Remote | Data stays in local SQLite, new data goes to server |
-| Remote → Local | Local SQLite starts fresh (or import option) |
+- **Local workspace**: Operations go to the embedded local runtime (SQLite + local executor)
+- **Remote workspace**: Operations are sent via RPC to the workspace's `server_url`
 
-**Note**: Tasks are not automatically synced between modes. Export/import functionality may be added in future versions.
+### Data Isolation
+
+Each workspace's data is isolated:
+
+| Workspace Kind | Data Location |
+|---------------|---------------|
+| Local | Local SQLite database |
+| Remote | Remote server's PostgreSQL database |
+
+**Note**: Data is not synced between workspaces. Each workspace operates independently.
 
 ## Development
 
@@ -325,16 +332,16 @@ PUBLIC_REMOTE_SERVER_URL=http://localhost:54871
 # Show mode selection (default)
 pnpm dev
 
-# Force local mode
+# Force local workspace
 pnpm dev:local
 
-# Force remote mode
+# Force remote workspace
 PUBLIC_REMOTE_SERVER_URL=http://localhost:54871 pnpm dev:remote
 ```
 
 ## Security Considerations
 
-### Local Mode
+### Local Workspaces
 
 | Aspect | Status |
 |--------|--------|
@@ -344,7 +351,7 @@ PUBLIC_REMOTE_SERVER_URL=http://localhost:54871 pnpm dev:remote
 | Network | None required |
 | Isolation | Docker containers |
 
-### Remote Mode
+### Remote Workspaces
 
 | Aspect | Status |
 |--------|--------|
@@ -356,12 +363,12 @@ PUBLIC_REMOTE_SERVER_URL=http://localhost:54871 pnpm dev:remote
 
 ### Secret Handling
 
-| Mode | Secret Flow |
-|------|-------------|
+| Workspace Kind | Secret Flow |
+|---------------|-------------|
 | Local | Keychain → Environment → Docker |
 | Remote | Keychain → RPC (TLS) → Server (memory) → Worker → Docker |
 
-In Remote Mode, secrets are:
+In remote workspaces, secrets are:
 - Read from local keychain on client
 - Sent via TLS-encrypted RPC
 - Cached in server memory (not persisted)

@@ -4,8 +4,8 @@ The DeliDev client is built with Tauri, providing a cross-platform desktop and m
 
 ## Platforms
 
-| Platform | Mode Support | Notes |
-|----------|--------------|-------|
+| Platform | Workspace Kinds | Notes |
+|----------|----------------|-------|
 | **Desktop** | Local + Remote | Windows, macOS, Linux |
 | **Mobile** | Remote only | iOS, Android |
 
@@ -29,7 +29,7 @@ The DeliDev client is built with Tauri, providing a cross-platform desktop and m
 │  │            ▼                                             │   │
 │  │   ┌─────────────────────────────────────────────────┐   │   │
 │  │   │              API Layer                           │   │   │
-│  │   │  - Mode detection (local vs remote)              │   │   │
+│  │   │  - Workspace-based routing (local vs remote)      │   │   │
 │  │   │  - Tauri invoke (local) or Connect RPC (remote)  │   │   │
 │  │   └─────────────────────────────────────────────────┘   │   │
 │  └────────────────────────┬────────────────────────────────┘   │
@@ -80,7 +80,7 @@ The Tauri app implements `EventEmitter` via `TauriEventEmitter` to emit events t
 
 ### Task Execution Flow
 
-When a unit task is created in local mode:
+When a unit task is created in a local workspace:
 
 1. **Task Creation**: `create_unit_task` command creates task and agent session in SQLite
 2. **Worktree Setup**: `LocalExecutor` creates git worktree from cached repository
@@ -98,8 +98,8 @@ When a unit task is created in local mode:
 
 ### Behavior
 
-| Aspect | Single Process Mode | Remote Mode |
-|--------|---------------------|-------------|
+| Aspect | Local Workspace | Remote Workspace |
+|--------|----------------|-----------------|
 | RPC | Direct function calls | Connect RPC over HTTP |
 | Database | SQLite | PostgreSQL (on server) |
 | Worker | Embedded | Remote Worker Server |
@@ -107,21 +107,25 @@ When a unit task is created in local mode:
 | Secrets | Direct keychain access | Sent to server |
 | Network | No network required | Requires connection |
 
-### Mode Detection
+### Workspace-Based Routing
+
+Operations on workspace contents are routed based on the workspace's `kind` field:
 
 ```typescript
-// Frontend detects mode from Tauri
-const mode = await invoke<'local' | 'remote'>('get_mode');
+// Each workspace has a kind: "local" | "remote"
+const workspace = await invoke<Workspace>('get_workspace', { workspaceId });
 
-// API calls route based on mode
-if (mode === 'local') {
-  // Use Tauri invoke
-  return invoke('task.createUnit', params);
+// API calls route based on workspace kind
+if (workspace.kind === 'local') {
+  // Use Tauri invoke (embedded local runtime)
+  return invoke('create_unit_task', params);
 } else {
-  // Use Connect RPC
-  return taskService.createUnit(params);
+  // Use Connect RPC to workspace's serverUrl
+  return rpcClient.call('task.createUnit', params);
 }
 ```
+
+Workspace metadata (name, kind, server_url) is always stored locally. A single app instance can have both local and remote workspaces.
 
 ## Frontend Structure
 
@@ -167,22 +171,15 @@ apps/tauri-app/src/
 
 ### API Layer
 
-The API layer abstracts communication, supporting both modes:
+The API layer abstracts communication, routing based on workspace kind:
 
 ```typescript
-// api/hooks.ts
-export function useCreateUnitTask() {
-  const { mode, serverUrl } = useClientConfig();
-
-  return useMutation({
-    mutationFn: async (params: CreateUnitTaskParams) => {
-      if (mode === 'local') {
-        return invoke<UnitTask>('create_unit_task', params);
-      } else {
-        return rpcClient.call('task.createUnit', params);
-      }
-    },
-  });
+// api/client.ts - All API calls use Tauri invoke
+// The Rust backend handles routing based on workspace kind:
+// - Local workspace: uses embedded local runtime
+// - Remote workspace: forwards via RPC to workspace's serverUrl
+export async function createUnitTask(params: CreateUnitTaskParams) {
+  return invoke<UnitTask>('create_unit_task', { params });
 }
 ```
 
@@ -232,7 +229,7 @@ async fn list_secrets() -> Result<Vec<String>, String>;
 | `GOOGLE_AI_API_KEY` | Google AI API key |
 | `GITHUB_TOKEN` | GitHub access token |
 
-### Secret Flow (Remote Mode)
+### Secret Flow (Remote Workspaces)
 
 ```
 1. User starts task
@@ -324,9 +321,9 @@ When hotkey is pressed:
 
 ## Mobile Considerations
 
-### Remote Mode Only
+### Remote Workspaces Only
 
-Mobile apps only support remote mode because:
+Mobile apps only support remote workspaces because:
 - No Docker runtime on mobile
 - Limited file system access
 - Battery and resource constraints
@@ -457,12 +454,36 @@ async fn set_secret(key: String, value: String) -> Result<(), Error>;
 async fn send_secrets(task_id: String) -> Result<(), Error>;
 ```
 
-### Mode
+### Mode (Backwards Compatibility)
+
+These commands operate on the default workspace's kind for backwards compatibility:
 
 ```rust
 #[tauri::command]
-async fn get_mode() -> Result<Mode, Error>;
+async fn get_mode() -> Result<String, Error>;  // Returns default workspace's kind
 
 #[tauri::command]
-async fn set_mode(mode: Mode, server_url: Option<String>) -> Result<(), Error>;
+async fn set_mode(mode: String, server_url: Option<String>) -> Result<(), Error>;  // Updates default workspace's kind
+```
+
+### Workspace Management
+
+```rust
+#[tauri::command]
+async fn create_workspace(params: CreateWorkspaceParams) -> Result<Workspace, Error>;
+
+#[tauri::command]
+async fn list_workspaces(params: ListWorkspacesParams) -> Result<ListWorkspacesResult, Error>;
+
+#[tauri::command]
+async fn get_workspace(workspace_id: String) -> Result<Workspace, Error>;
+
+#[tauri::command]
+async fn update_workspace(workspace_id: String, params: UpdateWorkspaceParams) -> Result<Workspace, Error>;
+
+#[tauri::command]
+async fn delete_workspace(workspace_id: String) -> Result<(), Error>;
+
+#[tauri::command]
+async fn get_default_workspace_id() -> Result<String, Error>;
 ```

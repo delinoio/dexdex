@@ -71,6 +71,8 @@ impl<E: EventEmitter + 'static> LocalRuntime<E> {
                 user_id: None, // No user in single-user mode
                 name: "Default Workspace".to_string(),
                 description: Some("Default workspace for local mode".to_string()),
+                kind: entities::WorkspaceKind::Local,
+                server_url: None,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             };

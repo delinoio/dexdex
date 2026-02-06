@@ -8,7 +8,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use entities::{
     AgentSession, AgentTask, CompositeTask, CompositeTaskNode, Repository, RepositoryGroup,
-    TodoItem, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace,
+    TodoItem, TtyInputRequest, UnitTask, User, VcsProviderType, VcsType, Workspace, WorkspaceKind,
 };
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use tracing::info;
@@ -58,6 +58,8 @@ impl SqliteTaskStore {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT,
+                kind TEXT NOT NULL DEFAULT 'local',
+                server_url TEXT,
                 user_id TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -196,6 +198,31 @@ impl SqliteTaskStore {
             Err(e) => return Err(e.into()),
         }
 
+        // Migration: Add kind column to workspaces
+        // Added in #197 - each workspace now carries its own kind (local/remote)
+        // instead of a global app mode.
+        match sqlx::query("ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'local'")
+            .execute(&self.pool)
+            .await
+        {
+            Ok(_) => {}
+            Err(sqlx::Error::Database(db_err)) if db_err.message().contains("duplicate column") => {
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        // Migration: Add server_url column to workspaces
+        // Added in #197 - remote workspaces store their server URL.
+        match sqlx::query("ALTER TABLE workspaces ADD COLUMN server_url TEXT")
+            .execute(&self.pool)
+            .await
+        {
+            Ok(_) => {}
+            Err(sqlx::Error::Database(db_err)) if db_err.message().contains("duplicate column") => {
+            }
+            Err(e) => return Err(e.into()),
+        }
+
         Ok(())
     }
 
@@ -220,6 +247,33 @@ impl SqliteTaskStore {
     /// Helper to serialize Vec<Uuid> to JSON string.
     fn serialize_uuid_vec(v: &[Uuid]) -> TaskStoreResult<String> {
         serde_json::to_string(v).map_err(TaskStoreError::Serialization)
+    }
+
+    /// Helper to parse WorkspaceKind from a string.
+    fn parse_workspace_kind(s: &str) -> WorkspaceKind {
+        match s {
+            "remote" => WorkspaceKind::Remote,
+            _ => WorkspaceKind::Local,
+        }
+    }
+
+    /// Helper to convert a SQLite row to a Workspace.
+    fn row_to_workspace(row: &sqlx::sqlite::SqliteRow) -> TaskStoreResult<Workspace> {
+        let kind_str: String = row.get("kind");
+        Ok(Workspace {
+            id: Self::parse_uuid(row.get("id"))?,
+            name: row.get("name"),
+            description: row.get("description"),
+            kind: Self::parse_workspace_kind(&kind_str),
+            server_url: row.get("server_url"),
+            user_id: Self::parse_uuid_opt(row.get("user_id"))?,
+            created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
+                .map_err(|e| TaskStoreError::Other(e.to_string()))?
+                .with_timezone(&chrono::Utc),
+            updated_at: chrono::DateTime::parse_from_rfc3339(row.get("updated_at"))
+                .map_err(|e| TaskStoreError::Other(e.to_string()))?
+                .with_timezone(&chrono::Utc),
+        })
     }
 
     /// Appends LIMIT and OFFSET clauses to a query string.
@@ -359,12 +413,14 @@ impl TaskStore for SqliteTaskStore {
 
     async fn create_workspace(&self, workspace: Workspace) -> TaskStoreResult<Workspace> {
         sqlx::query(
-            "INSERT INTO workspaces (id, name, description, user_id, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO workspaces (id, name, description, kind, server_url, user_id, \
+             created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(workspace.id.to_string())
         .bind(&workspace.name)
         .bind(&workspace.description)
+        .bind(workspace.kind.to_string())
+        .bind(&workspace.server_url)
         .bind(workspace.user_id.map(|id| id.to_string()))
         .bind(workspace.created_at.to_rfc3339())
         .bind(workspace.updated_at.to_rfc3339())
@@ -388,18 +444,7 @@ impl TaskStore for SqliteTaskStore {
 
         match row {
             Some(row) => {
-                let workspace = Workspace {
-                    id: Self::parse_uuid(row.get("id"))?,
-                    name: row.get("name"),
-                    description: row.get("description"),
-                    user_id: Self::parse_uuid_opt(row.get("user_id"))?,
-                    created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
-                        .map_err(|e| TaskStoreError::Other(e.to_string()))?
-                        .with_timezone(&chrono::Utc),
-                    updated_at: chrono::DateTime::parse_from_rfc3339(row.get("updated_at"))
-                        .map_err(|e| TaskStoreError::Other(e.to_string()))?
-                        .with_timezone(&chrono::Utc),
-                };
+                let workspace = Self::row_to_workspace(&row)?;
                 Ok(Some(workspace))
             }
             None => Ok(None),
@@ -448,18 +493,7 @@ impl TaskStore for SqliteTaskStore {
 
         let mut workspaces = Vec::new();
         for row in rows {
-            workspaces.push(Workspace {
-                id: Self::parse_uuid(row.get("id"))?,
-                name: row.get("name"),
-                description: row.get("description"),
-                user_id: Self::parse_uuid_opt(row.get("user_id"))?,
-                created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
-                    .map_err(|e| TaskStoreError::Other(e.to_string()))?
-                    .with_timezone(&chrono::Utc),
-                updated_at: chrono::DateTime::parse_from_rfc3339(row.get("updated_at"))
-                    .map_err(|e| TaskStoreError::Other(e.to_string()))?
-                    .with_timezone(&chrono::Utc),
-            });
+            workspaces.push(Self::row_to_workspace(&row)?);
         }
 
         Ok((workspaces, total as u32))
@@ -467,11 +501,13 @@ impl TaskStore for SqliteTaskStore {
 
     async fn update_workspace(&self, workspace: Workspace) -> TaskStoreResult<Workspace> {
         let result = sqlx::query(
-            "UPDATE workspaces SET name = ?, description = ?, user_id = ?, updated_at = ? WHERE \
-             id = ?",
+            "UPDATE workspaces SET name = ?, description = ?, kind = ?, server_url = ?, user_id = \
+             ?, updated_at = ? WHERE id = ?",
         )
         .bind(&workspace.name)
         .bind(&workspace.description)
+        .bind(workspace.kind.to_string())
+        .bind(&workspace.server_url)
         .bind(workspace.user_id.map(|id| id.to_string()))
         .bind(workspace.updated_at.to_rfc3339())
         .bind(workspace.id.to_string())

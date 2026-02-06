@@ -401,6 +401,15 @@ Tasks that humans should do but AI can assist with.
 | name | string | Y | Repository name |
 | defaultBranch | string | Y | Default branch |
 
+### WorkspaceKind
+
+```
+enum WorkspaceKind {
+  local     // Local execution (single-process mode)
+  remote    // Remote execution (connects to a DeliDev server)
+}
+```
+
 ### Workspace
 
 | Field | Type | Required | Description |
@@ -408,6 +417,8 @@ Tasks that humans should do but AI can assist with.
 | id | string | Y | Unique identifier |
 | name | string | Y | Workspace name |
 | description | string | N | Description |
+| kind | WorkspaceKind | Y | Whether this workspace runs locally or connects to a remote server (default: local) |
+| serverUrl | string | N | Remote server URL (required when kind is "remote") |
 | createdAt | timestamp | Y | Creation time |
 | updatedAt | timestamp | Y | Last update time |
 
@@ -1008,7 +1019,7 @@ Toggles chat window visibility from anywhere in the app.
 - [Main Server](./main-server.md) - Main Server details
 - [Worker Server](./worker-server.md) - Worker Server details
 - [Tauri App](./tauri-app.md) - Desktop/Mobile app details
-- [Local vs Remote Mode](./client-local-vs-remote.md) - Mode comparison
+- [Local vs Remote Workspaces](./client-local-vs-remote.md) - Workspace kind comparison
 - [UI Design](./ui.md) - User interface specifications
 - [Notification System](./notifications.md) - Notification center, desktop notifications, and event handling
 - [PLAN.yaml Specification](./plan-yaml.md) - Task plan format

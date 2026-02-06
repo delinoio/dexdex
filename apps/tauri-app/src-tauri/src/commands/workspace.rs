@@ -1,9 +1,14 @@
 //! Workspace-related Tauri commands.
+//!
+//! Workspace metadata (name, kind, server_url, etc.) is always stored in the
+//! local SQLite database. The workspace's `kind` field determines how
+//! operations on workspace *contents* (repositories, tasks) are routed:
+//! - `local` → use the embedded local runtime
+//! - `remote` → make RPC calls to the workspace's `server_url`
 
 use std::sync::Arc;
 
-use entities::Workspace;
-use rpc_protocol::requests;
+use entities::{Workspace, WorkspaceKind};
 use serde::{Deserialize, Serialize};
 use task_store::{TaskStore, WorkspaceFilter};
 use tauri::State;
@@ -12,10 +17,9 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    config::AppMode,
     error::{AppError, AppResult},
-    remote_client::rpc_to_entity_workspace,
-    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
+    mobile::platform::supports_local_mode,
+    state::AppState,
 };
 
 /// Maximum length for workspace name.
@@ -81,6 +85,10 @@ fn validate_and_sanitize_description(description: &str) -> Result<String, AppErr
 pub struct CreateWorkspaceParams {
     pub name: String,
     pub description: Option<String>,
+    /// The kind of workspace: "local" or "remote".
+    pub kind: Option<String>,
+    /// Remote server URL (required when kind is "remote").
+    pub server_url: Option<String>,
 }
 
 /// Parameters for updating a workspace.
@@ -89,6 +97,10 @@ pub struct CreateWorkspaceParams {
 pub struct UpdateWorkspaceParams {
     pub name: Option<String>,
     pub description: Option<String>,
+    /// The kind of workspace: "local" or "remote".
+    pub kind: Option<String>,
+    /// Remote server URL.
+    pub server_url: Option<String>,
 }
 
 /// Parameters for listing workspaces.
@@ -107,7 +119,29 @@ pub struct ListWorkspacesResult {
     pub total_count: i32,
 }
 
+/// Parses a kind string into a WorkspaceKind.
+fn parse_workspace_kind(kind: &str) -> Result<WorkspaceKind, AppError> {
+    match kind {
+        "local" => {
+            if !supports_local_mode() {
+                return Err(AppError::PlatformError(
+                    "Local workspaces are not supported on mobile devices".to_string(),
+                ));
+            }
+            Ok(WorkspaceKind::Local)
+        }
+        "remote" => Ok(WorkspaceKind::Remote),
+        _ => Err(AppError::InvalidRequest(format!(
+            "Invalid workspace kind: {}. Must be 'local' or 'remote'",
+            kind
+        ))),
+    }
+}
+
 /// Creates a new workspace.
+///
+/// Workspace metadata is always stored locally. The `kind` field determines
+/// how the workspace's contents are accessed.
 #[tauri::command]
 pub async fn create_workspace(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -115,33 +149,33 @@ pub async fn create_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
-    // Remote mode: make API call to main server
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
+    // Validate and sanitize input
+    let sanitized_name = validate_and_sanitize_name(&params.name)?;
+    let sanitized_description = match params.description {
+        Some(ref desc) => Some(validate_and_sanitize_description(desc)?),
+        None => None,
+    };
 
-        let request = requests::CreateWorkspaceRequest {
-            name: params.name,
-            description: params.description,
-        };
+    let kind = match params.kind.as_deref() {
+        Some(k) => parse_workspace_kind(k)?,
+        None => {
+            if supports_local_mode() {
+                WorkspaceKind::Local
+            } else {
+                WorkspaceKind::Remote
+            }
+        }
+    };
 
-        let response = client.create_workspace(request).await?;
-        let workspace = rpc_to_entity_workspace(response.workspace)?;
-        info!(
-            "Created workspace via remote: {} ({})",
-            workspace.name, workspace.id
-        );
-        return Ok(workspace);
+    // Remote workspaces must have a server URL
+    if kind == WorkspaceKind::Remote && params.server_url.is_none() {
+        return Err(AppError::InvalidRequest(
+            "Remote workspaces require a server URL".to_string(),
+        ));
     }
 
     #[cfg(desktop)]
-    if state.mode == AppMode::Local {
-        // Validate and sanitize input
-        let sanitized_name = validate_and_sanitize_name(&params.name)?;
-        let sanitized_description = match params.description {
-            Some(ref desc) => Some(validate_and_sanitize_description(desc)?),
-            None => None,
-        };
-
+    {
         let runtime = state
             .local_runtime
             .as_ref()
@@ -152,24 +186,33 @@ pub async fn create_workspace(
             user_id: None,
             name: sanitized_name,
             description: sanitized_description,
+            kind,
+            server_url: params.server_url,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
 
         let created = runtime.task_store_arc().create_workspace(workspace).await?;
-        info!("Created workspace: {} ({})", created.name, created.id);
+        info!(
+            "Created workspace: {} ({}) kind={:?}",
+            created.name, created.id, created.kind
+        );
         return Ok(created);
     }
 
     #[cfg(not(desktop))]
-    let _ = &params;
-
-    Err(AppError::InvalidRequest(
-        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
-    ))
+    {
+        let _ = (&sanitized_name, &sanitized_description, &kind, &params);
+        Err(AppError::InvalidRequest(
+            "Workspace creation not supported on this platform".to_string(),
+        ))
+    }
 }
 
 /// Lists workspaces.
+///
+/// All workspace metadata is stored locally, so this always reads from
+/// the local task store.
 #[tauri::command]
 pub async fn list_workspaces(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -177,29 +220,8 @@ pub async fn list_workspaces(
 ) -> AppResult<ListWorkspacesResult> {
     let state = state.read().await;
 
-    // Remote mode: make API call to main server
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::ListWorkspacesRequest {
-            limit: params.limit.unwrap_or(100),
-            offset: params.offset.unwrap_or(0),
-        };
-
-        let response = client.list_workspaces(request).await?;
-        let workspaces: crate::error::AppResult<Vec<_>> = response
-            .workspaces
-            .into_iter()
-            .map(rpc_to_entity_workspace)
-            .collect();
-        return Ok(ListWorkspacesResult {
-            workspaces: workspaces?,
-            total_count: response.total_count,
-        });
-    }
-
     #[cfg(desktop)]
-    if state.mode == AppMode::Local {
+    {
         let runtime = state
             .local_runtime
             .as_ref()
@@ -220,11 +242,12 @@ pub async fn list_workspaces(
     }
 
     #[cfg(not(desktop))]
-    let _ = &params;
-
-    Err(AppError::InvalidRequest(
-        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
-    ))
+    {
+        let _ = &params;
+        Err(AppError::InvalidRequest(
+            "Workspace listing not supported on this platform".to_string(),
+        ))
+    }
 }
 
 /// Gets a workspace by ID.
@@ -235,20 +258,8 @@ pub async fn get_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
-    // Remote mode: make API call to main server
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::GetWorkspaceRequest {
-            workspace_id: workspace_id.clone(),
-        };
-
-        let response = client.get_workspace(request).await?;
-        return rpc_to_entity_workspace(response.workspace);
-    }
-
     #[cfg(desktop)]
-    if state.mode == AppMode::Local {
+    {
         let id = Uuid::parse_str(&workspace_id)
             .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
 
@@ -267,11 +278,12 @@ pub async fn get_workspace(
     }
 
     #[cfg(not(desktop))]
-    let _ = &workspace_id;
-
-    Err(AppError::InvalidRequest(
-        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
-    ))
+    {
+        let _ = &workspace_id;
+        Err(AppError::InvalidRequest(
+            "Workspace retrieval not supported on this platform".to_string(),
+        ))
+    }
 }
 
 /// Updates a workspace.
@@ -283,27 +295,8 @@ pub async fn update_workspace(
 ) -> AppResult<Workspace> {
     let state = state.read().await;
 
-    // Remote mode: make API call to main server
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::UpdateWorkspaceRequest {
-            workspace_id: workspace_id.clone(),
-            name: params.name,
-            description: params.description,
-        };
-
-        let response = client.update_workspace(request).await?;
-        let workspace = rpc_to_entity_workspace(response.workspace)?;
-        info!(
-            "Updated workspace via remote: {} ({})",
-            workspace.name, workspace.id
-        );
-        return Ok(workspace);
-    }
-
     #[cfg(desktop)]
-    if state.mode == AppMode::Local {
+    {
         let id = Uuid::parse_str(&workspace_id)
             .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
 
@@ -324,6 +317,20 @@ pub async fn update_workspace(
         if let Some(ref description) = params.description {
             workspace.description = Some(validate_and_sanitize_description(description)?);
         }
+        if let Some(ref kind_str) = params.kind {
+            workspace.kind = parse_workspace_kind(kind_str)?;
+        }
+        if let Some(ref server_url) = params.server_url {
+            workspace.server_url = Some(server_url.clone());
+        }
+
+        // Validate: remote workspaces must have a server URL
+        if workspace.kind == WorkspaceKind::Remote && workspace.server_url.is_none() {
+            return Err(AppError::InvalidRequest(
+                "Remote workspaces require a server URL".to_string(),
+            ));
+        }
+
         workspace.updated_at = chrono::Utc::now();
 
         let updated = runtime.task_store_arc().update_workspace(workspace).await?;
@@ -332,11 +339,12 @@ pub async fn update_workspace(
     }
 
     #[cfg(not(desktop))]
-    let _ = (&workspace_id, &params);
-
-    Err(AppError::InvalidRequest(
-        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
-    ))
+    {
+        let _ = (&workspace_id, &params);
+        Err(AppError::InvalidRequest(
+            "Workspace update not supported on this platform".to_string(),
+        ))
+    }
 }
 
 /// Deletes a workspace.
@@ -347,21 +355,8 @@ pub async fn delete_workspace(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    // Remote mode: make API call to main server
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::DeleteWorkspaceRequest {
-            workspace_id: workspace_id.clone(),
-        };
-
-        client.delete_workspace(request).await?;
-        info!("Deleted workspace via remote: {}", workspace_id);
-        return Ok(());
-    }
-
     #[cfg(desktop)]
-    if state.mode == AppMode::Local {
+    {
         let id = Uuid::parse_str(&workspace_id)
             .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
 
@@ -376,11 +371,12 @@ pub async fn delete_workspace(
     }
 
     #[cfg(not(desktop))]
-    let _ = &workspace_id;
-
-    Err(AppError::InvalidRequest(
-        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
-    ))
+    {
+        let _ = &workspace_id;
+        Err(AppError::InvalidRequest(
+            "Workspace deletion not supported on this platform".to_string(),
+        ))
+    }
 }
 
 /// Gets the default workspace ID.
@@ -390,31 +386,8 @@ pub async fn get_default_workspace_id(
 ) -> AppResult<String> {
     let state = state.read().await;
 
-    // Remote mode: get the first workspace from the server as default
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::ListWorkspacesRequest {
-            limit: 1,
-            offset: 0,
-        };
-
-        let response = client.list_workspaces(request).await?;
-        if let Some(workspace) = response.workspaces.into_iter().next() {
-            return Ok(workspace.id);
-        }
-
-        // No workspace exists yet, create a default one
-        let create_request = requests::CreateWorkspaceRequest {
-            name: "Default Workspace".to_string(),
-            description: Some("Default workspace created automatically".to_string()),
-        };
-        let create_response = client.create_workspace(create_request).await?;
-        return Ok(create_response.workspace.id);
-    }
-
     #[cfg(desktop)]
-    if state.mode == AppMode::Local {
+    {
         let runtime = state
             .local_runtime
             .as_ref()
@@ -423,7 +396,8 @@ pub async fn get_default_workspace_id(
         return Ok(runtime.default_workspace_id().to_string());
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
-        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+        "Default workspace not available on this platform".to_string(),
     ))
 }

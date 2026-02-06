@@ -64,7 +64,7 @@ export function ModeSelection() {
         <div className="text-center">
           <h1 className="text-3xl font-bold">Welcome to DeliDev</h1>
           <p className="mt-2 text-[hsl(var(--muted-foreground))]">
-            Choose how you want to run DeliDev
+            Choose how to set up your workspace
           </p>
         </div>
 
@@ -97,7 +97,7 @@ export function ModeSelection() {
                   </svg>
                 </div>
                 <div>
-                  <CardTitle>Local Mode</CardTitle>
+                  <CardTitle>Local Workspace</CardTitle>
                   <CardDescription>
                     Run everything locally on your machine
                   </CardDescription>
@@ -185,7 +185,7 @@ export function ModeSelection() {
                   </svg>
                 </div>
                 <div>
-                  <CardTitle>Remote Mode</CardTitle>
+                  <CardTitle>Remote Workspace</CardTitle>
                   <CardDescription>
                     Connect to a remote DeliDev server
                   </CardDescription>
@@ -272,7 +272,7 @@ export function ModeSelection() {
 
         <div className="flex items-center justify-between border-t border-[hsl(var(--border))] pt-4">
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            You can change this setting later in Settings
+            You can add more workspaces later
           </p>
           <Button
             onClick={handleContinue}

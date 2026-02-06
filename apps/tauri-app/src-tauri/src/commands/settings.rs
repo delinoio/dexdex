@@ -23,19 +23,15 @@ pub async fn get_global_settings(
 }
 
 /// Updates global settings.
+///
+/// Note: Mode (local/remote) is no longer a global setting. It is now
+/// per-workspace. See workspace commands for managing workspace kind.
 #[tauri::command]
 pub async fn update_global_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
     settings: GlobalSettings,
 ) -> AppResult<GlobalSettings> {
     let mut state = state.write().await;
-
-    // Update mode if changed
-    if settings.mode != state.settings.mode || settings.server_url != state.settings.server_url {
-        state
-            .set_mode(settings.mode, settings.server_url.clone())
-            .await?;
-    }
 
     // Update settings
     state.settings = settings.clone();
@@ -49,10 +45,6 @@ pub async fn update_global_settings(
 }
 
 /// Gets repository-specific settings.
-///
-/// Returns default repository settings. Repository-specific settings are
-/// loaded directly from `.delidev/config.toml` within each repository when
-/// performing operations on that repository.
 #[tauri::command]
 pub async fn get_repository_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -61,7 +53,7 @@ pub async fn get_repository_settings(
     let state = state.read().await;
 
     #[cfg(desktop)]
-    if state.mode == crate::config::AppMode::Local {
+    {
         // Parse the repo_id as UUID
         let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
             AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
@@ -74,24 +66,20 @@ pub async fn get_repository_settings(
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-        // Return default settings - actual repository settings are loaded
-        // from the repository's .delidev/config.toml when performing operations
         tracing::debug!("Returning default repository settings for {}", repo_id);
         return Ok(RepositorySettings::default());
     }
 
-    let _ = &repo_id;
-
-    Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
-    ))
+    #[cfg(not(desktop))]
+    {
+        let _ = &repo_id;
+        Err(AppError::InvalidRequest(
+            "Not supported on this platform".to_string(),
+        ))
+    }
 }
 
 /// Updates repository-specific settings.
-///
-/// Repository settings should be edited directly in the repository's
-/// `.delidev/config.toml` file. This command validates the repository exists
-/// but returns an error since the app does not manage repository settings.
 #[tauri::command]
 pub async fn update_repository_settings(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -101,7 +89,7 @@ pub async fn update_repository_settings(
     let state = state.read().await;
 
     #[cfg(desktop)]
-    if state.mode == crate::config::AppMode::Local {
+    {
         // Parse the repo_id as UUID
         let repo_uuid = Uuid::parse_str(&repo_id).map_err(|e| {
             AppError::InvalidRequest(format!("Invalid repository ID '{}': {}", repo_id, e))
@@ -114,8 +102,6 @@ pub async fn update_repository_settings(
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Repository not found: {}", repo_id)))?;
 
-        // Repository settings are managed directly in each repository's
-        // .delidev/config.toml file
         return Err(AppError::InvalidRequest(format!(
             "Cannot save repository settings for '{}': repository settings must be edited \
              directly in the repository's .delidev/config.toml file.",
@@ -123,9 +109,11 @@ pub async fn update_repository_settings(
         )));
     }
 
-    let _ = &repo_id;
-
-    Err(AppError::InvalidRequest(
-        "Remote mode not yet implemented".to_string(),
-    ))
+    #[cfg(not(desktop))]
+    {
+        let _ = &repo_id;
+        Err(AppError::InvalidRequest(
+            "Not supported on this platform".to_string(),
+        ))
+    }
 }

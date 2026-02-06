@@ -7,7 +7,6 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::{
-    config::AppMode,
     error::{AppError, AppResult},
     state::AppState,
 };
@@ -53,22 +52,21 @@ pub async fn list_secrets(state: State<'_, Arc<RwLock<AppState>>>) -> AppResult<
     Ok(keys.into_iter().map(|k| k.key_name().to_string()).collect())
 }
 
-/// Sends secrets to the remote server for a task (remote mode only).
+/// Sends secrets to the remote server for a task (remote workspaces only).
+///
+/// For local workspaces, secrets are accessed directly from the keychain,
+/// so this is a no-op.
 #[tauri::command]
 pub async fn send_secrets(
-    state: State<'_, Arc<RwLock<AppState>>>,
+    _state: State<'_, Arc<RwLock<AppState>>>,
     task_id: String,
 ) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Local {
-        // In local mode, secrets are accessed directly from keychain
-        return Ok(());
-    }
-
-    // Remote mode not yet implemented
-    Err(AppError::InvalidRequest(format!(
-        "Remote mode not yet implemented (task_id: {})",
+    // TODO: Look up the task's workspace to determine if this is a remote
+    // workspace. For now, always succeed since local workspaces don't need
+    // secret forwarding.
+    info!(
+        "send_secrets called for task_id={} (no-op for local workspaces)",
         task_id
-    )))
+    );
+    Ok(())
 }

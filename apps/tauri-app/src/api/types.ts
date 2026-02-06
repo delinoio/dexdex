@@ -185,10 +185,16 @@ export interface RepositoryGroup {
   updatedAt: string;
 }
 
+export type WorkspaceKind = "local" | "remote";
+
 export interface Workspace {
   id: string;
   name: string;
   description?: string;
+  /** The kind of workspace: "local" or "remote". */
+  kind: WorkspaceKind;
+  /** Remote server URL (only used when kind is "remote"). */
+  serverUrl?: string;
   userId?: string;
   createdAt: string;
   updatedAt: string;
@@ -243,31 +249,10 @@ export interface TodoItem {
 // App settings types
 
 export interface GlobalSettings {
-  mode: "local" | "remote";
-  serverUrl?: string;
-  hotkey: {
-    openChat: string;
-  };
-  notification: {
-    enabled: boolean;
-    approvalRequest: boolean;
-    userQuestion: boolean;
-    reviewReady: boolean;
-  };
-  agent: {
-    planning: {
-      type: AiAgentType;
-      model: string;
-    };
-    execution: {
-      type: AiAgentType;
-      model: string;
-    };
-    chat: {
-      type: AiAgentType;
-      model: string;
-    };
-  };
+  hotkey: string;
+  notificationsEnabled: boolean;
+  defaultAgentType: string;
+  defaultAgentModel?: string;
 }
 
 export interface RepositorySettings {
@@ -344,11 +329,15 @@ export interface ListRepositoriesResult {
 export interface CreateWorkspaceParams {
   name: string;
   description?: string;
+  kind?: WorkspaceKind;
+  serverUrl?: string;
 }
 
 export interface UpdateWorkspaceParams {
   name?: string;
   description?: string;
+  kind?: WorkspaceKind;
+  serverUrl?: string;
 }
 
 export interface ListWorkspacesParams {

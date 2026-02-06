@@ -623,6 +623,9 @@ pub fn rpc_to_entity_workspace(rpc: rpc_protocol::Workspace) -> AppResult<entiti
         user_id,
         name: rpc.name,
         description: rpc.description,
+        // Workspaces returned from a remote server are always remote workspaces.
+        kind: entities::WorkspaceKind::Remote,
+        server_url: None,
         created_at: rpc.created_at,
         updated_at: rpc.updated_at,
     })

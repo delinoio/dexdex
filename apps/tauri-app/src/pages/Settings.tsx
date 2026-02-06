@@ -5,23 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
-import { useMode, useSetMode } from "@/hooks/useMode";
 import { AiAgentType } from "@/api/types";
 import { notify } from "@/stores/notificationStore";
 
 export function Settings() {
   const navigate = useNavigate();
-  const { data: currentMode } = useMode();
-  const setModeMutation = useSetMode();
 
-  const [mode, setMode] = useState<"local" | "remote">(() => {
-    // Validate that currentMode is a valid mode value
-    if (currentMode === "local" || currentMode === "remote") {
-      return currentMode;
-    }
-    return "local";
-  });
-  const [serverUrl, setServerUrl] = useState("");
   const [hotkey, setHotkey] = useState("Option+Z");
   const [planningAgent, setPlanningAgent] = useState(AiAgentType.ClaudeCode);
   const [executionAgent, setExecutionAgent] = useState(AiAgentType.ClaudeCode);
@@ -29,10 +18,7 @@ export function Settings() {
 
   const handleSave = async () => {
     try {
-      await setModeMutation.mutateAsync({
-        mode,
-        serverUrl: mode === "remote" ? serverUrl : undefined,
-      });
+      // TODO: Implement settings persistence via update_global_settings command
       notify.success("Settings saved", "Your settings have been saved successfully.");
     } catch {
       notify.error("Failed to save settings", "Please try again.");
@@ -51,7 +37,6 @@ export function Settings() {
             <TabsList className="mb-6">
               <TabsTrigger value="global">Global</TabsTrigger>
               <TabsTrigger value="workspace">Workspace</TabsTrigger>
-              <TabsTrigger value="connection">Connection</TabsTrigger>
             </TabsList>
 
             <TabsContent value="global" className="space-y-6">
@@ -221,66 +206,14 @@ export function Settings() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="connection" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Mode</CardTitle>
-                  <CardDescription>
-                    Choose between local and remote execution
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="mode"
-                        checked={mode === "local"}
-                        onChange={() => setMode("local")}
-                        className="h-4 w-4"
-                      />
-                      <span className="text-sm font-medium">Local Mode</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="mode"
-                        checked={mode === "remote"}
-                        onChange={() => setMode("remote")}
-                        className="h-4 w-4"
-                      />
-                      <span className="text-sm font-medium">Remote Mode</span>
-                    </label>
-                  </div>
-
-                  {mode === "remote" && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Server URL</label>
-                      <div className="flex gap-2">
-                        <Input
-                          value={serverUrl}
-                          onChange={(e) => setServerUrl(e.target.value)}
-                          placeholder="https://your-server.com"
-                        />
-                        <Button variant="outline">Test Connection</Button>
-                      </div>
-                    </div>
-                  )}
-
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    Note: Changing mode requires restarting the application.
-                  </p>
-                </CardContent>
-              </Card>
-            </TabsContent>
           </Tabs>
 
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate(-1)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={setModeMutation.isPending}>
-              {setModeMutation.isPending ? "Saving..." : "Save"}
+            <Button onClick={handleSave}>
+              Save
             </Button>
           </div>
         </div>

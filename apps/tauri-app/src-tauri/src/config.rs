@@ -2,6 +2,9 @@
 //!
 //! This module provides application-level configuration handling that
 //! integrates with the shared `config` crate for TOML file parsing.
+//!
+//! Note: Mode (local/remote) is now per-workspace. See `WorkspaceKind`
+//! in the entities crate.
 
 use std::path::PathBuf;
 
@@ -16,29 +19,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
-/// Application mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum AppMode {
-    /// Local single-process mode (embedded server and worker).
-    #[default]
-    Local,
-    /// Remote mode (connects to external server).
-    Remote,
-}
-
 /// Global application settings.
 ///
 /// This struct represents the application settings exposed to the frontend.
 /// It combines settings from the shared config crate with app-specific
 /// settings.
+///
+/// Note: Mode (local/remote) is now per-workspace, not a global setting.
+/// See `WorkspaceKind` in the entities crate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalSettings {
-    /// Current application mode.
-    pub mode: AppMode,
-    /// Remote server URL (only used in remote mode).
-    pub server_url: Option<String>,
     /// Global hotkey for opening the app.
     pub hotkey: String,
     /// Whether notifications are enabled.
@@ -52,8 +43,6 @@ pub struct GlobalSettings {
 impl Default for GlobalSettings {
     fn default() -> Self {
         Self {
-            mode: AppMode::Local,
-            server_url: None,
             hotkey: if cfg!(target_os = "macos") {
                 "Option+Z".to_string()
             } else {
@@ -165,25 +154,16 @@ impl From<ReviewCommentFilterSetting> for ReviewCommentFilter {
 
 /// Configuration file structure for ~/.delidev/config.toml
 ///
-/// This is a simplified version for the Tauri app that includes mode
-/// configuration. For the full configuration, use `GlobalConfig` from the
-/// config crate.
+/// This is a simplified version for the Tauri app.
+/// Mode configuration has been removed; local/remote is now per-workspace.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigFile {
-    /// Mode configuration.
-    pub mode: Option<ModeConfig>,
     /// Hotkey configuration.
     pub hotkey: Option<HotkeyConfig>,
     /// Notification configuration.
     pub notifications: Option<NotificationsConfig>,
     /// Agent configuration.
     pub agent: Option<AgentConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModeConfig {
-    pub mode: Option<AppMode>,
-    pub server_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,13 +237,6 @@ pub fn save_config(config: &ConfigFile) -> AppResult<()> {
 pub fn config_to_settings(config: &ConfigFile) -> GlobalSettings {
     let mut settings = GlobalSettings::default();
 
-    if let Some(mode_config) = &config.mode {
-        if let Some(mode) = mode_config.mode {
-            settings.mode = mode;
-        }
-        settings.server_url.clone_from(&mode_config.server_url);
-    }
-
     if let Some(hotkey_config) = &config.hotkey {
         if let Some(hotkey) = &hotkey_config.open_chat {
             settings.hotkey = hotkey.clone();
@@ -291,10 +264,6 @@ pub fn config_to_settings(config: &ConfigFile) -> GlobalSettings {
 /// Converts GlobalSettings to a ConfigFile.
 pub fn settings_to_config(settings: &GlobalSettings) -> ConfigFile {
     ConfigFile {
-        mode: Some(ModeConfig {
-            mode: Some(settings.mode),
-            server_url: settings.server_url.clone(),
-        }),
         hotkey: Some(HotkeyConfig {
             open_chat: Some(settings.hotkey.clone()),
         }),
@@ -375,36 +344,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_app_mode_default() {
-        let mode = AppMode::default();
-        assert_eq!(mode, AppMode::Local);
-    }
-
-    #[test]
-    fn test_app_mode_serialization() {
-        let mode = AppMode::Remote;
-        let json = serde_json::to_string(&mode).unwrap();
-        assert_eq!(json, "\"remote\"");
-
-        let mode = AppMode::Local;
-        let json = serde_json::to_string(&mode).unwrap();
-        assert_eq!(json, "\"local\"");
-    }
-
-    #[test]
-    fn test_app_mode_deserialization() {
-        let mode: AppMode = serde_json::from_str("\"local\"").unwrap();
-        assert_eq!(mode, AppMode::Local);
-
-        let mode: AppMode = serde_json::from_str("\"remote\"").unwrap();
-        assert_eq!(mode, AppMode::Remote);
-    }
-
-    #[test]
     fn test_global_settings_default() {
         let settings = GlobalSettings::default();
-        assert_eq!(settings.mode, AppMode::Local);
-        assert!(settings.server_url.is_none());
         assert!(settings.notifications_enabled);
         assert_eq!(settings.default_agent_type, "claude_code");
         assert!(settings.default_agent_model.is_none());
@@ -423,22 +364,7 @@ mod tests {
     fn test_config_to_settings_empty() {
         let config = ConfigFile::default();
         let settings = config_to_settings(&config);
-        assert_eq!(settings.mode, AppMode::Local);
         assert!(settings.notifications_enabled);
-    }
-
-    #[test]
-    fn test_config_to_settings_with_mode() {
-        let config = ConfigFile {
-            mode: Some(ModeConfig {
-                mode: Some(AppMode::Remote),
-                server_url: Some("https://example.com".to_string()),
-            }),
-            ..Default::default()
-        };
-        let settings = config_to_settings(&config);
-        assert_eq!(settings.mode, AppMode::Remote);
-        assert_eq!(settings.server_url, Some("https://example.com".to_string()));
     }
 
     #[test]
@@ -470,8 +396,6 @@ mod tests {
     #[test]
     fn test_settings_to_config_roundtrip() {
         let original = GlobalSettings {
-            mode: AppMode::Remote,
-            server_url: Some("https://test.com".to_string()),
             hotkey: "Ctrl+Space".to_string(),
             notifications_enabled: false,
             default_agent_type: "test_agent".to_string(),
@@ -481,8 +405,6 @@ mod tests {
         let config = settings_to_config(&original);
         let result = config_to_settings(&config);
 
-        assert_eq!(result.mode, original.mode);
-        assert_eq!(result.server_url, original.server_url);
         assert_eq!(result.hotkey, original.hotkey);
         assert_eq!(result.notifications_enabled, original.notifications_enabled);
         assert_eq!(result.default_agent_type, original.default_agent_type);
@@ -492,10 +414,6 @@ mod tests {
     #[test]
     fn test_config_file_toml_serialization() {
         let config = ConfigFile {
-            mode: Some(ModeConfig {
-                mode: Some(AppMode::Local),
-                server_url: None,
-            }),
             hotkey: Some(HotkeyConfig {
                 open_chat: Some("Alt+Z".to_string()),
             }),
@@ -511,7 +429,6 @@ mod tests {
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: ConfigFile = toml::from_str(&toml_str).unwrap();
 
-        assert_eq!(parsed.mode.unwrap().mode, Some(AppMode::Local));
         assert_eq!(parsed.hotkey.unwrap().open_chat, Some("Alt+Z".to_string()));
     }
 

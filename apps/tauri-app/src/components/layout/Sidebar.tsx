@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/uiStore";
 import { useNotificationCenterStore } from "@/stores/notificationCenterStore";
 import { WorkspaceSelector } from "@/components/workspace";
-import { useMode } from "@/hooks/useMode";
+import { useWorkspace } from "@/hooks/useWorkspaces";
 import { useTabNavigation } from "@/hooks/useTabNavigation";
 
 const navItems = [
@@ -94,7 +94,8 @@ const navItems = [
 export function Sidebar() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  const { data: mode } = useMode();
+  const currentWorkspaceId = useUiStore((state) => state.currentWorkspaceId);
+  const { data: currentWorkspace } = useWorkspace(currentWorkspaceId ?? "");
   const { handleLinkClick } = useTabNavigation();
   const toggleNotifications = useNotificationCenterStore((s) => s.toggleOpen);
   const unreadCount = useNotificationCenterStore((s) => s.getUnreadCount());
@@ -206,7 +207,7 @@ export function Sidebar() {
             <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium">User</p>
               <p className="truncate text-xs text-[hsl(var(--muted-foreground))]">
-                {mode === "remote" ? "Remote Mode" : "Local Mode"}
+                {currentWorkspace?.kind === "remote" ? "Remote Workspace" : "Local Workspace"}
               </p>
             </div>
           )}
