@@ -410,7 +410,7 @@ pub async fn create_unit_task(
         return Ok(created);
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -545,7 +545,7 @@ pub async fn create_composite_task(
         return Ok(created);
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -611,7 +611,7 @@ pub async fn get_task(
         return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -707,7 +707,7 @@ pub async fn list_tasks(
         });
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -838,7 +838,7 @@ pub async fn approve_task(
     #[cfg(not(desktop))]
     let _ = &app_handle;
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -902,7 +902,7 @@ pub async fn reject_task(
         return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1049,7 +1049,7 @@ pub async fn update_plan_with_prompt(
         return Ok(());
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1153,7 +1153,7 @@ pub async fn request_changes(
         return Ok(());
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1314,7 +1314,7 @@ pub async fn get_task_logs(
     #[cfg(not(desktop))]
     let _ = (&agent_task_id, &after_event_id);
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1389,7 +1389,7 @@ pub async fn cancel_task(
     #[cfg(not(desktop))]
     let _ = &task_id;
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1447,7 +1447,7 @@ pub async fn respond_tty_input(
         return Ok(());
     }
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1517,7 +1517,7 @@ pub async fn get_composite_task_nodes(
     #[cfg(not(desktop))]
     let _ = &composite_task_id;
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1586,7 +1586,7 @@ pub async fn dismiss_approval(
     #[cfg(not(desktop))]
     let _ = &app_handle;
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1650,7 +1650,7 @@ pub async fn create_pr(
     #[cfg(not(desktop))]
     let _ = &app_handle;
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1713,7 +1713,7 @@ pub async fn commit_to_local(
     #[cfg(not(desktop))]
     let _ = &app_handle;
 
-    #[cfg(not(desktop))]
+    #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
