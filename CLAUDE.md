@@ -9,3 +9,4 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
+- For Tauri commands, define a single function per command. Do NOT define two separate functions with `#[cfg(desktop)]` and `#[cfg(not(desktop))]`. Instead, use inline `#[cfg(desktop)]` blocks within the function body for desktop-only logic, and `#[cfg(not(desktop))]` to suppress unused variables and return a "not supported" error. See `workspace.rs` and `repository.rs` for reference.
