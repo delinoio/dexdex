@@ -86,7 +86,8 @@ pub fn generate_patch(worktree_path: &Path) -> GitResult<Option<String>> {
         Ok(None)
     } else if patch.len() > MAX_PATCH_SIZE {
         warn!(
-            "Generated patch is too large ({} bytes, limit {} bytes) for worktree at {:?}, skipping",
+            "Generated patch is too large ({} bytes, limit {} bytes) for worktree at {:?}, \
+             skipping",
             patch.len(),
             MAX_PATCH_SIZE,
             worktree_path
@@ -168,7 +169,8 @@ pub async fn generate_patch_async(worktree_path: &Path) -> GitResult<Option<Stri
         Ok(None)
     } else if patch.len() > MAX_PATCH_SIZE {
         warn!(
-            "Generated patch is too large ({} bytes, limit {} bytes) for worktree at {:?}, skipping",
+            "Generated patch is too large ({} bytes, limit {} bytes) for worktree at {:?}, \
+             skipping",
             patch.len(),
             MAX_PATCH_SIZE,
             worktree_path
@@ -303,12 +305,18 @@ mod tests {
         let patch = patch.unwrap();
 
         // Verify unified diff format
-        assert!(patch.contains("diff --git"), "patch should contain unified diff headers");
+        assert!(
+            patch.contains("diff --git"),
+            "patch should contain unified diff headers"
+        );
         assert!(patch.contains("README.md"));
         assert!(patch.contains("new_file.txt"));
 
         // Verify actual diff content
-        assert!(patch.contains("+Updated content"), "patch should contain added lines");
+        assert!(
+            patch.contains("+Updated content"),
+            "patch should contain added lines"
+        );
     }
 
     #[test]
@@ -449,9 +457,15 @@ mod tests {
         let patch = patch.unwrap();
 
         // Verify unified diff format and content
-        assert!(patch.contains("diff --git"), "patch should contain unified diff headers");
+        assert!(
+            patch.contains("diff --git"),
+            "patch should contain unified diff headers"
+        );
         assert!(patch.contains("README.md"));
-        assert!(patch.contains("+# Updated"), "patch should contain added lines");
+        assert!(
+            patch.contains("+# Updated"),
+            "patch should contain added lines"
+        );
 
         // Verify worktree is not left with staged changes
         let status_output = std::process::Command::new("git")

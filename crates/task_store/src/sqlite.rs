@@ -207,9 +207,7 @@ impl SqliteTaskStore {
             Ok(_) => {
                 info!("Added git_patch column to unit_tasks table");
             }
-            Err(sqlx::Error::Database(db_err))
-                if db_err.message().contains("duplicate column") =>
-            {
+            Err(sqlx::Error::Database(db_err)) if db_err.message().contains("duplicate column") => {
                 // Column already exists, nothing to do
             }
 
