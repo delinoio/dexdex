@@ -16,6 +16,7 @@ DeliDev provides a desktop and mobile application for orchestrating AI coding ag
 10. [Keyboard Shortcuts](#keyboard-shortcuts)
 11. [Multi-Tab Interface](#multi-tab-interface)
 12. [Desktop Notifications](#desktop-notifications)
+13. [Theme / Dark Mode](#theme--dark-mode)
 
 ---
 
@@ -538,6 +539,12 @@ The review interface is built from the following components:
 │  Global Settings (~/.delidev/config.toml)                                  │
 │  ─────────────────────────────────────────                                 │
 │                                                                            │
+│  Appearance                                                                │
+│  ┌────────────────────────────────────────────────────────────────────┐   │
+│  │ Theme          [☀ Light] [🌙 Dark] [🖥 System]                    │   │
+│  │ Currently using dark theme (based on system preference)           │   │
+│  └────────────────────────────────────────────────────────────────────┘   │
+│                                                                            │
 │  Hotkey                                                                    │
 │  ┌────────────────────────────────────────────────────────────────────┐   │
 │  │ Open Chat                                     [ Option+Z       ]   │   │
@@ -771,3 +778,33 @@ Tab state is managed in `stores/uiStore.ts`:
 | Windows | tauri-winrt-notification |
 | Linux | notify-rust |
 | macOS | AppleScript |
+
+---
+
+## Theme / Dark Mode
+
+DeliDev supports light, dark, and system-following theme modes. The theme is toggled via the sidebar button or the Settings > Global > Appearance card.
+
+### Theme Modes
+
+| Mode | Description |
+|------|-------------|
+| Light | Forces light theme |
+| Dark | Forces dark theme |
+| System | Follows the operating system's `prefers-color-scheme` setting |
+
+### Implementation
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `themeStore` | `stores/themeStore.ts` | Zustand store with `ThemeMode` enum, persisted to localStorage |
+| `useTheme` | `hooks/useTheme.ts` | Hook that applies `.dark` class to `<html>` and listens for system preference changes |
+| Sidebar toggle | `components/layout/Sidebar.tsx` | Quick-access button that cycles Light → Dark → System |
+| Settings card | `pages/Settings.tsx` | Appearance card with explicit Light/Dark/System buttons |
+
+### CSS Architecture
+
+- CSS variables defined in `index.css` under `:root` (light) and `.dark` (dark) selectors
+- All components use `hsl(var(--variable))` for colors
+- Tailwind CSS v4 `dark:` variant configured via `@custom-variant dark (&:where(.dark, .dark *))` for class-based dark mode
+- Theme preference persisted in localStorage via Zustand's `persist` middleware (key: `delidev-theme-store`)

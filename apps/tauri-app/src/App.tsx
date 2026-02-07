@@ -22,6 +22,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
 import { useNotificationEvents } from "@/hooks/useNotificationEvents";
 import { useTaskStatusEvents } from "@/hooks/useTaskStatusEvents";
+import { useTheme } from "@/hooks/useTheme";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +34,8 @@ const queryClient = new QueryClient({
 });
 
 function AppRoutes() {
+  // Initialize theme (applies dark class to <html>)
+  useTheme();
   // Initialize keyboard shortcuts
   useKeyboardShortcuts();
   // Request notification permission on startup
