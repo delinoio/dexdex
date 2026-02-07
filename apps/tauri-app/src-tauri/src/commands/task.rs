@@ -1819,7 +1819,7 @@ pub async fn dismiss_approval(
 #[tauri::command]
 pub async fn create_pr(
     state: State<'_, Arc<RwLock<AppState>>>,
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     task_id: String,
 ) -> AppResult<String> {
     let state = state.read().await;
@@ -1844,38 +1844,23 @@ pub async fn create_pr(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        if task.status != UnitTaskStatus::Approved {
-            return Err(AppError::InvalidRequest(format!(
-                "Task {} is not in Approved status (current: {:?})",
-                task_id, task.status
-            )));
-        }
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-        // TODO: Implement actual PR creation via VCS provider API
-        // For now, transition the task status to PrOpen
-        let old_status = "approved".to_string();
-        task.status = UnitTaskStatus::PrOpen;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_unit_task(task).await?;
-        info!("Created PR for unit task: {}", id);
+    let prompt = "Create a pull request with the changes from this task. Push the current branch \
+                  to the remote and create a PR using the available tools (e.g. `gh pr create`). \
+                  Output the PR URL."
+        .to_string();
 
-        let _ = app_handle.emit(
-            event_names::TASK_STATUS_CHANGED,
-            &TaskStatusChangedEvent {
-                task_id: task_id.clone(),
-                task_type: TaskType::UnitTask,
-                old_status,
-                new_status: "pr_open".to_string(),
-            },
-        );
+    executor
+        .execute_subtask(id, prompt, UnitTaskStatus::PrOpen)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to start PR creation subtask: {}", e)))?;
 
-        // Return an empty string for now; the actual PR URL will be returned
-        // once VCS provider integration is implemented.
-        return Ok(String::new());
-    }
-
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+    info!("Started PR creation subtask for unit task: {}", id);
+    Ok(String::new())
 }
 
 /// Creates a pull request for an approved task (mobile - remote mode only).
@@ -1909,7 +1894,7 @@ pub async fn create_pr(
 #[tauri::command]
 pub async fn commit_to_local(
     state: State<'_, Arc<RwLock<AppState>>>,
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     task_id: String,
 ) -> AppResult<()> {
     let state = state.read().await;
@@ -1934,36 +1919,25 @@ pub async fn commit_to_local(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        if task.status != UnitTaskStatus::Approved {
-            return Err(AppError::InvalidRequest(format!(
-                "Task {} is not in Approved status (current: {:?})",
-                task_id, task.status
-            )));
-        }
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-        // TODO: Implement actual git commit to local repository
-        // For now, transition the task status to Done
-        let old_status = "approved".to_string();
-        task.status = UnitTaskStatus::Done;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_unit_task(task).await?;
-        info!("Committed to local for unit task: {}", id);
+    let prompt = "Commit the changes from this task to the local repository. Create a \
+                  well-structured commit with an appropriate commit message that summarizes the \
+                  changes made."
+        .to_string();
 
-        let _ = app_handle.emit(
-            event_names::TASK_STATUS_CHANGED,
-            &TaskStatusChangedEvent {
-                task_id: task_id.clone(),
-                task_type: TaskType::UnitTask,
-                old_status,
-                new_status: "done".to_string(),
-            },
-        );
+    executor
+        .execute_subtask(id, prompt, UnitTaskStatus::Done)
+        .await
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to start commit-to-local subtask: {}", e))
+        })?;
 
-        return Ok(());
-    }
-
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+    info!("Started commit-to-local subtask for unit task: {}", id);
+    Ok(())
 }
 
 /// Commits approved task changes to the local git repository (mobile - remote

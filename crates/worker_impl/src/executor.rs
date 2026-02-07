@@ -1723,6 +1723,257 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         }
     }
 
+    /// Executes a subtask for an existing unit task.
+    ///
+    /// A subtask is an agent session that runs within the existing worktree of
+    /// a parent unit task. It is used for operations like "Create a PR" or
+    /// "Commit to local" where the AI agent needs to perform an action on the
+    /// already-completed work.
+    ///
+    /// Subtasks:
+    /// - Belong to the parent unit task's AgentTask
+    /// - Run in the existing worktree (no new worktree is created)
+    /// - Are not shown in the dashboard task list
+    /// - Update the parent task status on completion
+    ///
+    /// Returns the result of the subtask execution.
+    pub async fn execute_subtask(
+        &self,
+        task_id: Uuid,
+        prompt: String,
+        target_status: UnitTaskStatus,
+    ) -> Result<(), String> {
+        info!(
+            "Starting subtask execution for unit task: {} (target: {:?})",
+            task_id, target_status
+        );
+
+        // Get the task from the store
+        let task = self
+            .task_store
+            .get_unit_task(task_id)
+            .await
+            .map_err(|e| format!("Failed to get task: {}", e))?
+            .ok_or_else(|| format!("Task not found: {}", task_id))?;
+
+        if task.status != UnitTaskStatus::Approved {
+            return Err(format!(
+                "Task {} is not in Approved status (current: {:?})",
+                task_id, task.status
+            ));
+        }
+
+        // Get the repository group to find repositories
+        let repo_group = self
+            .task_store
+            .get_repository_group(task.repository_group_id)
+            .await
+            .map_err(|e| format!("Failed to get repository group: {}", e))?
+            .ok_or_else(|| format!("Repository group not found: {}", task.repository_group_id))?;
+
+        let repo_id = repo_group
+            .repository_ids
+            .first()
+            .ok_or_else(|| "Repository group has no repositories".to_string())?;
+
+        let repository = self
+            .task_store
+            .get_repository(*repo_id)
+            .await
+            .map_err(|e| format!("Failed to get repository: {}", e))?
+            .ok_or_else(|| format!("Repository not found: {}", repo_id))?;
+
+        // Get the agent task
+        let agent_task = self
+            .task_store
+            .get_agent_task(task.agent_task_id)
+            .await
+            .map_err(|e| format!("Failed to get agent task: {}", e))?
+            .ok_or_else(|| format!("Agent task not found: {}", task.agent_task_id))?;
+
+        let agent_type = agent_task.ai_agent_type.unwrap_or(AiAgentType::ClaudeCode);
+        let agent_model = agent_task.ai_agent_model.clone();
+
+        // Create a new agent session under the same agent task
+        let mut session = AgentSession::new(task.agent_task_id, agent_type);
+        if let Some(model) = &agent_model {
+            session = session.with_model(model.clone());
+        }
+        session.started_at = Some(Utc::now());
+
+        let session = self
+            .task_store
+            .create_agent_session(session)
+            .await
+            .map_err(|e| format!("Failed to create agent session: {}", e))?;
+
+        let session_id = session.id;
+
+        // Determine branch name (same as the parent task)
+        let branch_name = task
+            .branch_name
+            .clone()
+            .unwrap_or_else(|| format!("delidev/{}", task_id));
+
+        // Find the existing worktree path
+        let worktree_path = git_ops::worktree_path_for_task_with_cache(
+            self.executor.repo_cache().worktrees_dir(),
+            &task_id.to_string(),
+            &branch_name,
+        );
+
+        if !worktree_path.exists() {
+            return Err(format!(
+                "Worktree not found for task {}. The worktree may have been cleaned up.",
+                task_id
+            ));
+        }
+
+        info!("Subtask will run in existing worktree: {:?}", worktree_path);
+
+        // Transition task status to InProgress while the subtask runs
+        let old_status = "approved".to_string();
+        {
+            let mut task = self
+                .task_store
+                .get_unit_task(task_id)
+                .await
+                .map_err(|e| format!("Failed to get task: {}", e))?
+                .ok_or_else(|| format!("Task not found: {}", task_id))?;
+            task.status = UnitTaskStatus::InProgress;
+            task.updated_at = Utc::now();
+            self.task_store
+                .update_unit_task(task)
+                .await
+                .map_err(|e| format!("Failed to update task status: {}", e))?;
+        }
+
+        // Emit status change to InProgress
+        if let Err(e) = self
+            .emitter
+            .emit_task_status_changed(TaskStatusChangedEvent {
+                task_id: task_id.to_string(),
+                task_type: TaskType::UnitTask,
+                old_status: old_status.clone(),
+                new_status: "in_progress".to_string(),
+            })
+        {
+            warn!(
+                "Failed to emit status changed event for subtask {}: {}",
+                task_id, e
+            );
+        }
+
+        // Create the execution config
+        let config = TaskExecutionConfig {
+            task_id,
+            session_id,
+            remote_url: repository.remote_url.clone(),
+            branch_name: branch_name.clone(),
+            agent_type,
+            agent_model,
+            prompt,
+        };
+
+        // Clone values needed for the spawned task
+        let task_store = self.task_store.clone();
+        let emitter = self.emitter.clone();
+        let tty_manager = self.executor.tty_request_manager();
+        let execution_handles = self.execution_handles.clone();
+
+        // Create a persisting emitter for the subtask session
+        let persisting_emitter = Arc::new(PersistingEventEmitter::new(
+            emitter.clone(),
+            task_store.clone(),
+            session_id,
+        ));
+
+        // Spawn the subtask execution
+        let handle = tokio::spawn(async move {
+            let result = TaskExecutor::<PersistingEventEmitter<E>>::run_agent_in_worktree(
+                config,
+                persisting_emitter.clone(),
+                tty_manager,
+                worktree_path,
+            )
+            .await;
+
+            // Final persist of all logs
+            persisting_emitter.persist_logs().await;
+
+            // Update session completed_at
+            if let Ok(Some(mut session)) = task_store.get_agent_session(session_id).await {
+                session.completed_at = Some(Utc::now());
+                if let Err(e) = task_store.update_agent_session(session).await {
+                    warn!("Failed to update subtask agent session: {}", e);
+                }
+            }
+
+            // Update task status based on result
+            let (new_status, success, error_msg) = match &result {
+                ExecutionResult::Success { .. } => {
+                    info!("Subtask for task {} completed successfully", task_id);
+                    (target_status, true, None)
+                }
+                ExecutionResult::Failed { error, .. } => {
+                    error!("Subtask for task {} failed: {}", task_id, error);
+                    // On failure, revert to Approved so the user can retry
+                    (UnitTaskStatus::Approved, false, Some(error.clone()))
+                }
+                ExecutionResult::Cancelled => {
+                    info!("Subtask for task {} was cancelled", task_id);
+                    (UnitTaskStatus::Approved, false, None)
+                }
+            };
+
+            // Update task status
+            if let Ok(Some(mut task)) = task_store.get_unit_task(task_id).await {
+                task.status = new_status;
+                task.updated_at = Utc::now();
+                if let Err(e) = task_store.update_unit_task(task).await {
+                    error!("Failed to update task status after subtask: {}", e);
+                }
+            }
+
+            // Emit status change events
+            let new_status_str = serde_json::to_string(&new_status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
+            if let Err(e) = persisting_emitter.emit_task_status_changed(TaskStatusChangedEvent {
+                task_id: task_id.to_string(),
+                task_type: TaskType::UnitTask,
+                old_status: "in_progress".to_string(),
+                new_status: new_status_str,
+            }) {
+                warn!(
+                    "Failed to emit status changed event for subtask {}: {}",
+                    task_id, e
+                );
+            }
+
+            if let Err(e) = persisting_emitter.emit_task_completed(TaskCompletedEvent {
+                task_id: task_id.to_string(),
+                task_type: TaskType::UnitTask,
+                success,
+                error: error_msg,
+            }) {
+                warn!(
+                    "Failed to emit task completed event for subtask {}: {}",
+                    task_id, e
+                );
+            }
+
+            // Remove handle from the map after completion
+            execution_handles.write().await.remove(&task_id);
+        });
+
+        // Store the handle so it can be cancelled later
+        self.execution_handles.write().await.insert(task_id, handle);
+
+        Ok(())
+    }
+
     /// Cancels execution of a task.
     ///
     /// Returns `true` if the task was found and aborted, `false` if it wasn't

@@ -568,6 +568,128 @@ impl<E: EventEmitter + 'static> TaskExecutor<E> {
         self.task_cleanup_info.read().await.len()
     }
 
+    /// Runs an agent in an existing worktree directory.
+    ///
+    /// Unlike `run_agent_task`, this does not create or clean up a worktree.
+    /// It runs the agent directly in the provided directory, which is useful
+    /// for subtasks that operate on an already-existing worktree from a parent
+    /// task.
+    pub async fn run_agent_in_worktree(
+        config: TaskExecutionConfig,
+        emitter: Arc<E>,
+        tty_manager: Arc<TtyInputRequestManager>,
+        worktree_path: PathBuf,
+    ) -> ExecutionResult {
+        let task_id = config.task_id;
+        let session_id = config.session_id;
+
+        if !worktree_path.exists() {
+            error!(
+                "Worktree path does not exist for subtask {}: {:?}",
+                task_id, worktree_path
+            );
+            return ExecutionResult::Failed {
+                error: format!("Worktree path does not exist: {:?}", worktree_path),
+                logs: Vec::new(),
+            };
+        }
+
+        // Create the agent configuration
+        let mut agent_config = AgentConfig::new(
+            config.agent_type,
+            worktree_path.to_string_lossy(),
+            &config.prompt,
+        );
+
+        if let Some(model) = config.agent_model {
+            agent_config = agent_config.with_model(model);
+        }
+
+        // Create the TTY handler
+        let tty_handler =
+            EventEmitterTtyHandler::new(emitter.clone(), task_id, session_id, tty_manager);
+
+        // Create an event channel
+        let (event_tx, mut event_rx) = mpsc::channel::<NormalizedEvent>(1024);
+
+        // Run the agent
+        let agent = create_agent(config.agent_type);
+
+        // Use a shared logs structure
+        let logs = Arc::new(Mutex::new(Vec::<String>::new()));
+        let logs_clone = logs.clone();
+
+        // Spawn a task to handle events
+        let emitter_clone = emitter.clone();
+        let event_handler = tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                let timestamped = TimestampedEvent {
+                    timestamp: Utc::now(),
+                    event: event.clone(),
+                };
+
+                if let Ok(json) = serde_json::to_string(&timestamped) {
+                    logs_clone.lock().await.push(json);
+                }
+
+                let output_event = AgentOutputEvent {
+                    task_id: task_id.to_string(),
+                    session_id: session_id.to_string(),
+                    event: event.clone(),
+                };
+
+                if let Err(e) = emitter_clone.emit_agent_output(output_event) {
+                    warn!("Failed to emit agent output event: {}", e);
+                }
+            }
+        });
+
+        // Run the agent
+        info!(
+            "Starting subtask agent execution for task {}, agent_type={:?}",
+            task_id, config.agent_type
+        );
+        let run_result = agent
+            .run(agent_config, event_tx, Some(Box::new(tty_handler)))
+            .await;
+        info!(
+            "Subtask agent execution completed for task {}, result={:?}",
+            task_id,
+            run_result.as_ref().map(|_| "Ok").unwrap_or("Err")
+        );
+
+        // Wait for event handler to finish
+        if let Err(e) = event_handler.await {
+            error!(
+                "Subtask event handler failed: {}. Logs collected before failure will be \
+                 preserved.",
+                e
+            );
+        }
+
+        // Collect logs
+        let collected_logs = {
+            let logs_guard = logs.lock().await;
+            logs_guard.clone()
+        };
+
+        debug!(
+            "Collected {} log entries for subtask {}",
+            collected_logs.len(),
+            task_id
+        );
+
+        match run_result {
+            Ok(()) => ExecutionResult::Success {
+                logs: collected_logs,
+            },
+            Err(e) => ExecutionResult::Failed {
+                error: e.to_string(),
+                logs: collected_logs,
+            },
+        }
+    }
+
     /// Emits a task status changed event.
     pub fn emit_status_changed(
         &self,

@@ -383,6 +383,76 @@ export function UnitTaskDetail() {
             </Card>
           )}
 
+          {task.status === UnitTaskStatus.PrOpen && (
+            <Card className="border-[hsl(var(--success))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--success))]"
+                  >
+                    <circle cx="18" cy="18" r="3" />
+                    <circle cx="6" cy="6" r="3" />
+                    <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                    <line x1="6" y1="9" x2="6" y2="21" />
+                  </svg>
+                  <CardTitle>Pull Request Created</CardTitle>
+                </div>
+                <CardDescription>
+                  A pull request has been created for this task.
+                </CardDescription>
+              </CardHeader>
+              {task.linkedPrUrl && (
+                <CardContent>
+                  <a
+                    href={task.linkedPrUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-[hsl(var(--primary))] underline"
+                  >
+                    {task.linkedPrUrl}
+                  </a>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {task.status === UnitTaskStatus.Done && (
+            <Card className="border-[hsl(var(--success))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--success))]"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  <CardTitle>Completed</CardTitle>
+                </div>
+                <CardDescription>
+                  This task has been completed and the changes have been applied.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+
           {task.status === UnitTaskStatus.Approved && (
             <Card className="border-[hsl(var(--success))]">
               <CardHeader>
