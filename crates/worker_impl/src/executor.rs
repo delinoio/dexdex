@@ -258,9 +258,32 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         // Transition Pending → InProgress when execution actually starts.
         // Standalone tasks are already InProgress; composite task children start
         // as Pending and only transition here once their dependencies are met.
+        //
+        // Race-condition guard: the graph monitor's `started_tasks` set is the
+        // primary barrier against duplicate starts, but as a defence-in-depth
+        // measure we re-fetch the task and bail out if its status has already
+        // been moved past Pending by another thread.
         if task.status == UnitTaskStatus::Pending {
+            // Re-fetch to get the latest status from the database, reducing the
+            // window between the initial read and the update.
+            let fresh_task = self
+                .task_store
+                .get_unit_task(task_id)
+                .await
+                .map_err(|e| format!("Failed to re-fetch task for status check: {}", e))?
+                .ok_or_else(|| format!("Task not found on re-fetch: {}", task_id))?;
+
+            if fresh_task.status != UnitTaskStatus::Pending {
+                warn!(
+                    "Task {} status changed from Pending to {:?} before we could transition it; \
+                     skipping duplicate execution",
+                    task_id, fresh_task.status
+                );
+                return Ok(());
+            }
+
             let old_status = "pending".to_string();
-            let mut updated_task = task.clone();
+            let mut updated_task = fresh_task;
             updated_task.status = UnitTaskStatus::InProgress;
             updated_task.updated_at = Utc::now();
             self.task_store
@@ -2406,6 +2429,9 @@ mod tests {
         assert!(!LocalExecutor::<DummyEmitter>::is_terminal_status(
             &UnitTaskStatus::InProgress
         ));
+        assert!(!LocalExecutor::<DummyEmitter>::is_terminal_status(
+            &UnitTaskStatus::Pending
+        ));
     }
 
     /// Verifies is_successfully_complete only includes positive completion
@@ -2429,6 +2455,9 @@ mod tests {
         // Not successful completions
         assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
             &UnitTaskStatus::InProgress
+        ));
+        assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
+            &UnitTaskStatus::Pending
         ));
         assert!(!LocalExecutor::<DummyEmitter>::is_successfully_complete(
             &UnitTaskStatus::Failed
