@@ -19,8 +19,6 @@ use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
 
-#[cfg(not(desktop))]
-use crate::state::ERR_LOCAL_MODE_NOT_SUPPORTED;
 use crate::{
     config::AppMode,
     error::{AppError, AppResult},
@@ -30,7 +28,7 @@ use crate::{
         rpc_to_entity_composite_task, rpc_to_entity_unit_task, validate_optional_name,
         validate_text, validate_uuid_string,
     },
-    state::AppState,
+    state::{AppState, ERR_LOCAL_MODE_NOT_SUPPORTED},
 };
 
 // =============================================================================
@@ -304,13 +302,13 @@ pub struct RespondTtyInputParams {
 /// - Rate limiting to prevent resource exhaustion
 /// - Prompt validation to prevent oversized inputs
 /// - Title validation for sanity
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn create_unit_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     params: CreateUnitTaskParams,
 ) -> AppResult<UnitTask> {
     // SECURITY: Check rate limit before processing
+    #[cfg(desktop)]
     check_rate_limit()?;
 
     // SECURITY: Validate prompt to prevent oversized inputs
@@ -355,101 +353,64 @@ pub async fn create_unit_task(
         return Ok(task);
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    #[cfg(desktop)]
+    {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let repo_group_id = Uuid::parse_str(&params.repository_group_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository group ID: {}", e)))?;
-
-    let agent_type = params
-        .ai_agent_type
-        .as_deref()
-        .map(parse_agent_type)
-        .transpose()?
-        .unwrap_or(AiAgentType::ClaudeCode);
-
-    // Create an AgentTask first
-    let mut agent_task = AgentTask::new();
-    agent_task.ai_agent_type = Some(agent_type);
-    agent_task.ai_agent_model.clone_from(&params.ai_agent_model);
-    let agent_task = runtime
-        .task_store_arc()
-        .create_agent_task(agent_task)
-        .await?;
-
-    // Create the UnitTask
-    let mut task = UnitTask::new(repo_group_id, agent_task.id, &params.prompt);
-    if let Some(title) = params.title {
-        task = task.with_title(title);
-    }
-    if let Some(branch_name) = params.branch_name {
-        task = task.with_branch_name(branch_name);
-    }
-
-    let created = runtime.task_store_arc().create_unit_task(task).await?;
-    info!("Created unit task: {}", created.id);
-
-    // Trigger task execution if executor is initialized
-    if let Some(executor) = runtime.executor().await {
-        let task_id = created.id;
-        tokio::spawn(async move {
-            if let Err(e) = executor.execute_unit_task(task_id).await {
-                tracing::error!("Failed to start task execution for {}: {}", task_id, e);
-            }
-        });
-    } else {
-        tracing::warn!(
-            "Executor not initialized, task {} will not be executed",
-            created.id
-        );
-    }
-
-    Ok(created)
-}
-
-/// Creates a new unit task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn create_unit_task(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    params: CreateUnitTaskParams,
-) -> AppResult<UnitTask> {
-    let state = state.read().await;
-
-    // Validate input parameters
-    validate_uuid_string(&params.repository_group_id, "repository group ID")?;
-    validate_text(&params.prompt, "prompt")?;
-    validate_optional_name(params.title.as_deref(), "title")?;
-    validate_optional_name(params.branch_name.as_deref(), "branch name")?;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let repo_group_id = Uuid::parse_str(&params.repository_group_id).map_err(|e| {
+            AppError::InvalidRequest(format!("Invalid repository group ID: {}", e))
+        })?;
 
         let agent_type = params
             .ai_agent_type
             .as_deref()
             .map(parse_agent_type)
             .transpose()?
-            .map(entity_to_rpc_agent_type);
+            .unwrap_or(AiAgentType::ClaudeCode);
 
-        let request = requests::CreateUnitTaskRequest {
-            repository_group_id: params.repository_group_id,
-            prompt: params.prompt,
-            title: params.title,
-            branch_name: params.branch_name,
-            ai_agent_type: agent_type,
-            ai_agent_model: params.ai_agent_model,
-        };
+        // Create an AgentTask first
+        let mut agent_task = AgentTask::new();
+        agent_task.ai_agent_type = Some(agent_type);
+        agent_task.ai_agent_model.clone_from(&params.ai_agent_model);
+        let agent_task = runtime
+            .task_store_arc()
+            .create_agent_task(agent_task)
+            .await?;
 
-        let response = client.create_unit_task(request).await?;
-        let task = rpc_to_entity_unit_task(response.task)?;
-        info!("Created unit task via remote: {}", task.id);
-        return Ok(task);
+        // Create the UnitTask
+        let mut task = UnitTask::new(repo_group_id, agent_task.id, &params.prompt);
+        if let Some(title) = params.title {
+            task = task.with_title(title);
+        }
+        if let Some(branch_name) = params.branch_name {
+            task = task.with_branch_name(branch_name);
+        }
+
+        let created = runtime.task_store_arc().create_unit_task(task).await?;
+        info!("Created unit task: {}", created.id);
+
+        // Trigger task execution if executor is initialized
+        if let Some(executor) = runtime.executor().await {
+            let task_id = created.id;
+            tokio::spawn(async move {
+                if let Err(e) = executor.execute_unit_task(task_id).await {
+                    tracing::error!("Failed to start task execution for {}: {}", task_id, e);
+                }
+            });
+        } else {
+            tracing::warn!(
+                "Executor not initialized, task {} will not be executed",
+                created.id
+            );
+        }
+
+        return Ok(created);
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -462,13 +423,13 @@ pub async fn create_unit_task(
 /// - Rate limiting to prevent resource exhaustion
 /// - Prompt validation to prevent oversized inputs
 /// - Title validation for sanity
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn create_composite_task(
     state: State<'_, Arc<RwLock<AppState>>>,
     params: CreateCompositeTaskParams,
 ) -> AppResult<CompositeTask> {
     // SECURITY: Check rate limit before processing
+    #[cfg(desktop)]
     check_rate_limit()?;
 
     // SECURITY: Validate prompt to prevent oversized inputs
@@ -518,122 +479,79 @@ pub async fn create_composite_task(
         return Ok(task);
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    #[cfg(desktop)]
+    {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let repo_group_id = Uuid::parse_str(&params.repository_group_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid repository group ID: {}", e)))?;
-
-    let execution_agent_type = params
-        .execution_agent_type
-        .as_deref()
-        .map(parse_agent_type)
-        .transpose()?;
-
-    let planning_agent_type = params
-        .planning_agent_type
-        .as_deref()
-        .map(parse_agent_type)
-        .transpose()?
-        .unwrap_or(AiAgentType::ClaudeCode);
-
-    // Create a planning AgentTask
-    let mut planning_task = AgentTask::new();
-    planning_task.ai_agent_type = Some(planning_agent_type);
-    let planning_task = runtime
-        .task_store_arc()
-        .create_agent_task(planning_task)
-        .await?;
-
-    // Create the CompositeTask
-    let mut task = CompositeTask::new(repo_group_id, planning_task.id, &params.prompt);
-    if let Some(title) = params.title {
-        task = task.with_title(title);
-    }
-    if let Some(agent_type) = execution_agent_type {
-        task = task.with_execution_agent_type(agent_type);
-    }
-
-    let created = runtime.task_store_arc().create_composite_task(task).await?;
-    info!("Created composite task: {}", created.id);
-
-    // Trigger planning task execution if executor is initialized
-    if let Some(executor) = runtime.executor().await {
-        let composite_task_id = created.id;
-        tokio::spawn(async move {
-            if let Err(e) = executor.execute_composite_task(composite_task_id).await {
-                tracing::error!(
-                    "Failed to start planning execution for composite task {}: {}",
-                    composite_task_id,
-                    e
-                );
-            }
-        });
-    } else {
-        tracing::warn!(
-            "Executor not initialized, composite task {} planning will not be executed",
-            created.id
-        );
-    }
-
-    Ok(created)
-}
-
-/// Creates a new composite task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn create_composite_task(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    params: CreateCompositeTaskParams,
-) -> AppResult<CompositeTask> {
-    let state = state.read().await;
-
-    // Validate input parameters
-    validate_uuid_string(&params.repository_group_id, "repository group ID")?;
-    validate_text(&params.prompt, "prompt")?;
-    validate_optional_name(params.title.as_deref(), "title")?;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
+        let repo_group_id = Uuid::parse_str(&params.repository_group_id).map_err(|e| {
+            AppError::InvalidRequest(format!("Invalid repository group ID: {}", e))
+        })?;
 
         let execution_agent_type = params
             .execution_agent_type
             .as_deref()
             .map(parse_agent_type)
-            .transpose()?
-            .map(entity_to_rpc_agent_type);
+            .transpose()?;
 
         let planning_agent_type = params
             .planning_agent_type
             .as_deref()
             .map(parse_agent_type)
             .transpose()?
-            .map(entity_to_rpc_agent_type);
+            .unwrap_or(AiAgentType::ClaudeCode);
 
-        let request = requests::CreateCompositeTaskRequest {
-            repository_group_id: params.repository_group_id,
-            prompt: params.prompt,
-            title: params.title,
-            execution_agent_type,
-            planning_agent_type,
-        };
+        // Create a planning AgentTask
+        let mut planning_task = AgentTask::new();
+        planning_task.ai_agent_type = Some(planning_agent_type);
+        let planning_task = runtime
+            .task_store_arc()
+            .create_agent_task(planning_task)
+            .await?;
 
-        let response = client.create_composite_task(request).await?;
-        let task = rpc_to_entity_composite_task(response.task)?;
-        info!("Created composite task via remote: {}", task.id);
-        return Ok(task);
+        // Create the CompositeTask
+        let mut task = CompositeTask::new(repo_group_id, planning_task.id, &params.prompt);
+        if let Some(title) = params.title {
+            task = task.with_title(title);
+        }
+        if let Some(agent_type) = execution_agent_type {
+            task = task.with_execution_agent_type(agent_type);
+        }
+
+        let created = runtime.task_store_arc().create_composite_task(task).await?;
+        info!("Created composite task: {}", created.id);
+
+        // Trigger planning task execution if executor is initialized
+        if let Some(executor) = runtime.executor().await {
+            let composite_task_id = created.id;
+            tokio::spawn(async move {
+                if let Err(e) = executor.execute_composite_task(composite_task_id).await {
+                    tracing::error!(
+                        "Failed to start planning execution for composite task {}: {}",
+                        composite_task_id,
+                        e
+                    );
+                }
+            });
+        } else {
+            tracing::warn!(
+                "Executor not initialized, composite task {} planning will not be executed",
+                created.id
+            );
+        }
+
+        return Ok(created);
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Gets a task by ID.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -664,72 +582,42 @@ pub async fn get_task(
         };
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Try to find as unit task first
-    if let Some(unit_task) = runtime.task_store_arc().get_unit_task(id).await? {
-        return Ok(TaskResponse {
-            unit_task: Some(unit_task),
-            composite_task: None,
-        });
-    }
-
-    // Try as composite task
-    if let Some(composite_task) = runtime.task_store_arc().get_composite_task(id).await? {
-        return Ok(TaskResponse {
-            unit_task: None,
-            composite_task: Some(composite_task),
-        });
-    }
-
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
-}
-
-/// Gets a task by ID (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn get_task(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-) -> AppResult<TaskResponse> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
-
-        let request = requests::GetTaskRequest {
-            task_id: task_id.clone(),
-        };
-
-        let response = client.get_task(request).await?;
-        return match response {
-            rpc_protocol::responses::GetTaskResponse::UnitTask { unit_task } => Ok(TaskResponse {
-                unit_task: Some(rpc_to_entity_unit_task(unit_task)?),
+        // Try to find as unit task first
+        if let Some(unit_task) = runtime.task_store_arc().get_unit_task(id).await? {
+            return Ok(TaskResponse {
+                unit_task: Some(unit_task),
                 composite_task: None,
-            }),
-            rpc_protocol::responses::GetTaskResponse::CompositeTask { composite_task } => {
-                Ok(TaskResponse {
-                    unit_task: None,
-                    composite_task: Some(rpc_to_entity_composite_task(composite_task)?),
-                })
-            }
-        };
+            });
+        }
+
+        // Try as composite task
+        if let Some(composite_task) = runtime.task_store_arc().get_composite_task(id).await? {
+            return Ok(TaskResponse {
+                unit_task: None,
+                composite_task: Some(composite_task),
+            });
+        }
+
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Lists tasks with optional filters.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn list_tasks(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -779,102 +667,53 @@ pub async fn list_tasks(
         });
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    let filter = TaskFilter {
-        repository_group_id: params
-            .repository_group_id
+    #[cfg(desktop)]
+    {
+        let runtime = state
+            .local_runtime
             .as_ref()
-            .and_then(|s| Uuid::parse_str(s).ok()),
-        unit_status: params
-            .unit_status
-            .as_deref()
-            .and_then(|s| parse_unit_status(s).ok()),
-        composite_status: params
-            .composite_status
-            .as_deref()
-            .and_then(|s| parse_composite_status(s).ok()),
-        limit: params.limit.map(|l| l as u32),
-        offset: params.offset.map(|o| o as u32),
-    };
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let (unit_tasks, unit_count) = runtime
-        .task_store_arc()
-        .list_unit_tasks(filter.clone())
-        .await?;
-    let (composite_tasks, composite_count) = runtime
-        .task_store_arc()
-        .list_composite_tasks(filter)
-        .await?;
-
-    Ok(ListTasksResult {
-        unit_tasks,
-        composite_tasks,
-        total_count: (unit_count + composite_count) as i32,
-    })
-}
-
-/// Lists tasks with optional filters (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn list_tasks(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    params: ListTasksParams,
-) -> AppResult<ListTasksResult> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
-
-        let unit_status = params
-            .unit_status
-            .as_deref()
-            .and_then(|s| parse_unit_status(s).ok())
-            .map(entity_to_rpc_unit_status);
-
-        let composite_status = params
-            .composite_status
-            .as_deref()
-            .and_then(|s| parse_composite_status(s).ok())
-            .map(entity_to_rpc_composite_status);
-
-        let request = requests::ListTasksRequest {
-            repository_group_id: params.repository_group_id,
-            unit_status,
-            composite_status,
-            limit: params.limit.unwrap_or(100),
-            offset: params.offset.unwrap_or(0),
+        let filter = TaskFilter {
+            repository_group_id: params
+                .repository_group_id
+                .as_ref()
+                .and_then(|s| Uuid::parse_str(s).ok()),
+            unit_status: params
+                .unit_status
+                .as_deref()
+                .and_then(|s| parse_unit_status(s).ok()),
+            composite_status: params
+                .composite_status
+                .as_deref()
+                .and_then(|s| parse_composite_status(s).ok()),
+            limit: params.limit.map(|l| l as u32),
+            offset: params.offset.map(|o| o as u32),
         };
 
-        let response = client.list_tasks(request).await?;
-        let unit_tasks: AppResult<Vec<_>> = response
-            .unit_tasks
-            .into_iter()
-            .map(rpc_to_entity_unit_task)
-            .collect();
-        let composite_tasks: AppResult<Vec<_>> = response
-            .composite_tasks
-            .into_iter()
-            .map(rpc_to_entity_composite_task)
-            .collect();
+        let (unit_tasks, unit_count) = runtime
+            .task_store_arc()
+            .list_unit_tasks(filter.clone())
+            .await?;
+        let (composite_tasks, composite_count) = runtime
+            .task_store_arc()
+            .list_composite_tasks(filter)
+            .await?;
+
         return Ok(ListTasksResult {
-            unit_tasks: unit_tasks?,
-            composite_tasks: composite_tasks?,
-            total_count: response.total_count,
+            unit_tasks,
+            composite_tasks,
+            total_count: (unit_count + composite_count) as i32,
         });
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Approves a task.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn approve_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -896,126 +735,110 @@ pub async fn approve_task(
         return Ok(());
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Try to find and update unit task
-    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        let old_status = format!("{:?}", task.status).to_lowercase();
-        task.status = UnitTaskStatus::Approved;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_unit_task(task).await?;
-        info!("Approved unit task: {}", id);
-
-        // Emit task-status-changed so the frontend auto-updates
-        let _ = app_handle.emit(
-            event_names::TASK_STATUS_CHANGED,
-            &TaskStatusChangedEvent {
-                task_id: task_id.clone(),
-                task_type: TaskType::UnitTask,
-                old_status,
-                new_status: "approved".to_string(),
-            },
-        );
-
-        return Ok(());
-    }
-
-    // Try composite task
-    if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
-        if task.status == CompositeTaskStatus::PendingApproval {
-            task.status = CompositeTaskStatus::InProgress;
+        // Try to find and update unit task
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            let old_status = format!("{:?}", task.status).to_lowercase();
+            task.status = UnitTaskStatus::Approved;
             task.updated_at = chrono::Utc::now();
-            runtime.task_store_arc().update_composite_task(task).await?;
-            info!("Approved composite task: {}", id);
-
-            // Emit task-status-changed so the frontend auto-updates immediately
-            let _ = app_handle.emit(
-                event_names::TASK_STATUS_CHANGED,
-                &TaskStatusChangedEvent {
-                    task_id: task_id.clone(),
-                    task_type: TaskType::CompositeTask,
-                    old_status: "pending_approval".to_string(),
-                    new_status: "in_progress".to_string(),
-                },
-            );
-
-            // Trigger composite task graph execution: parse plan_yaml, create
-            // nodes and unit tasks, and start executing root tasks.
-            if let Some(executor) = runtime.executor().await {
-                let composite_task_id = id;
-                tokio::spawn(async move {
-                    if let Err(e) = executor
-                        .execute_composite_task_graph(composite_task_id)
-                        .await
-                    {
-                        tracing::error!(
-                            "Failed to start composite task graph execution for {}: {}",
-                            composite_task_id,
-                            e
-                        );
-                    }
-                });
-            } else {
-                tracing::warn!(
-                    "Executor not initialized, composite task {} graph will not be executed",
-                    id
-                );
-            }
-        } else {
-            let old_status = serde_json::to_string(&task.status)
-                .unwrap_or_default()
-                .trim_matches('"')
-                .to_string();
-            task.status = CompositeTaskStatus::Done;
-            task.updated_at = chrono::Utc::now();
-            runtime.task_store_arc().update_composite_task(task).await?;
-            info!("Approved composite task (marked done): {}", id);
+            runtime.task_store_arc().update_unit_task(task).await?;
+            info!("Approved unit task: {}", id);
 
             // Emit task-status-changed so the frontend auto-updates
             let _ = app_handle.emit(
                 event_names::TASK_STATUS_CHANGED,
                 &TaskStatusChangedEvent {
                     task_id: task_id.clone(),
-                    task_type: TaskType::CompositeTask,
+                    task_type: TaskType::UnitTask,
                     old_status,
-                    new_status: "done".to_string(),
+                    new_status: "approved".to_string(),
                 },
             );
+
+            return Ok(());
         }
-        return Ok(());
+
+        // Try composite task
+        if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
+            if task.status == CompositeTaskStatus::PendingApproval {
+                task.status = CompositeTaskStatus::InProgress;
+                task.updated_at = chrono::Utc::now();
+                runtime.task_store_arc().update_composite_task(task).await?;
+                info!("Approved composite task: {}", id);
+
+                // Emit task-status-changed so the frontend auto-updates immediately
+                let _ = app_handle.emit(
+                    event_names::TASK_STATUS_CHANGED,
+                    &TaskStatusChangedEvent {
+                        task_id: task_id.clone(),
+                        task_type: TaskType::CompositeTask,
+                        old_status: "pending_approval".to_string(),
+                        new_status: "in_progress".to_string(),
+                    },
+                );
+
+                // Trigger composite task graph execution: parse plan_yaml, create
+                // nodes and unit tasks, and start executing root tasks.
+                if let Some(executor) = runtime.executor().await {
+                    let composite_task_id = id;
+                    tokio::spawn(async move {
+                        if let Err(e) = executor
+                            .execute_composite_task_graph(composite_task_id)
+                            .await
+                        {
+                            tracing::error!(
+                                "Failed to start composite task graph execution for {}: {}",
+                                composite_task_id,
+                                e
+                            );
+                        }
+                    });
+                } else {
+                    tracing::warn!(
+                        "Executor not initialized, composite task {} graph will not be executed",
+                        id
+                    );
+                }
+            } else {
+                let old_status = serde_json::to_string(&task.status)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string();
+                task.status = CompositeTaskStatus::Done;
+                task.updated_at = chrono::Utc::now();
+                runtime.task_store_arc().update_composite_task(task).await?;
+                info!("Approved composite task (marked done): {}", id);
+
+                // Emit task-status-changed so the frontend auto-updates
+                let _ = app_handle.emit(
+                    event_names::TASK_STATUS_CHANGED,
+                    &TaskStatusChangedEvent {
+                        task_id: task_id.clone(),
+                        task_type: TaskType::CompositeTask,
+                        old_status,
+                        new_status: "done".to_string(),
+                    },
+                );
+            }
+            return Ok(());
+        }
+
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
-}
+    #[cfg(not(desktop))]
+    let _ = &app_handle;
 
-/// Approves a task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn approve_task(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
-
-        let request = requests::ApproveTaskRequest {
-            task_id: task_id.clone(),
-        };
-
-        client.approve_task(request).await?;
-        info!("Approved task via remote: {}", task_id);
-        return Ok(());
-    }
-
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1026,7 +849,6 @@ pub async fn approve_task(
 /// Note: The `reason` parameter is accepted for API completeness but is not
 /// currently persisted. This will be implemented when the entity schema
 /// supports rejection reasons.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn reject_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1049,59 +871,38 @@ pub async fn reject_task(
         return Ok(());
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Try to find and update unit task
-    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        task.status = UnitTaskStatus::Rejected;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_unit_task(task).await?;
-        info!("Rejected unit task: {}", id);
-        return Ok(());
+        // Try to find and update unit task
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            task.status = UnitTaskStatus::Rejected;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+            info!("Rejected unit task: {}", id);
+            return Ok(());
+        }
+
+        // Try composite task
+        if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
+            task.status = CompositeTaskStatus::Rejected;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_composite_task(task).await?;
+            info!("Rejected composite task: {}", id);
+            return Ok(());
+        }
+
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    // Try composite task
-    if let Some(mut task) = runtime.task_store_arc().get_composite_task(id).await? {
-        task.status = CompositeTaskStatus::Rejected;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_composite_task(task).await?;
-        info!("Rejected composite task: {}", id);
-        return Ok(());
-    }
-
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
-}
-
-/// Rejects a task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn reject_task(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-    reason: Option<String>,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
-
-        let request = requests::RejectTaskRequest {
-            task_id: task_id.clone(),
-            reason,
-        };
-
-        client.reject_task(request).await?;
-        info!("Rejected task via remote: {}", task_id);
-        return Ok(());
-    }
-
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1113,7 +914,6 @@ pub async fn reject_task(
 /// The composite task must be in `PendingApproval` or `Failed` status.
 /// This resets the task to `Planning` status, creates a new planning agent
 /// task and session, and triggers re-planning.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn update_plan_with_prompt(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1140,132 +940,116 @@ pub async fn update_plan_with_prompt(
         return Ok(());
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
-
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    // Get the composite task
-    let mut composite_task = runtime
-        .task_store_arc()
-        .get_composite_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
-
-    // Verify the task is in a state that allows re-planning
-    let previous_status = composite_task.status;
-    if previous_status != CompositeTaskStatus::PendingApproval
-        && previous_status != CompositeTaskStatus::Failed
+    #[cfg(desktop)]
     {
-        return Err(AppError::InvalidRequest(format!(
-            "Cannot update plan: task is in {} status (must be PendingApproval or Failed)",
-            previous_status
-        )));
-    }
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    // Sanitize and validate the feedback prompt
-    let sanitized_prompt = entities::sanitize_user_input(&prompt);
-    if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
-        return Err(AppError::InvalidRequest(format!(
-            "Feedback exceeds maximum length of {} characters",
-            entities::MAX_FEEDBACK_LENGTH
-        )));
-    }
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Save updated_at for optimistic concurrency check
-    let expected_updated_at = composite_task.updated_at;
+        // Get the composite task
+        let mut composite_task = runtime
+            .task_store_arc()
+            .get_composite_task(id)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("Composite task not found: {}", task_id))
+            })?;
 
-    // Re-fetch the task to check for concurrent modifications (optimistic lock)
-    // This check is done BEFORE creating the agent task or mutating the
-    // composite task to avoid side effects if a conflict is detected.
-    let current_task = runtime
-        .task_store_arc()
-        .get_composite_task(id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
-    if current_task.updated_at != expected_updated_at {
-        return Err(AppError::InvalidRequest(
-            "Task was modified concurrently. Please try again.".to_string(),
-        ));
-    }
+        // Verify the task is in a state that allows re-planning
+        let previous_status = composite_task.status;
+        if previous_status != CompositeTaskStatus::PendingApproval
+            && previous_status != CompositeTaskStatus::Failed
+        {
+            return Err(AppError::InvalidRequest(format!(
+                "Cannot update plan: task is in {} status (must be PendingApproval or Failed)",
+                previous_status
+            )));
+        }
 
-    // Store the feedback for re-planning. The executor will use the existing
-    // plan_yaml together with this feedback (instead of the original prompt)
-    // to generate a new plan.
-    composite_task.update_plan_feedback = Some(sanitized_prompt);
+        // Sanitize and validate the feedback prompt
+        let sanitized_prompt = entities::sanitize_user_input(&prompt);
+        if sanitized_prompt.len() > entities::MAX_FEEDBACK_LENGTH {
+            return Err(AppError::InvalidRequest(format!(
+                "Feedback exceeds maximum length of {} characters",
+                entities::MAX_FEEDBACK_LENGTH
+            )));
+        }
 
-    // Create a new planning agent task
-    let mut planning_task = AgentTask::new();
-    planning_task.ai_agent_type = Some(AiAgentType::ClaudeCode);
-    let planning_task = runtime
-        .task_store_arc()
-        .create_agent_task(planning_task)
-        .await?;
+        // Save updated_at for optimistic concurrency check
+        let expected_updated_at = composite_task.updated_at;
 
-    // Update the composite task with the new planning task and reset status
-    composite_task.planning_task_id = planning_task.id;
-    composite_task.status = CompositeTaskStatus::Planning;
-    composite_task.updated_at = chrono::Utc::now();
-    runtime
-        .task_store_arc()
-        .update_composite_task(composite_task)
-        .await?;
+        // Re-fetch the task to check for concurrent modifications (optimistic lock)
+        // This check is done BEFORE creating the agent task or mutating the
+        // composite task to avoid side effects if a conflict is detected.
+        let current_task = runtime
+            .task_store_arc()
+            .get_composite_task(id)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("Composite task not found: {}", task_id))
+            })?;
+        if current_task.updated_at != expected_updated_at {
+            return Err(AppError::InvalidRequest(
+                "Task was modified concurrently. Please try again.".to_string(),
+            ));
+        }
 
-    info!(
-        task_id = %id,
-        prompt_length = prompt.len(),
-        previous_status = %previous_status,
-        "Updated composite task for re-planning with new prompt"
-    );
+        // Store the feedback for re-planning. The executor will use the existing
+        // plan_yaml together with this feedback (instead of the original prompt)
+        // to generate a new plan.
+        composite_task.update_plan_feedback = Some(sanitized_prompt);
 
-    // Trigger re-planning if executor is initialized
-    if let Some(executor) = runtime.executor().await {
-        let composite_task_id = id;
-        tokio::spawn(async move {
-            if let Err(e) = executor.execute_composite_task(composite_task_id).await {
-                tracing::error!(
-                    "Failed to start re-planning execution for composite task {}: {}",
-                    composite_task_id,
-                    e
-                );
-            }
-        });
-    } else {
-        tracing::warn!(
-            "Executor not initialized, composite task {} re-planning will not be executed",
-            id
+        // Create a new planning agent task
+        let mut planning_task = AgentTask::new();
+        planning_task.ai_agent_type = Some(AiAgentType::ClaudeCode);
+        let planning_task = runtime
+            .task_store_arc()
+            .create_agent_task(planning_task)
+            .await?;
+
+        // Update the composite task with the new planning task and reset status
+        composite_task.planning_task_id = planning_task.id;
+        composite_task.status = CompositeTaskStatus::Planning;
+        composite_task.updated_at = chrono::Utc::now();
+        runtime
+            .task_store_arc()
+            .update_composite_task(composite_task)
+            .await?;
+
+        info!(
+            task_id = %id,
+            prompt_length = prompt.len(),
+            previous_status = %previous_status,
+            "Updated composite task for re-planning with new prompt"
         );
-    }
 
-    Ok(())
-}
+        // Trigger re-planning if executor is initialized
+        if let Some(executor) = runtime.executor().await {
+            let composite_task_id = id;
+            tokio::spawn(async move {
+                if let Err(e) = executor.execute_composite_task(composite_task_id).await {
+                    tracing::error!(
+                        "Failed to start re-planning execution for composite task {}: {}",
+                        composite_task_id,
+                        e
+                    );
+                }
+            });
+        } else {
+            tracing::warn!(
+                "Executor not initialized, composite task {} re-planning will not be executed",
+                id
+            );
+        }
 
-/// Updates the plan for a composite task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn update_plan_with_prompt(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-    prompt: String,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::UpdatePlanRequest {
-            task_id: task_id.clone(),
-            prompt: prompt.clone(),
-        };
-
-        client.update_plan(request).await?;
-        info!("Updated plan via remote for task: {}", task_id);
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1276,7 +1060,6 @@ pub async fn update_plan_with_prompt(
 /// In local mode, this creates a subtask that applies the requested changes
 /// using the AI agent. The feedback (including any inline review comments)
 /// is passed as the prompt. On completion the task returns to InReview.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn request_changes(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1303,99 +1086,74 @@ pub async fn request_changes(
         return Ok(());
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Validate executor exists before transitioning state to avoid leaving
-    // the task stuck in Approved if the executor is unavailable.
-    let executor = runtime
-        .executor()
-        .await
-        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+        // Validate executor exists before transitioning state to avoid leaving
+        // the task stuck in Approved if the executor is unavailable.
+        let executor = runtime
+            .executor()
+            .await
+            .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-    // Verify the unit task exists and is in a reviewable state.
-    // We need to first approve the task so execute_subtask can run
-    // (it requires Approved status).
-    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        if task.status != UnitTaskStatus::InReview {
-            return Err(AppError::InvalidRequest(format!(
-                "Task {} is not in InReview status (current: {:?})",
-                task_id, task.status
+        // Verify the unit task exists and is in a reviewable state.
+        // We need to first approve the task so execute_subtask can run
+        // (it requires Approved status).
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            if task.status != UnitTaskStatus::InReview {
+                return Err(AppError::InvalidRequest(format!(
+                    "Task {} is not in InReview status (current: {:?})",
+                    task_id, task.status
+                )));
+            }
+
+            // Transition to Approved so execute_subtask can pick it up
+            task.status = UnitTaskStatus::Approved;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+        } else {
+            return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+        }
+
+        let prompt = format!(
+            "The reviewer has requested changes to your work. Please apply the following feedback \
+             and fix any issues mentioned. After applying all changes, make sure the code compiles \
+             and works correctly.\n\n--- Requested Changes ---\n{}",
+            feedback
+        );
+
+        if let Err(e) = executor
+            .execute_subtask(id, prompt, UnitTaskStatus::InReview)
+            .await
+        {
+            // Revert task status back to InReview on failure so the user can retry
+            if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+                task.status = UnitTaskStatus::InReview;
+                task.updated_at = chrono::Utc::now();
+                runtime.task_store_arc().update_unit_task(task).await?;
+            }
+            return Err(AppError::Internal(format!(
+                "Failed to start request-changes subtask: {}",
+                e
             )));
         }
 
-        // Transition to Approved so execute_subtask can pick it up
-        task.status = UnitTaskStatus::Approved;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_unit_task(task).await?;
-    } else {
-        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
-    }
-
-    let prompt = format!(
-        "The reviewer has requested changes to your work. Please apply the following feedback and \
-         fix any issues mentioned. After applying all changes, make sure the code compiles and \
-         works correctly.\n\n--- Requested Changes ---\n{}",
-        feedback
-    );
-
-    if let Err(e) = executor
-        .execute_subtask(id, prompt, UnitTaskStatus::InReview)
-        .await
-    {
-        // Revert task status back to InReview on failure so the user can retry
-        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-            task.status = UnitTaskStatus::InReview;
-            task.updated_at = chrono::Utc::now();
-            runtime.task_store_arc().update_unit_task(task).await?;
-        }
-        return Err(AppError::Internal(format!(
-            "Failed to start request-changes subtask: {}",
-            e
-        )));
-    }
-
-    info!(
-        "Started request-changes subtask for unit task: {} (feedback length: {})",
-        id,
-        feedback.len()
-    );
-    Ok(())
-}
-
-/// Requests changes for a task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn request_changes(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-    feedback: String,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    // Validate input parameters
-    validate_uuid_string(&task_id, "task ID")?;
-    validate_text(&feedback, "feedback")?;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
-
-        let request = requests::RequestChangesRequest {
-            task_id: task_id.clone(),
-            feedback: feedback.clone(),
-        };
-
-        client.request_changes(request).await?;
-        info!("Requested changes via remote for task: {}", task_id);
+        info!(
+            "Started request-changes subtask for unit task: {} (feedback length: {})",
+            id,
+            feedback.len()
+        );
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1405,7 +1163,6 @@ pub async fn request_changes(
 ///
 /// Returns normalized events from the agent session output.
 /// Only accepts agent task IDs directly.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn get_task_logs(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1415,7 +1172,7 @@ pub async fn get_task_logs(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        // In remote mode on desktop, we currently return minimal data
+        // In remote mode, we currently return minimal data
         // Full log streaming support requires additional server-side work
         // For now, return an empty response indicating task is complete
         // TODO: Implement proper remote log streaming (agent_task_id and after_event_id
@@ -1428,165 +1185,142 @@ pub async fn get_task_logs(
         });
     }
 
-    let agent_task_id = Uuid::parse_str(&agent_task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid agent task ID: {}", e)))?;
-
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
-
-    // Verify the agent task exists
-    if runtime
-        .task_store_arc()
-        .get_agent_task(agent_task_id)
-        .await?
-        .is_none()
+    #[cfg(desktop)]
     {
-        return Err(AppError::NotFound(format!(
-            "Agent task not found: {}",
-            agent_task_id
-        )));
-    }
+        let agent_task_id = Uuid::parse_str(&agent_task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid agent task ID: {}", e)))?;
 
-    // Get the sessions for the agent task
-    let mut sessions = runtime
-        .task_store_arc()
-        .list_agent_sessions(agent_task_id)
-        .await?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Sort sessions by created_at to ensure chronological order
-    sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        // Verify the agent task exists
+        if runtime
+            .task_store_arc()
+            .get_agent_task(agent_task_id)
+            .await?
+            .is_none()
+        {
+            return Err(AppError::NotFound(format!(
+                "Agent task not found: {}",
+                agent_task_id
+            )));
+        }
 
-    // If no sessions, return empty (task hasn't started yet)
-    if sessions.is_empty() {
-        return Ok(TaskLogsResponse {
-            events: Vec::new(),
-            is_complete: false,
-            last_event_id: None,
-            sessions: Vec::new(),
-        });
-    }
+        // Get the sessions for the agent task
+        let mut sessions = runtime
+            .task_store_arc()
+            .list_agent_sessions(agent_task_id)
+            .await?;
 
-    // Build grouped session logs for all sessions
-    let mut session_groups: Vec<SessionLogsGroup> = Vec::new();
-    for (session_idx, session) in sessions.iter().enumerate() {
-        let mut session_events = Vec::new();
+        // Sort sessions by created_at to ensure chronological order
+        sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-        if let Some(output_log) = &session.output_log {
+        // If no sessions, return empty (task hasn't started yet)
+        if sessions.is_empty() {
+            return Ok(TaskLogsResponse {
+                events: Vec::new(),
+                is_complete: false,
+                last_event_id: None,
+                sessions: Vec::new(),
+            });
+        }
+
+        // Build grouped session logs for all sessions
+        let mut session_groups: Vec<SessionLogsGroup> = Vec::new();
+        for (session_idx, session) in sessions.iter().enumerate() {
+            let mut session_events = Vec::new();
+
+            if let Some(output_log) = &session.output_log {
+                for (idx, line) in output_log.lines().enumerate() {
+                    let event_id = idx as i64;
+
+                    if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
+                        session_events.push(NormalizedEventEntry {
+                            id: event_id,
+                            timestamp: timestamped.timestamp.to_rfc3339(),
+                            event: timestamped.event,
+                        });
+                    } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+                        session_events.push(NormalizedEventEntry {
+                            id: event_id,
+                            timestamp: session.created_at.to_rfc3339(),
+                            event,
+                        });
+                    }
+                }
+            }
+
+            // First session is "Main Execution", subsequent are subtask sessions
+            let label = if session_idx == 0 {
+                "Main Execution".to_string()
+            } else {
+                format!("Subtask {}", session_idx)
+            };
+
+            session_groups.push(SessionLogsGroup {
+                session_id: session.id.to_string(),
+                label,
+                events: session_events,
+                is_complete: session.completed_at.is_some(),
+                created_at: session.created_at.to_rfc3339(),
+            });
+        }
+
+        // For backward compatibility, the top-level `events` field still contains
+        // the latest session's events (used by the real-time streaming path).
+        let latest_session = sessions.last().unwrap();
+        let is_complete = latest_session.completed_at.is_some();
+        let mut events = Vec::new();
+        let mut last_event_id: Option<i64> = None;
+
+        if let Some(output_log) = &latest_session.output_log {
             for (idx, line) in output_log.lines().enumerate() {
                 let event_id = idx as i64;
 
+                if let Some(after_id) = after_event_id {
+                    if event_id <= after_id {
+                        continue;
+                    }
+                }
+
                 if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
-                    session_events.push(NormalizedEventEntry {
+                    events.push(NormalizedEventEntry {
                         id: event_id,
                         timestamp: timestamped.timestamp.to_rfc3339(),
                         event: timestamped.event,
                     });
+                    last_event_id = Some(event_id);
                 } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
-                    session_events.push(NormalizedEventEntry {
+                    events.push(NormalizedEventEntry {
                         id: event_id,
-                        timestamp: session.created_at.to_rfc3339(),
+                        timestamp: latest_session.created_at.to_rfc3339(),
                         event,
                     });
+                    last_event_id = Some(event_id);
                 }
             }
         }
 
-        // First session is "Main Execution", subsequent are subtask sessions
-        let label = if session_idx == 0 {
-            "Main Execution".to_string()
-        } else {
-            format!("Subtask {}", session_idx)
-        };
-
-        session_groups.push(SessionLogsGroup {
-            session_id: session.id.to_string(),
-            label,
-            events: session_events,
-            is_complete: session.completed_at.is_some(),
-            created_at: session.created_at.to_rfc3339(),
-        });
-    }
-
-    // For backward compatibility, the top-level `events` field still contains
-    // the latest session's events (used by the real-time streaming path).
-    let latest_session = sessions.last().unwrap();
-    let is_complete = latest_session.completed_at.is_some();
-    let mut events = Vec::new();
-    let mut last_event_id: Option<i64> = None;
-
-    if let Some(output_log) = &latest_session.output_log {
-        for (idx, line) in output_log.lines().enumerate() {
-            let event_id = idx as i64;
-
-            if let Some(after_id) = after_event_id {
-                if event_id <= after_id {
-                    continue;
-                }
-            }
-
-            if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
-                events.push(NormalizedEventEntry {
-                    id: event_id,
-                    timestamp: timestamped.timestamp.to_rfc3339(),
-                    event: timestamped.event,
-                });
-                last_event_id = Some(event_id);
-            } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
-                events.push(NormalizedEventEntry {
-                    id: event_id,
-                    timestamp: latest_session.created_at.to_rfc3339(),
-                    event,
-                });
-                last_event_id = Some(event_id);
-            }
-        }
-    }
-
-    Ok(TaskLogsResponse {
-        events,
-        is_complete,
-        last_event_id,
-        sessions: session_groups,
-    })
-}
-
-/// Gets logs for an agent task (mobile - remote mode only).
-///
-/// Note: In remote mode, we fetch the session log from the server. The log
-/// format may differ from local mode as we receive it as a single string
-/// rather than parsed events.
-#[cfg(not(desktop))]
-#[tauri::command]
-#[allow(unused_variables)]
-pub async fn get_task_logs(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    agent_task_id: String,
-    after_event_id: Option<i64>,
-) -> AppResult<TaskLogsResponse> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // In remote mode for mobile, we currently return minimal data
-        // Full log streaming support requires additional server-side work
-        // For now, return an empty response indicating task is complete
-        // TODO: Implement proper remote log streaming
         return Ok(TaskLogsResponse {
-            events: Vec::new(),
-            is_complete: true,
-            last_event_id: None,
-            sessions: Vec::new(),
+            events,
+            is_complete,
+            last_event_id,
+            sessions: session_groups,
         });
     }
 
+    #[cfg(not(desktop))]
+    let _ = (&agent_task_id, &after_event_id);
+
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Cancels a running task.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn cancel_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1600,75 +1334,68 @@ pub async fn cancel_task(
         ));
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Get the executor and cancel the execution
-    let executor = runtime
-        .executor()
-        .await
-        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+        // Get the executor and cancel the execution
+        let executor = runtime
+            .executor()
+            .await
+            .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-    let was_cancelled = executor.cancel_execution(id).await;
+        let was_cancelled = executor.cancel_execution(id).await;
 
-    if was_cancelled {
-        // Update task status to cancelled
-        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-            // Only update status if the task is still in progress
-            // This prevents race conditions where the task completes just before
-            // cancellation
-            if task.status == UnitTaskStatus::InProgress {
-                task.status = UnitTaskStatus::Cancelled;
-                task.updated_at = chrono::Utc::now();
-                if let Err(e) = runtime.task_store_arc().update_unit_task(task).await {
-                    tracing::error!("Failed to update task status after cancellation: {}", e);
-                    return Err(e.into());
+        if was_cancelled {
+            // Update task status to cancelled
+            if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+                // Only update status if the task is still in progress
+                // This prevents race conditions where the task completes just before
+                // cancellation
+                if task.status == UnitTaskStatus::InProgress {
+                    task.status = UnitTaskStatus::Cancelled;
+                    task.updated_at = chrono::Utc::now();
+                    if let Err(e) = runtime.task_store_arc().update_unit_task(task).await {
+                        tracing::error!(
+                            "Failed to update task status after cancellation: {}",
+                            e
+                        );
+                        return Err(e.into());
+                    }
+                } else {
+                    tracing::warn!(
+                        "Task {} was cancelled but status was already {:?}, not updating",
+                        id,
+                        task.status
+                    );
                 }
             } else {
-                tracing::warn!(
-                    "Task {} was cancelled but status was already {:?}, not updating",
-                    id,
-                    task.status
-                );
+                tracing::warn!("Task {} was cancelled but not found in store", id);
             }
+            info!("Cancelled task: {}", id);
         } else {
-            tracing::warn!("Task {} was cancelled but not found in store", id);
+            info!("Task {} was not running or already completed", id);
         }
-        info!("Cancelled task: {}", id);
-    } else {
-        info!("Task {} was not running or already completed", id);
+
+        return Ok(());
     }
 
-    Ok(())
-}
+    #[cfg(not(desktop))]
+    let _ = &task_id;
 
-/// Cancels a running task (mobile stub - local mode not supported).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn cancel_task(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    _task_id: String,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
-    }
-
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
-        "Local mode is not supported on this platform".to_string(),
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Responds to a TTY input request from an agent.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn respond_tty_input(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1690,57 +1417,37 @@ pub async fn respond_tty_input(
         return Ok(());
     }
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+    #[cfg(desktop)]
+    {
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let request_id = Uuid::parse_str(&params.request_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid request ID: {}", e)))?;
+        let request_id = Uuid::parse_str(&params.request_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid request ID: {}", e)))?;
 
-    // Get the TTY request manager
-    let tty_manager = runtime
-        .tty_request_manager()
-        .await
-        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+        // Get the TTY request manager
+        let tty_manager = runtime
+            .tty_request_manager()
+            .await
+            .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-    // Respond to the request
-    let delivered = tty_manager.respond(request_id, params.response).await;
+        // Respond to the request
+        let delivered = tty_manager.respond(request_id, params.response).await;
 
-    if !delivered {
-        return Err(AppError::NotFound(format!(
-            "TTY request not found or already responded: {}",
-            params.request_id
-        )));
-    }
+        if !delivered {
+            return Err(AppError::NotFound(format!(
+                "TTY request not found or already responded: {}",
+                params.request_id
+            )));
+        }
 
-    info!("Responded to TTY input request: {}", params.request_id);
-    Ok(())
-}
-
-/// Responds to a TTY input request from an agent (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn respond_tty_input(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    params: RespondTtyInputParams,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // Remote mode: make API call to main server
-        let client = state.get_remote_client()?;
-
-        let request = requests::SubmitTtyInputRequest {
-            request_id: params.request_id.clone(),
-            response: params.response,
-        };
-
-        client.submit_tty_input(request).await?;
-        info!("Responded to TTY input via remote: {}", params.request_id);
+        info!("Responded to TTY input request: {}", params.request_id);
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
@@ -1752,7 +1459,6 @@ pub async fn respond_tty_input(
 /// Remote mode support for task graph visualization requires additional
 /// server-side API endpoints. For now, in remote mode we return an empty
 /// result. The frontend gracefully handles this.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn get_composite_task_nodes(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1769,68 +1475,55 @@ pub async fn get_composite_task_nodes(
         return Ok(CompositeTaskNodesResult { nodes: Vec::new() });
     }
 
-    let id = Uuid::parse_str(&composite_task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid composite task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&composite_task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid composite task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let nodes = runtime
-        .task_store_arc()
-        .list_composite_task_nodes(id)
-        .await?;
-
-    // TODO(performance): Consider adding a bulk fetch method
-    // `get_unit_tasks_by_ids(Vec<Uuid>)` to the TaskStore trait to avoid N+1
-    // queries for large graphs. For now, this is acceptable for typical graph
-    // sizes (< 50 nodes).
-    let mut result = Vec::with_capacity(nodes.len());
-    for node in nodes {
-        if let Some(unit_task) = runtime
+        let nodes = runtime
             .task_store_arc()
-            .get_unit_task(node.unit_task_id)
-            .await?
-        {
-            result.push(CompositeTaskNodeWithUnitTask { node, unit_task });
-        } else {
-            tracing::warn!(
-                "CompositeTaskNode {} references missing UnitTask {}",
-                node.id,
-                node.unit_task_id
-            );
+            .list_composite_task_nodes(id)
+            .await?;
+
+        // TODO(performance): Consider adding a bulk fetch method
+        // `get_unit_tasks_by_ids(Vec<Uuid>)` to the TaskStore trait to avoid N+1
+        // queries for large graphs. For now, this is acceptable for typical graph
+        // sizes (< 50 nodes).
+        let mut result = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            if let Some(unit_task) = runtime
+                .task_store_arc()
+                .get_unit_task(node.unit_task_id)
+                .await?
+            {
+                result.push(CompositeTaskNodeWithUnitTask { node, unit_task });
+            } else {
+                tracing::warn!(
+                    "CompositeTaskNode {} references missing UnitTask {}",
+                    node.id,
+                    node.unit_task_id
+                );
+            }
         }
+
+        return Ok(CompositeTaskNodesResult { nodes: result });
     }
 
-    Ok(CompositeTaskNodesResult { nodes: result })
-}
+    #[cfg(not(desktop))]
+    let _ = &composite_task_id;
 
-/// Gets all nodes for a composite task (mobile - remote mode only).
-///
-/// Note: Remote mode support for task graph visualization requires additional
-/// server-side API endpoints. For now, this returns an empty result.
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn get_composite_task_nodes(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    _composite_task_id: String,
-) -> AppResult<CompositeTaskNodesResult> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        // TODO: Implement remote API call when server supports composite task nodes
-        // endpoint For now, return an empty result
-        return Ok(CompositeTaskNodesResult { nodes: Vec::new() });
-    }
-
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Dismisses approval for a task, moving it back to InReview.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn dismiss_approval(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1851,75 +1544,59 @@ pub async fn dismiss_approval(
         return Ok(());
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        if task.status != UnitTaskStatus::Approved {
-            return Err(AppError::InvalidRequest(format!(
-                "Task {} is not in Approved status (current: {:?})",
-                task_id, task.status
-            )));
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            if task.status != UnitTaskStatus::Approved {
+                return Err(AppError::InvalidRequest(format!(
+                    "Task {} is not in Approved status (current: {:?})",
+                    task_id, task.status
+                )));
+            }
+            let old_status = "approved".to_string();
+            task.status = UnitTaskStatus::InReview;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+            info!("Dismissed approval for unit task: {}", id);
+
+            let _ = app_handle.emit(
+                event_names::TASK_STATUS_CHANGED,
+                &TaskStatusChangedEvent {
+                    task_id: task_id.clone(),
+                    task_type: TaskType::UnitTask,
+                    old_status,
+                    new_status: "in_review".to_string(),
+                },
+            );
+
+            return Ok(());
         }
-        let old_status = "approved".to_string();
-        task.status = UnitTaskStatus::InReview;
-        task.updated_at = chrono::Utc::now();
-        runtime.task_store_arc().update_unit_task(task).await?;
-        info!("Dismissed approval for unit task: {}", id);
 
-        let _ = app_handle.emit(
-            event_names::TASK_STATUS_CHANGED,
-            &TaskStatusChangedEvent {
-                task_id: task_id.clone(),
-                task_type: TaskType::UnitTask,
-                old_status,
-                new_status: "in_review".to_string(),
-            },
-        );
-
-        return Ok(());
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
-}
+    #[cfg(not(desktop))]
+    let _ = &app_handle;
 
-/// Dismisses approval for a task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn dismiss_approval(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::DismissApprovalRequest {
-            task_id: task_id.clone(),
-        };
-
-        client.dismiss_approval(request).await?;
-        info!("Dismissed approval via remote for task: {}", task_id);
-        return Ok(());
-    }
-
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Creates a pull request for an approved task.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn create_pr(
     state: State<'_, Arc<RwLock<AppState>>>,
-    _app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle,
     task_id: String,
 ) -> AppResult<String> {
     let state = state.read().await;
@@ -1936,65 +1613,54 @@ pub async fn create_pr(
         return Ok(response.pr_url);
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let _ = &app_handle;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let executor = runtime
-        .executor()
-        .await
-        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let prompt = "Create a pull request with the changes from this task. Push the current branch \
+        let executor = runtime
+            .executor()
+            .await
+            .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+        let prompt =
+            "Create a pull request with the changes from this task. Push the current branch \
                   to the remote and create a PR using the available tools (e.g. `gh pr create`). \
                   Output the PR URL."
-        .to_string();
+                .to_string();
 
-    executor
-        .execute_subtask(id, prompt, UnitTaskStatus::PrOpen)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to start PR creation subtask: {}", e)))?;
+        executor
+            .execute_subtask(id, prompt, UnitTaskStatus::PrOpen)
+            .await
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to start PR creation subtask: {}", e))
+            })?;
 
-    info!("Started PR creation subtask for unit task: {}", id);
-    Ok(String::new())
-}
-
-/// Creates a pull request for an approved task (mobile - remote mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn create_pr(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-) -> AppResult<String> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::CreatePrRequest {
-            task_id: task_id.clone(),
-        };
-
-        let response = client.create_pr(request).await?;
-        info!("Created PR via remote for task: {}", task_id);
-        return Ok(response.pr_url);
+        info!("Started PR creation subtask for unit task: {}", id);
+        return Ok(String::new());
     }
 
+    #[cfg(not(desktop))]
+    let _ = &app_handle;
+
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
 }
 
 /// Commits approved task changes to the local git repository.
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn commit_to_local(
     state: State<'_, Arc<RwLock<AppState>>>,
-    _app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle,
     task_id: String,
 ) -> AppResult<()> {
     let state = state.read().await;
@@ -2011,57 +1677,43 @@ pub async fn commit_to_local(
         return Ok(());
     }
 
-    let id = Uuid::parse_str(&task_id)
-        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+    #[cfg(desktop)]
+    {
+        let _ = &app_handle;
 
-    let runtime = state
-        .local_runtime
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
-    let executor = runtime
-        .executor()
-        .await
-        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    let prompt = "Commit the changes from this task to the local repository. Create a \
-                  well-structured commit with an appropriate commit message that summarizes the \
-                  changes made."
-        .to_string();
+        let executor = runtime
+            .executor()
+            .await
+            .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-    executor
-        .execute_subtask(id, prompt, UnitTaskStatus::Done)
-        .await
-        .map_err(|e| {
-            AppError::Internal(format!("Failed to start commit-to-local subtask: {}", e))
-        })?;
+        let prompt = "Commit the changes from this task to the local repository. Create a \
+                      well-structured commit with an appropriate commit message that summarizes \
+                      the changes made."
+            .to_string();
 
-    info!("Started commit-to-local subtask for unit task: {}", id);
-    Ok(())
-}
+        executor
+            .execute_subtask(id, prompt, UnitTaskStatus::Done)
+            .await
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to start commit-to-local subtask: {}", e))
+            })?;
 
-/// Commits approved task changes to the local git repository (mobile - remote
-/// mode only).
-#[cfg(not(desktop))]
-#[tauri::command]
-pub async fn commit_to_local(
-    state: State<'_, Arc<RwLock<AppState>>>,
-    task_id: String,
-) -> AppResult<()> {
-    let state = state.read().await;
-
-    if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::CommitToLocalRequest {
-            task_id: task_id.clone(),
-        };
-
-        client.commit_to_local(request).await?;
-        info!("Committed to local via remote for task: {}", task_id);
+        info!("Started commit-to-local subtask for unit task: {}", id);
         return Ok(());
     }
 
+    #[cfg(not(desktop))]
+    let _ = &app_handle;
+
+    #[cfg(not(desktop))]
     Err(AppError::InvalidRequest(
         ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
     ))
