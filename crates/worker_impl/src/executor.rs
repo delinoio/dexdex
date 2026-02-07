@@ -2020,10 +2020,8 @@ fn extract_pr_url_from_logs(logs: &[String]) -> Option<String> {
                 _ => None,
             };
 
-            if let Some(text) = content {
-                if let Some(url) = find_pr_url_in_text(text) {
-                    return Some(url);
-                }
+            if let Some(url) = content.and_then(find_pr_url_in_text) {
+                return Some(url);
             }
         }
     }
@@ -2038,26 +2036,26 @@ fn extract_pr_url_from_logs(logs: &[String]) -> Option<String> {
 /// - Bitbucket: `https://bitbucket.org/{owner}/{repo}/pull-requests/{number}`
 fn find_pr_url_in_text(text: &str) -> Option<String> {
     // Split by whitespace and common delimiters to find URL tokens
-    for token in text.split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '<' || c == '>') {
-        let token = token.trim_end_matches(|c: char| c == '.' || c == ',' || c == ')' || c == ']');
+    for token in text.split(|c: char| c.is_whitespace() || ['"', '\'', '<', '>'].contains(&c)) {
+        let token = token.trim_end_matches(['.', ',', ')', ']']);
         if token.starts_with("https://github.com/") && token.contains("/pull/") {
             // Validate it looks like a proper GitHub PR URL
             let parts: Vec<&str> = token.splitn(7, '/').collect();
             // https: / / github.com / owner / repo / pull / number
-            if parts.len() >= 7 {
-                if let Some(pr_num) = parts[6].split('/').next() {
-                    if pr_num.chars().all(|c| c.is_ascii_digit()) && !pr_num.is_empty() {
-                        // Reconstruct the canonical URL up to the PR number
-                        return Some(format!(
-                            "https://github.com/{}/{}/pull/{}",
-                            parts[3], parts[4], pr_num
-                        ));
-                    }
-                }
+            let pr_num = parts
+                .get(6)
+                .and_then(|s| s.split('/').next())
+                .filter(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+            if let Some(pr_num) = pr_num {
+                // Reconstruct the canonical URL up to the PR number
+                return Some(format!(
+                    "https://github.com/{}/{}/pull/{}",
+                    parts[3], parts[4], pr_num
+                ));
             }
-        } else if token.starts_with("https://gitlab.com/") && token.contains("/-/merge_requests/") {
-            return Some(token.to_string());
-        } else if token.starts_with("https://bitbucket.org/") && token.contains("/pull-requests/") {
+        } else if (token.starts_with("https://gitlab.com/") && token.contains("/-/merge_requests/"))
+            || (token.starts_with("https://bitbucket.org/") && token.contains("/pull-requests/"))
+        {
             return Some(token.to_string());
         }
     }
@@ -2234,9 +2232,7 @@ mod tests {
 
     #[test]
     fn test_find_pr_url_github() {
-        let url = find_pr_url_in_text(
-            "Created PR: https://github.com/delinoio/delidev/pull/123",
-        );
+        let url = find_pr_url_in_text("Created PR: https://github.com/delinoio/delidev/pull/123");
         assert_eq!(
             url,
             Some("https://github.com/delinoio/delidev/pull/123".to_string())
@@ -2246,7 +2242,8 @@ mod tests {
     #[test]
     fn test_find_pr_url_github_in_sentence() {
         let url = find_pr_url_in_text(
-            "I've created the pull request at https://github.com/owner/repo/pull/42. Please review it.",
+            "I've created the pull request at https://github.com/owner/repo/pull/42. Please \
+             review it.",
         );
         assert_eq!(
             url,
@@ -2272,9 +2269,7 @@ mod tests {
 
     #[test]
     fn test_find_pr_url_gitlab() {
-        let url = find_pr_url_in_text(
-            "MR: https://gitlab.com/owner/repo/-/merge_requests/456",
-        );
+        let url = find_pr_url_in_text("MR: https://gitlab.com/owner/repo/-/merge_requests/456");
         assert_eq!(
             url,
             Some("https://gitlab.com/owner/repo/-/merge_requests/456".to_string())
@@ -2283,9 +2278,7 @@ mod tests {
 
     #[test]
     fn test_find_pr_url_bitbucket() {
-        let url = find_pr_url_in_text(
-            "PR: https://bitbucket.org/owner/repo/pull-requests/789",
-        );
+        let url = find_pr_url_in_text("PR: https://bitbucket.org/owner/repo/pull-requests/789");
         assert_eq!(
             url,
             Some("https://bitbucket.org/owner/repo/pull-requests/789".to_string())
@@ -2319,10 +2312,7 @@ mod tests {
 
     #[test]
     fn test_extract_pr_url_from_logs_no_url() {
-        let logs = vec![
-            make_text_log("Starting agent..."),
-            make_text_log("Done."),
-        ];
+        let logs = vec![make_text_log("Starting agent..."), make_text_log("Done.")];
         assert_eq!(extract_pr_url_from_logs(&logs), None);
     }
 
