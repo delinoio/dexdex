@@ -22,6 +22,7 @@ export interface UseReviewCommentsReturn {
   addComment: (filePath: string, lineNumber: number, content: string) => void;
   updateComment: (commentId: string, content: string) => void;
   deleteComment: (commentId: string) => void;
+  clearAll: () => void;
   getCommentsForFile: (filePath: string) => ReviewComment[];
   getCommentsForLine: (filePath: string, lineNumber: number) => ReviewComment[];
   hasCommentsForLine: (filePath: string, lineNumber: number) => boolean;
@@ -73,6 +74,10 @@ export function useReviewComments({
     setComments((prev) => prev.filter((comment) => comment.id !== commentId));
   }, []);
 
+  const clearAll = useCallback(() => {
+    setComments([]);
+  }, []);
+
   const getCommentsForFile = useCallback(
     (filePath: string): ReviewComment[] => {
       return comments.filter((comment) => comment.filePath === filePath);
@@ -107,6 +112,7 @@ export function useReviewComments({
     addComment,
     updateComment,
     deleteComment,
+    clearAll,
     getCommentsForFile,
     getCommentsForLine,
     hasCommentsForLine,

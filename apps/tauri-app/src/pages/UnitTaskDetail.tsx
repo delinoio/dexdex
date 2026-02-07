@@ -53,6 +53,7 @@ export function UnitTaskDetail() {
     addComment: addReviewComment,
     updateComment: updateReviewComment,
     deleteComment: deleteReviewComment,
+    clearAll: clearReviewComments,
     getCommentsForFile,
     commentCount: reviewCommentCount,
   } = useReviewComments({ taskId: id ?? "" });
@@ -189,7 +190,8 @@ export function UnitTaskDetail() {
     await rejectMutation.mutateAsync({ taskId: task.id });
   };
 
-  // Build the full feedback string from inline review comments + optional extra comment
+  // Build the full feedback string from inline review comments + optional extra comment.
+  // Uses filename:line format so the AI coding agent can locate each comment precisely.
   const buildFeedbackFromComments = (extra: string): string => {
     const parts: string[] = [];
 
@@ -203,12 +205,13 @@ export function UnitTaskDetail() {
         commentsByFile.set(comment.filePath, existing);
       }
       for (const [filePath, fileComments] of commentsByFile) {
-        parts.push(`### ${filePath}`);
-        for (const comment of fileComments) {
-          parts.push(`- Line ${comment.lineNumber}: ${comment.content}`);
+        // Sort comments by line number within each file
+        const sorted = [...fileComments].sort((a, b) => a.lineNumber - b.lineNumber);
+        for (const comment of sorted) {
+          parts.push(`- ${filePath}:${comment.lineNumber}: ${comment.content}`);
         }
-        parts.push("");
       }
+      parts.push("");
     }
 
     if (extra.trim()) {
@@ -223,6 +226,7 @@ export function UnitTaskDetail() {
     const feedback = buildFeedbackFromComments(extraComment);
     if (!feedback.trim()) return;
     await requestChangesMutation.mutateAsync({ taskId: task.id, feedback });
+    clearReviewComments();
     setExtraComment("");
     setShowRequestChangesDialog(false);
   };
