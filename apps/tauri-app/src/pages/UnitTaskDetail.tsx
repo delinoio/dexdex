@@ -29,6 +29,8 @@ export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [showLog, setShowLog] = useState(true);
+  // Whether showLog has been initialized based on task status (done once).
+  const showLogInitializedRef = useRef(false);
   // Tracks which session IDs are collapsed (all default to expanded)
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set());
   const [showDiff, setShowDiff] = useState(false);
@@ -69,15 +71,22 @@ export function UnitTaskDetail() {
     enabled: !!task?.agentTaskId,
   });
 
-  // Auto-collapse the session log when the task transitions out of InProgress.
-  // We track the previous status so that only a genuine transition triggers the
-  // collapse (e.g. going from InProgress -> InReview), rather than collapsing
-  // every time the component re-renders with a non-InProgress status.
+  // Collapse session log by default when the task is not InProgress.
+  // On first load, if the task has already finished, start collapsed.
+  // Also auto-collapses on a live InProgress -> non-InProgress transition.
   const prevTaskStatusRef = useRef(task?.status);
   useEffect(() => {
     const prevStatus = prevTaskStatusRef.current;
     const currentStatus = task?.status;
     prevTaskStatusRef.current = currentStatus;
+
+    if (!showLogInitializedRef.current && currentStatus !== undefined) {
+      showLogInitializedRef.current = true;
+      if (currentStatus !== UnitTaskStatus.InProgress) {
+        setShowLog(false);
+      }
+      return;
+    }
 
     if (
       prevStatus === UnitTaskStatus.InProgress &&
@@ -87,6 +96,24 @@ export function UnitTaskDetail() {
       setShowLog(false);
     }
   }, [task?.status]);
+
+  // For multi-session view: auto-collapse completed sessions.
+  // When sessions change, any session marked as complete gets collapsed
+  // (unless the user has explicitly toggled it).
+  const userToggledSessionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (sessions.length <= 1) return;
+    setCollapsedSessions((prev) => {
+      const next = new Set(prev);
+      for (const session of sessions) {
+        // Only auto-collapse sessions the user has not manually toggled
+        if (session.isComplete && !userToggledSessionsRef.current.has(session.sessionId)) {
+          next.add(session.sessionId);
+        }
+      }
+      return next;
+    });
+  }, [sessions]);
 
   // Extract token usage from session_end events
   const tokenUsage = useMemo<TokenUsage | null>(() => {
@@ -679,7 +706,8 @@ export function UnitTaskDetail() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() =>
+                        onClick={() => {
+                          userToggledSessionsRef.current.add(session.sessionId);
                           setCollapsedSessions((prev) => {
                             const next = new Set(prev);
                             if (next.has(session.sessionId)) {
@@ -688,8 +716,8 @@ export function UnitTaskDetail() {
                               next.add(session.sessionId);
                             }
                             return next;
-                          })
-                        }
+                          });
+                        }}
                       >
                         {isCollapsed ? "Show" : "Hide"}
                       </Button>
