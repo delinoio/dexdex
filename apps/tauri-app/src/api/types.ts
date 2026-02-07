@@ -124,6 +124,8 @@ export interface UnitTask {
   linkedPrUrl?: string;
   baseCommit?: string;
   endCommit?: string;
+  /** Git patch (unified diff) representing the changes made by the AI agent. */
+  gitPatch?: string;
   autoFixTaskIds: string[];
   status: UnitTaskStatus;
   createdAt: string;

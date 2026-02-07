@@ -10,6 +10,7 @@
 
 mod cache;
 mod error;
+mod patch;
 mod remote;
 mod repository;
 mod validation;
@@ -17,6 +18,7 @@ mod worktree;
 
 pub use cache::*;
 pub use error::*;
+pub use patch::*;
 pub use remote::*;
 pub use repository::*;
 pub use validation::*;

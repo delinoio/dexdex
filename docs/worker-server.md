@@ -47,6 +47,7 @@ The Worker Server executes AI coding agents in isolated Docker containers. It re
 │  │   - Worktree creation                                    │   │
 │  │   - Branch management                                    │   │
 │  │   - Commit operations                                    │   │
+│  │   - Patch generation (git_ops::generate_patch_async)     │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │                                                                 │
 │  ┌─────────────────────┐  ┌─────────────────────────────────┐  │
@@ -95,12 +96,18 @@ The Worker Server executes AI coding agents in isolated Docker containers. It re
    - If TTY input needed: notify Main Server, wait for response
    - If completed: collect output
               ▼
-9. Report Result to Main Server
-   - worker.reportStatus RPC call
+9. Generate Git Patch
+   - Capture unified diff of all changes via git_ops::generate_patch_async
+   - Store patch in UnitTask.git_patch field in database
+   - This persists changes without needing repository write access
               ▼
-10. Cleanup
+10. Report Result to Main Server
+   - worker.reportStatus RPC call (includes git_patch)
+              ▼
+11. Cleanup
    - Stop container
-   - Keep worktree for review (or cleanup if rejected)
+   - In local mode: preserve worktree while task is in_review
+   - Cleanup worktree for failed/cancelled tasks
 ```
 
 ### Repository Caching

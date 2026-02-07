@@ -196,6 +196,24 @@ impl SqliteTaskStore {
             Err(e) => return Err(e.into()),
         }
 
+        // Migration: Add git_patch column to unit_tasks
+        // Added in #210 for persisting git patches in the database
+        // so worker servers can store changes without needing write access
+        // to the repository.
+        match sqlx::query("ALTER TABLE unit_tasks ADD COLUMN git_patch TEXT")
+            .execute(&self.pool)
+            .await
+        {
+            Ok(_) => {
+                info!("Added git_patch column to unit_tasks table");
+            }
+            Err(sqlx::Error::Database(db_err)) if db_err.message().contains("duplicate column") => {
+                // Column already exists, nothing to do
+            }
+
+            Err(e) => return Err(e.into()),
+        }
+
         Ok(())
     }
 
@@ -1128,8 +1146,8 @@ impl TaskStore for SqliteTaskStore {
         let auto_fix_ids_json = Self::serialize_uuid_vec(&task.auto_fix_task_ids)?;
         sqlx::query(
             "INSERT INTO unit_tasks (id, repository_group_id, agent_task_id, prompt, title, \
-             branch_name, linked_pr_url, base_commit, end_commit, auto_fix_task_ids, status, \
-             created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             branch_name, linked_pr_url, base_commit, end_commit, git_patch, auto_fix_task_ids, \
+             status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(task.id.to_string())
         .bind(task.repository_group_id.to_string())
@@ -1140,6 +1158,7 @@ impl TaskStore for SqliteTaskStore {
         .bind(&task.linked_pr_url)
         .bind(&task.base_commit)
         .bind(&task.end_commit)
+        .bind(&task.git_patch)
         .bind(&auto_fix_ids_json)
         .bind(serde_json::to_string(&task.status).unwrap())
         .bind(task.created_at.to_rfc3339())
@@ -1176,6 +1195,7 @@ impl TaskStore for SqliteTaskStore {
                     linked_pr_url: row.get("linked_pr_url"),
                     base_commit: row.get("base_commit"),
                     end_commit: row.get("end_commit"),
+                    git_patch: row.get("git_patch"),
                     auto_fix_task_ids: Self::parse_uuid_vec(&auto_fix_ids_str)?,
                     status: serde_json::from_str(&status_str)?,
                     created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
@@ -1242,6 +1262,7 @@ impl TaskStore for SqliteTaskStore {
                 linked_pr_url: row.get("linked_pr_url"),
                 base_commit: row.get("base_commit"),
                 end_commit: row.get("end_commit"),
+                git_patch: row.get("git_patch"),
                 auto_fix_task_ids: Self::parse_uuid_vec(&auto_fix_ids_str)?,
                 status: serde_json::from_str(&status_str)?,
                 created_at: chrono::DateTime::parse_from_rfc3339(row.get("created_at"))
@@ -1260,8 +1281,8 @@ impl TaskStore for SqliteTaskStore {
         let auto_fix_ids_json = Self::serialize_uuid_vec(&task.auto_fix_task_ids)?;
         let result = sqlx::query(
             "UPDATE unit_tasks SET repository_group_id = ?, agent_task_id = ?, prompt = ?, title \
-             = ?, branch_name = ?, linked_pr_url = ?, base_commit = ?, end_commit = ?, \
-             auto_fix_task_ids = ?, status = ?, updated_at = ? WHERE id = ?",
+             = ?, branch_name = ?, linked_pr_url = ?, base_commit = ?, end_commit = ?, git_patch \
+             = ?, auto_fix_task_ids = ?, status = ?, updated_at = ? WHERE id = ?",
         )
         .bind(task.repository_group_id.to_string())
         .bind(task.agent_task_id.to_string())
@@ -1271,6 +1292,7 @@ impl TaskStore for SqliteTaskStore {
         .bind(&task.linked_pr_url)
         .bind(&task.base_commit)
         .bind(&task.end_commit)
+        .bind(&task.git_patch)
         .bind(&auto_fix_ids_json)
         .bind(serde_json::to_string(&task.status).unwrap())
         .bind(task.updated_at.to_rfc3339())

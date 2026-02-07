@@ -312,6 +312,7 @@ A single task unit visible to users.
 | linkedPrUrl | string | N | Created PR URL |
 | baseCommit | string | N | Base commit hash |
 | endCommit | string | N | End commit hash |
+| gitPatch | string | N | Git patch (unified diff) of changes made by AI agent |
 | autoFixTasks | AgentTask[] | Y | Auto-fix attempts |
 | status | UnitTaskStatus | Y | Current status |
 
@@ -646,6 +647,10 @@ Start Docker container (on Worker)
         ▼
 Run AI Agent (in_progress)
         ▼
+Generate git patch from worktree
+        ▼
+Store patch in database (git_patch field)
+        ▼
 AI work done (in_review)
         ▼
 Human review ──┬──► Commit to repo (done)
@@ -659,6 +664,17 @@ aborted and any partial work is preserved in the worktree.
 
 On each status transition, `task-status-changed` and `task-completed`
 events are emitted so the frontend updates automatically.
+
+### Change Persistence
+
+Changes made by AI agents are persisted as git patches in the database:
+- On task completion, a unified diff is generated from the worktree
+- The patch is stored in the `git_patch` field of `UnitTask`
+- This allows changes to be persisted without needing write access
+  to the repository (the worker server may not have push permission)
+- In local mode, the worktree is preserved while the task is in review
+  so the user can inspect changes directly on disk
+- Worktrees for failed/cancelled tasks are cleaned up immediately
 ```
 
 ### Repository Caching
