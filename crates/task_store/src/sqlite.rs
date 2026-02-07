@@ -1591,6 +1591,26 @@ impl TaskStore for SqliteTaskStore {
         Ok(nodes)
     }
 
+    async fn find_composite_task_id_by_unit_task_id(
+        &self,
+        unit_task_id: Uuid,
+    ) -> TaskStoreResult<Option<Uuid>> {
+        let row = sqlx::query(
+            "SELECT composite_task_id FROM composite_task_nodes WHERE unit_task_id = ? LIMIT 1",
+        )
+        .bind(unit_task_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let id = Self::parse_uuid(row.get("composite_task_id"))?;
+                Ok(Some(id))
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn update_composite_task_node(
         &self,
         node: CompositeTaskNode,

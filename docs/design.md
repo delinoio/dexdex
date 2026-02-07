@@ -685,6 +685,9 @@ committing to local, and applying requested changes. Key characteristics:
 - A subtask creates a new `AgentSession` under the same `AgentTask`
 - It runs in the existing worktree (no new worktree is created)
 - The parent task transitions to `in_progress` while the subtask runs
+- If the unit task belongs to a composite task, the composite task is
+  also transitioned to `in_progress` while the subtask runs, and
+  re-evaluated (to `done` or `failed`) when the subtask completes
 - On success, the task transitions to the target status (e.g. `pr_open`)
 - On failure or cancellation, the task reverts to `approved`
 - Subtasks are not shown separately in the dashboard - they use the
@@ -700,11 +703,13 @@ Approved ──► execute_subtask(prompt, target_status)
                     │
                     ├── Create new AgentSession
                     ├── Transition to in_progress
+                    ├── Transition parent composite task to in_progress (if applicable)
                     ├── Run agent in existing worktree
                     │
                     ├── Success → regenerate git_patch → target_status (pr_open / done / in_review)
                     ├── Failure → approved (user can retry)
-                    └── Cancelled → approved
+                    ├── Cancelled → approved
+                    └── Re-evaluate parent composite task status (if applicable)
 ```
 
 ### Change Persistence

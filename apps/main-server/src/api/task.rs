@@ -588,6 +588,33 @@ pub async fn request_changes<S: TaskStore>(
     task.updated_at = chrono::Utc::now();
     let task = state.store.update_unit_task(task).await?;
 
+    // If this unit task belongs to a composite task, ensure the composite
+    // task is also marked as InProgress so the dashboard reflects ongoing work.
+    if let Ok(Some(composite_task_id)) = state
+        .store
+        .find_composite_task_id_by_unit_task_id(task_id)
+        .await
+    {
+        if let Ok(Some(mut ct)) = state.store.get_composite_task(composite_task_id).await {
+            if ct.status != entities::CompositeTaskStatus::InProgress {
+                tracing::info!(
+                    composite_task_id = %composite_task_id,
+                    task_id = %task_id,
+                    "Transitioning parent composite task to InProgress due to request_changes"
+                );
+                ct.status = entities::CompositeTaskStatus::InProgress;
+                ct.updated_at = chrono::Utc::now();
+                if let Err(e) = state.store.update_composite_task(ct).await {
+                    tracing::warn!(
+                        composite_task_id = %composite_task_id,
+                        error = %e,
+                        "Failed to update composite task status to InProgress"
+                    );
+                }
+            }
+        }
+    }
+
     tracing::info!(task_id = %task_id, "Changes requested on task");
 
     Ok(Json(RequestChangesResponse {

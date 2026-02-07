@@ -276,6 +276,13 @@ pub trait TaskStore: Send + Sync {
         composite_task_id: Uuid,
     ) -> TaskStoreResult<Vec<CompositeTaskNode>>;
 
+    /// Finds the composite task ID that contains the given unit task.
+    /// Returns `None` if the unit task is not part of any composite task.
+    async fn find_composite_task_id_by_unit_task_id(
+        &self,
+        unit_task_id: Uuid,
+    ) -> TaskStoreResult<Option<Uuid>>;
+
     /// Updates a composite task node.
     async fn update_composite_task_node(
         &self,
