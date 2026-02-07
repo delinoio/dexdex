@@ -47,3 +47,4 @@ The RPC API is defined in `crates/rpc_protocol/proto/delidev.proto`. When you ne
 - Input sanitization utilities are in `crates/entities/src/lib.rs` (e.g., `sanitize_user_input()`, `validate_prompt()`).
 - Frontend shared utilities are in `apps/tauri-app/src/lib/`.
 - Read the relevant utility file before writing new helper functions to avoid duplicating existing code.
+- For Tauri commands, define a single function per command. Do NOT define two separate functions with `#[cfg(desktop)]` and `#[cfg(not(desktop))]`. Instead, use inline `#[cfg(desktop)]` blocks within the function body for desktop-only logic, and `#[cfg(not(desktop))]` to suppress unused variables and return a "not supported" error. See `workspace.rs` and `repository.rs` for reference.
