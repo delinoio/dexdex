@@ -702,7 +702,7 @@ Approved ──► execute_subtask(prompt, target_status)
                     ├── Transition to in_progress
                     ├── Run agent in existing worktree
                     │
-                    ├── Success → target_status (pr_open / done / in_review)
+                    ├── Success → regenerate git_patch → target_status (pr_open / done / in_review)
                     ├── Failure → approved (user can retry)
                     └── Cancelled → approved
 ```
@@ -711,6 +711,8 @@ Approved ──► execute_subtask(prompt, target_status)
 
 Changes made by AI agents are persisted as git patches in the database:
 - On task completion, a unified diff is generated from the worktree
+- On subtask completion (e.g. Request Changes), the git patch is
+  regenerated so the diff viewer reflects the latest changes
 - The patch is stored in the `git_patch` field of `UnitTask`
 - This allows changes to be persisted without needing write access
   to the repository (the worker server may not have push permission)

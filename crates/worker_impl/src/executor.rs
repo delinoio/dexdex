@@ -1887,6 +1887,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
         // Spawn the subtask execution
         let handle = tokio::spawn(async move {
+            let worktree_path_for_patch = worktree_path.clone();
             let result = TaskExecutor::<PersistingEventEmitter<E>>::run_agent_in_worktree(
                 config,
                 persisting_emitter.clone(),
@@ -1923,10 +1924,43 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             };
 
-            // Update task status and extract PR URL if applicable
+            // Regenerate git patch after successful subtask so the diff
+            // viewer reflects the latest changes made by the AI agent.
+            let git_patch = if success {
+                match git_ops::generate_patch_async(&worktree_path_for_patch).await {
+                    Ok(patch) => {
+                        if patch.is_some() {
+                            info!(
+                                "Regenerated git patch for subtask {} ({} bytes)",
+                                task_id,
+                                patch.as_ref().map_or(0, |p| p.len())
+                            );
+                        } else {
+                            debug!("No changes detected after subtask for task {}", task_id);
+                        }
+                        patch
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to regenerate git patch after subtask for task {}: {}",
+                            task_id, e
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            // Update task status, git patch, and extract PR URL if applicable
             if let Ok(Some(mut task)) = task_store.get_unit_task(task_id).await {
                 task.status = new_status;
                 task.updated_at = Utc::now();
+
+                // Update the git patch so diffs reflect the latest changes
+                if let Some(patch) = git_patch {
+                    task.git_patch = Some(patch);
+                }
 
                 // For PR creation subtasks, extract the PR URL from agent output
                 if success && target_status == UnitTaskStatus::PrOpen {
