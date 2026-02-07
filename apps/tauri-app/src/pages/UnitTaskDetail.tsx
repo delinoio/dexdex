@@ -183,6 +183,9 @@ export function UnitTaskDetail() {
   }
 
   const handleApprove = async () => {
+    if (hasReviewComments) {
+      return;
+    }
     await approveMutation.mutateAsync(task.id);
   };
 

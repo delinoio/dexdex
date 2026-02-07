@@ -1311,14 +1311,22 @@ pub async fn request_changes(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
+    // Validate executor exists before transitioning state to avoid leaving
+    // the task stuck in Approved if the executor is unavailable.
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
     // Verify the unit task exists and is in a reviewable state.
     // We need to first approve the task so execute_subtask can run
     // (it requires Approved status).
     if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
         if task.status != UnitTaskStatus::InReview {
             return Err(AppError::InvalidRequest(format!(
-                "Task {} is not in InReview status (current: {:?})",
-                task_id, task.status
+                "Task {} is not in InReview status (current: {})",
+                task_id,
+                format!("{:?}", task.status)
             )));
         }
 
@@ -1330,11 +1338,6 @@ pub async fn request_changes(
         return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    let executor = runtime
-        .executor()
-        .await
-        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
-
     let prompt = format!(
         "The reviewer has requested changes to your work. Please apply the following feedback and \
          fix any issues mentioned. After applying all changes, make sure the code compiles and \
@@ -1342,12 +1345,21 @@ pub async fn request_changes(
         feedback
     );
 
-    executor
+    if let Err(e) = executor
         .execute_subtask(id, prompt, UnitTaskStatus::InReview)
         .await
-        .map_err(|e| {
-            AppError::Internal(format!("Failed to start request-changes subtask: {}", e))
-        })?;
+    {
+        // Revert task status back to InReview on failure so the user can retry
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            task.status = UnitTaskStatus::InReview;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+        }
+        return Err(AppError::Internal(format!(
+            "Failed to start request-changes subtask: {}",
+            e
+        )));
+    }
 
     info!(
         "Started request-changes subtask for unit task: {} (feedback length: {})",

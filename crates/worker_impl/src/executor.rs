@@ -1941,8 +1941,9 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                         patch
                     }
                     Err(e) => {
-                        warn!(
-                            "Failed to regenerate git patch after subtask for task {}: {}",
+                        error!(
+                            "Failed to regenerate git patch after subtask for task {}: {}. Diff \
+                             viewer may show stale information.",
                             task_id, e
                         );
                         None

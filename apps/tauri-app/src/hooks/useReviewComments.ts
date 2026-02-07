@@ -1,7 +1,7 @@
 // Hook for managing inline review comments
 // Uses local state management (no backend API required)
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 export interface ReviewComment {
   id: string;
@@ -43,6 +43,12 @@ export function useReviewComments({
 }: UseReviewCommentsOptions): UseReviewCommentsReturn {
   const [comments, setComments] = useState<ReviewComment[]>([]);
 
+  // Clear comments when taskId changes to prevent stale comments from
+  // appearing when navigating between tasks (React Router may reuse component).
+  useEffect(() => {
+    setComments([]);
+  }, [taskId]);
+
   const addComment = useCallback(
     (filePath: string, lineNumber: number, content: string) => {
       const now = new Date().toISOString();
@@ -57,7 +63,7 @@ export function useReviewComments({
       };
       setComments((prev) => [...prev, newComment]);
     },
-    [taskId]
+    []
   );
 
   const updateComment = useCallback((commentId: string, content: string) => {
