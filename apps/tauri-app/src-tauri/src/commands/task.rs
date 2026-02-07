@@ -1420,9 +1420,12 @@ pub async fn delete_task(
             .as_ref()
             .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-        // If the task is currently running, cancel the execution first
-        if let Some(task) = runtime.task_store_arc().get_unit_task(id).await? {
-            if task.status == UnitTaskStatus::InProgress {
+        let store = runtime.task_store_arc();
+
+        // Try unit task first (fetch once and reuse to avoid TOCTOU race)
+        if let Some(unit_task) = store.get_unit_task(id).await? {
+            // If the task is currently running, cancel the execution first
+            if unit_task.status == UnitTaskStatus::InProgress {
                 let executor = runtime
                     .executor()
                     .await
@@ -1431,23 +1434,99 @@ pub async fn delete_task(
                 executor.cancel_execution(id).await;
                 info!("Cancelled running execution before deleting task: {}", id);
             }
-        }
 
-        // Try to delete unit task first
-        if runtime.task_store_arc().get_unit_task(id).await?.is_some() {
-            runtime.task_store_arc().delete_unit_task(id).await?;
+            // Delete the associated agent task
+            if let Err(e) = store.delete_agent_task(unit_task.agent_task_id).await {
+                tracing::warn!(
+                    "Failed to delete agent task {} for unit task {}: {}",
+                    unit_task.agent_task_id,
+                    id,
+                    e
+                );
+            }
+
+            // Delete auto-fix agent tasks
+            for auto_fix_id in &unit_task.auto_fix_task_ids {
+                if let Err(e) = store.delete_agent_task(*auto_fix_id).await {
+                    tracing::warn!(
+                        "Failed to delete auto-fix agent task {} for unit task {}: {}",
+                        auto_fix_id,
+                        id,
+                        e
+                    );
+                }
+            }
+
+            store.delete_unit_task(id).await?;
             info!("Deleted unit task: {}", id);
             return Ok(());
         }
 
-        // Try composite task
-        if runtime
-            .task_store_arc()
-            .get_composite_task(id)
-            .await?
-            .is_some()
-        {
-            runtime.task_store_arc().delete_composite_task(id).await?;
+        // Try composite task (fetch once and reuse)
+        if let Some(composite_task) = store.get_composite_task(id).await? {
+            // Delete all child nodes and their associated unit tasks + agent tasks
+            let nodes = store.list_composite_task_nodes(id).await?;
+            for node in &nodes {
+                // Delete the unit task associated with this node (and its agent task)
+                if let Some(unit_task) = store.get_unit_task(node.unit_task_id).await? {
+                    if let Err(e) = store.delete_agent_task(unit_task.agent_task_id).await {
+                        tracing::warn!(
+                            "Failed to delete agent task {} for unit task {} in composite {}: {}",
+                            unit_task.agent_task_id,
+                            unit_task.id,
+                            id,
+                            e
+                        );
+                    }
+
+                    // Delete auto-fix agent tasks
+                    for auto_fix_id in &unit_task.auto_fix_task_ids {
+                        if let Err(e) = store.delete_agent_task(*auto_fix_id).await {
+                            tracing::warn!(
+                                "Failed to delete auto-fix agent task {} for unit task {}: {}",
+                                auto_fix_id,
+                                unit_task.id,
+                                e
+                            );
+                        }
+                    }
+
+                    if let Err(e) = store.delete_unit_task(node.unit_task_id).await {
+                        tracing::warn!(
+                            "Failed to delete unit task {} in composite {}: {}",
+                            node.unit_task_id,
+                            id,
+                            e
+                        );
+                    }
+                }
+
+                // Delete the node itself
+                if let Err(e) = store.delete_composite_task_node(node.id).await {
+                    tracing::warn!(
+                        "Failed to delete composite task node {} in composite {}: {}",
+                        node.id,
+                        id,
+                        e
+                    );
+                }
+            }
+
+            // Delete the planning agent task
+            if let Err(e) = store
+                .delete_agent_task(composite_task.planning_task_id)
+                .await
+            {
+                tracing::warn!(
+                    "Failed to delete planning agent task {} for composite task {}: {}",
+                    composite_task.planning_task_id,
+                    id,
+                    e
+                );
+            }
+
+            // Delete the composite task itself
+            store.delete_composite_task(id).await?;
             info!("Deleted composite task: {}", id);
             return Ok(());
         }
