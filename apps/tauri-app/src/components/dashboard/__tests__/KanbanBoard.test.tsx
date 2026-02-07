@@ -61,6 +61,18 @@ describe("KanbanBoard", () => {
     expect(screen.getByText("Rejected Task")).toBeInTheDocument();
   });
 
+  it("places cancelled tasks in Rejected/Failed column", () => {
+    const tasks: UnitTask[] = [
+      createMockUnitTask({ id: "1", title: "Cancelled Task", status: UnitTaskStatus.Cancelled }),
+      createMockUnitTask({ id: "2", title: "Failed Task", status: UnitTaskStatus.Failed }),
+    ];
+
+    render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />);
+
+    expect(screen.getByText("Cancelled Task")).toBeInTheDocument();
+    expect(screen.getByText("Failed Task")).toBeInTheDocument();
+  });
+
   it("places composite tasks in correct columns based on status", () => {
     const tasks: CompositeTask[] = [
       createMockCompositeTask({ id: "1", title: "Planning Task", status: CompositeTaskStatus.Planning }),

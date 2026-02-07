@@ -33,7 +33,7 @@ const columns: {
   {
     id: "waiting-for-others",
     title: "Waiting for Others",
-    unitStatuses: [UnitTaskStatus.PrOpen, UnitTaskStatus.Cancelled],
+    unitStatuses: [UnitTaskStatus.PrOpen],
     compositeStatuses: [],
   },
   {
@@ -45,7 +45,7 @@ const columns: {
   {
     id: "rejected-failed",
     title: "Rejected/Failed",
-    unitStatuses: [UnitTaskStatus.Rejected, UnitTaskStatus.Failed],
+    unitStatuses: [UnitTaskStatus.Rejected, UnitTaskStatus.Failed, UnitTaskStatus.Cancelled],
     compositeStatuses: [CompositeTaskStatus.Rejected, CompositeTaskStatus.Failed],
   },
 ];
