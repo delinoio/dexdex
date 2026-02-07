@@ -360,9 +360,8 @@ pub async fn create_unit_task(
             .as_ref()
             .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-        let repo_group_id = Uuid::parse_str(&params.repository_group_id).map_err(|e| {
-            AppError::InvalidRequest(format!("Invalid repository group ID: {}", e))
-        })?;
+        let repo_group_id = Uuid::parse_str(&params.repository_group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository group ID: {}", e)))?;
 
         let agent_type = params
             .ai_agent_type
@@ -486,9 +485,8 @@ pub async fn create_composite_task(
             .as_ref()
             .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-        let repo_group_id = Uuid::parse_str(&params.repository_group_id).map_err(|e| {
-            AppError::InvalidRequest(format!("Invalid repository group ID: {}", e))
-        })?;
+        let repo_group_id = Uuid::parse_str(&params.repository_group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository group ID: {}", e)))?;
 
         let execution_agent_type = params
             .execution_agent_type
@@ -955,9 +953,7 @@ pub async fn update_plan_with_prompt(
             .task_store_arc()
             .get_composite_task(id)
             .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Composite task not found: {}", task_id))
-            })?;
+            .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
 
         // Verify the task is in a state that allows re-planning
         let previous_status = composite_task.status;
@@ -989,9 +985,7 @@ pub async fn update_plan_with_prompt(
             .task_store_arc()
             .get_composite_task(id)
             .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Composite task not found: {}", task_id))
-            })?;
+            .ok_or_else(|| AppError::NotFound(format!("Composite task not found: {}", task_id)))?;
         if current_task.updated_at != expected_updated_at {
             return Err(AppError::InvalidRequest(
                 "Task was modified concurrently. Please try again.".to_string(),
@@ -1124,8 +1118,8 @@ pub async fn request_changes(
 
         let prompt = format!(
             "The reviewer has requested changes to your work. Please apply the following feedback \
-             and fix any issues mentioned. After applying all changes, make sure the code compiles \
-             and works correctly.\n\n--- Requested Changes ---\n{}",
+             and fix any issues mentioned. After applying all changes, make sure the code \
+             compiles and works correctly.\n\n--- Requested Changes ---\n{}",
             feedback
         );
 
@@ -1362,10 +1356,7 @@ pub async fn cancel_task(
                     task.status = UnitTaskStatus::Cancelled;
                     task.updated_at = chrono::Utc::now();
                     if let Err(e) = runtime.task_store_arc().update_unit_task(task).await {
-                        tracing::error!(
-                            "Failed to update task status after cancellation: {}",
-                            e
-                        );
+                        tracing::error!("Failed to update task status after cancellation: {}", e);
                         return Err(e.into());
                     }
                 } else {
@@ -1630,11 +1621,10 @@ pub async fn create_pr(
             .await
             .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
 
-        let prompt =
-            "Create a pull request with the changes from this task. Push the current branch \
-                  to the remote and create a PR using the available tools (e.g. `gh pr create`). \
-                  Output the PR URL."
-                .to_string();
+        let prompt = "Create a pull request with the changes from this task. Push the current \
+                      branch to the remote and create a PR using the available tools (e.g. `gh pr \
+                      create`). Output the PR URL."
+            .to_string();
 
         executor
             .execute_subtask(id, prompt, UnitTaskStatus::PrOpen)
