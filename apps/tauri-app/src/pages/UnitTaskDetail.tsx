@@ -437,6 +437,14 @@ export function UnitTaskDetail() {
                       placeholder={hasReviewComments ? "Optional additional comments..." : "Describe the changes you'd like..."}
                       value={extraComment}
                       onChange={(e) => setExtraComment(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                          e.preventDefault();
+                          if (hasReviewComments || extraComment.trim()) {
+                            handleRequestChanges();
+                          }
+                        }
+                      }}
                       rows={4}
                     />
                     <DialogFooter>
