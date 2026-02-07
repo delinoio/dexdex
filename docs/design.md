@@ -655,12 +655,19 @@ Store patch in database (git_patch field)
 AI work done (in_review)
         ▼
 Human review ──┬──► Approve (approved)
-               ├──► Request changes (back to in_progress)
+               ├──► Request changes (subtask → in_review)
                └──► Reject (rejected)
 
 Approved ──────┬──► Create PR (subtask → pr_open)
                ├──► Commit to local repo (subtask → done)
                └──► Dismiss approval (back to in_review)
+
+Note: In local mode, "Request Changes" creates a subtask (like "Create PR"
+and "Commit to Local") that applies the reviewer's feedback using the AI
+agent. Inline review comments from the diff viewer and an optional extra
+comment are combined into the subtask prompt. The Approve button is disabled
+when the user has written inline review comments, prompting them to submit
+the feedback via "Request Changes" first.
 
 Note: While in `in_progress`, the user can cancel the task at any time,
 which transitions the status to `cancelled`. The agent execution is
@@ -672,8 +679,8 @@ events are emitted so the frontend updates automatically.
 ### Subtasks
 
 Subtasks are agent sessions that run within an existing unit task's
-worktree. They are used for post-approval operations like PR creation
-and committing to local. Key characteristics:
+worktree. They are used for post-approval operations like PR creation,
+committing to local, and applying requested changes. Key characteristics:
 
 - A subtask creates a new `AgentSession` under the same `AgentTask`
 - It runs in the existing worktree (no new worktree is created)
@@ -695,7 +702,7 @@ Approved ──► execute_subtask(prompt, target_status)
                     ├── Transition to in_progress
                     ├── Run agent in existing worktree
                     │
-                    ├── Success → target_status (pr_open / done)
+                    ├── Success → target_status (pr_open / done / in_review)
                     ├── Failure → approved (user can retry)
                     └── Cancelled → approved
 ```

@@ -4,6 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/Dialog";
 import { AgentLogViewer, StaticSessionLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
@@ -11,6 +19,7 @@ import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTas
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
+import { useReviewComments } from "@/hooks/useReviewComments";
 import { parseUnifiedDiff } from "@/lib/parseDiff";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
@@ -19,13 +28,13 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [feedback, setFeedback] = useState("");
-  const [showFeedback, setShowFeedback] = useState(false);
   const [showLog, setShowLog] = useState(true);
   // Tracks which session IDs are collapsed (all default to expanded)
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set());
   const [showDiff, setShowDiff] = useState(false);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | undefined>();
+  const [showRequestChangesDialog, setShowRequestChangesDialog] = useState(false);
+  const [extraComment, setExtraComment] = useState("");
 
   const { data, isLoading, error } = useTask(id ?? "");
   const approveMutation = useApproveTask();
@@ -37,6 +46,19 @@ export function UnitTaskDetail() {
   const commitToLocalMutation = useCommitToLocal();
 
   const task = data?.unitTask;
+
+  // Manage inline review comments (local state)
+  const {
+    comments: reviewComments,
+    addComment: addReviewComment,
+    updateComment: updateReviewComment,
+    deleteComment: deleteReviewComment,
+    getCommentsForFile,
+    commentCount: reviewCommentCount,
+  } = useReviewComments({ taskId: id ?? "" });
+
+  // Whether the user has written any review comments
+  const hasReviewComments = reviewCommentCount > 0;
 
   // Fetch task logs to extract token usage from session_end events
   const { events, sessions } = useTaskLogs({
@@ -83,16 +105,16 @@ export function UnitTaskDetail() {
 
   // Keyboard shortcut handlers
   const handleShortcutApprove = useCallback(async () => {
-    if (task?.status === UnitTaskStatus.InReview && !approveMutation.isPending) {
+    if (task?.status === UnitTaskStatus.InReview && !approveMutation.isPending && !hasReviewComments) {
       await approveMutation.mutateAsync(task.id);
     }
-  }, [task, approveMutation]);
+  }, [task, approveMutation, hasReviewComments]);
 
   const handleShortcutDeny = useCallback(async () => {
     if (task?.status === UnitTaskStatus.InReview && !rejectMutation.isPending) {
-      await rejectMutation.mutateAsync({ taskId: task.id, reason: feedback || undefined });
+      await rejectMutation.mutateAsync({ taskId: task.id });
     }
-  }, [task, rejectMutation, feedback]);
+  }, [task, rejectMutation]);
 
   const handleToggleLog = useCallback(() => {
     setShowLog((prev) => !prev);
@@ -164,14 +186,45 @@ export function UnitTaskDetail() {
   };
 
   const handleReject = async () => {
-    await rejectMutation.mutateAsync({ taskId: task.id, reason: feedback || undefined });
+    await rejectMutation.mutateAsync({ taskId: task.id });
+  };
+
+  // Build the full feedback string from inline review comments + optional extra comment
+  const buildFeedbackFromComments = (extra: string): string => {
+    const parts: string[] = [];
+
+    if (reviewCommentCount > 0) {
+      parts.push("## Inline Review Comments\n");
+      // Group comments by file
+      const commentsByFile = new Map<string, typeof reviewComments>();
+      for (const comment of reviewComments) {
+        const existing = commentsByFile.get(comment.filePath) ?? [];
+        existing.push(comment);
+        commentsByFile.set(comment.filePath, existing);
+      }
+      for (const [filePath, fileComments] of commentsByFile) {
+        parts.push(`### ${filePath}`);
+        for (const comment of fileComments) {
+          parts.push(`- Line ${comment.lineNumber}: ${comment.content}`);
+        }
+        parts.push("");
+      }
+    }
+
+    if (extra.trim()) {
+      parts.push("## Additional Comments\n");
+      parts.push(extra.trim());
+    }
+
+    return parts.join("\n");
   };
 
   const handleRequestChanges = async () => {
-    if (!feedback) return;
+    const feedback = buildFeedbackFromComments(extraComment);
+    if (!feedback.trim()) return;
     await requestChangesMutation.mutateAsync({ taskId: task.id, feedback });
-    setFeedback("");
-    setShowFeedback(false);
+    setExtraComment("");
+    setShowRequestChangesDialog(false);
   };
 
   const handleDismissApproval = async () => {
@@ -333,54 +386,76 @@ export function UnitTaskDetail() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <Button onClick={handleApprove} disabled={approveMutation.isPending}>
-                    {approveMutation.isPending ? "Approving..." : "Approve"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowFeedback(true)}
-                  >
-                    Request Changes
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleReject}
-                    disabled={rejectMutation.isPending}
-                  >
-                    {rejectMutation.isPending ? "Rejecting..." : "Reject"}
-                  </Button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleApprove}
+                      disabled={approveMutation.isPending || hasReviewComments}
+                    >
+                      {approveMutation.isPending ? "Approving..." : "Approve"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowRequestChangesDialog(true)}
+                    >
+                      Request Changes{hasReviewComments ? ` (${reviewCommentCount})` : ""}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleReject}
+                      disabled={rejectMutation.isPending}
+                    >
+                      {rejectMutation.isPending ? "Rejecting..." : "Reject"}
+                    </Button>
+                  </div>
+                  {hasReviewComments && (
+                    <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                      You have {reviewCommentCount} review comment{reviewCommentCount !== 1 ? "s" : ""}. Please submit them via &quot;Request Changes&quot; before approving.
+                    </p>
+                  )}
                 </div>
 
-                {showFeedback && (
-                  <div className="space-y-2">
+                {/* Request Changes dialog with optional extra comment */}
+                <Dialog open={showRequestChangesDialog} onOpenChange={setShowRequestChangesDialog}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Request Changes</DialogTitle>
+                      <DialogDescription>
+                        {hasReviewComments
+                          ? `Your ${reviewCommentCount} inline review comment${reviewCommentCount !== 1 ? "s" : ""} will be sent to the AI agent. You can add an optional extra comment below.`
+                          : "Describe the changes you'd like the AI agent to make."}
+                      </DialogDescription>
+                    </DialogHeader>
                     <Textarea
-                      placeholder="Describe the changes you'd like..."
-                      value={feedback}
-                      onChange={(e) => setFeedback(e.target.value)}
+                      placeholder={hasReviewComments ? "Optional additional comments..." : "Describe the changes you'd like..."}
+                      value={extraComment}
+                      onChange={(e) => setExtraComment(e.target.value)}
                       rows={4}
                     />
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={handleRequestChanges}
-                        disabled={!feedback || requestChangesMutation.isPending}
-                      >
-                        {requestChangesMutation.isPending
-                          ? "Sending..."
-                          : "Send Feedback"}
-                      </Button>
+                    <DialogFooter>
                       <Button
                         variant="outline"
                         onClick={() => {
-                          setShowFeedback(false);
-                          setFeedback("");
+                          setShowRequestChangesDialog(false);
+                          setExtraComment("");
                         }}
                       >
                         Cancel
                       </Button>
-                    </div>
-                  </div>
-                )}
+                      <Button
+                        onClick={handleRequestChanges}
+                        disabled={
+                          (!hasReviewComments && !extraComment.trim()) ||
+                          requestChangesMutation.isPending
+                        }
+                      >
+                        {requestChangesMutation.isPending
+                          ? "Sending..."
+                          : "Submit"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardContent>
             </Card>
           )}
@@ -535,7 +610,12 @@ export function UnitTaskDetail() {
                               selectedFilePath={selectedDiffFile}
                               onSelectFile={setSelectedDiffFile}
                               viewedFiles={new Set()}
-                              commentCounts={{}}
+                              commentCounts={Object.fromEntries(
+                                diffFiles.map((f) => [
+                                  f.filePath,
+                                  getCommentsForFile(f.filePath).length,
+                                ])
+                              )}
                             />
                           </div>
                         )}
@@ -547,10 +627,10 @@ export function UnitTaskDetail() {
                             <DiffViewer
                               key={file.filePath}
                               file={file}
-                              comments={[]}
-                              onAddComment={() => {}}
-                              onEditComment={() => {}}
-                              onDeleteComment={() => {}}
+                              comments={getCommentsForFile(file.filePath)}
+                              onAddComment={addReviewComment}
+                              onEditComment={updateReviewComment}
+                              onDeleteComment={deleteReviewComment}
                               className="mb-4"
                             />
                           ))}
