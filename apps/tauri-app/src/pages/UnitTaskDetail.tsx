@@ -12,9 +12,6 @@ import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import { parseUnifiedDiff } from "@/lib/parseDiff";
-import { getWorktreePath } from "@/api/client";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { notify } from "@/stores/notificationStore";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
@@ -122,23 +119,6 @@ export function UnitTaskDetail() {
       return !prev;
     });
   }, [diffFiles, selectedDiffFile]);
-
-  // Handle Open in Editor button click
-  const handleOpenInEditor = useCallback(async () => {
-    if (!task?.id) return;
-    try {
-      const worktreePath = await getWorktreePath(task.id);
-      if (worktreePath) {
-        await revealItemInDir(worktreePath);
-      } else {
-        console.warn("Worktree not found for task:", task.id);
-        notify.warning("Worktree not found", "Could not locate the worktree directory for this task.");
-      }
-    } catch (err) {
-      console.error("Failed to open worktree in editor:", err);
-      notify.error("Failed to open in editor", String(err));
-    }
-  }, [task?.id]);
 
   // Register keyboard shortcuts
   useTaskDetailShortcuts({
@@ -393,9 +373,6 @@ export function UnitTaskDetail() {
                       {showDiff ? "Hide Diff" : "View Diff"}
                     </Button>
                   )}
-                  <Button variant="outline" onClick={handleOpenInEditor}>
-                    Open in Editor
-                  </Button>
                 </div>
 
                 {showDiff && diffFiles.length > 0 && (

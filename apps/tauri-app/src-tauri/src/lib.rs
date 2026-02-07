@@ -155,7 +155,6 @@ pub fn run() {
             commands::task::get_task_logs,
             commands::task::respond_tty_input,
             commands::task::get_composite_task_nodes,
-            commands::task::get_worktree_path,
             // Repository commands
             commands::repository::add_repository,
             commands::repository::list_repositories,
