@@ -683,6 +683,10 @@ and committing to local. Key characteristics:
 - Subtasks are not shown separately in the dashboard - they use the
   same task ID as the parent
 - The subtask can be cancelled using the same "Stop Agent" button
+- Each session (main execution + subtasks) has its own collapsible
+  "Agent Session Log" section in the task detail view. The backend
+  returns all sessions grouped via `SessionLogsGroup` in the
+  `get_task_logs` response.
 
 ```
 Approved ──► execute_subtask(prompt, target_status)
