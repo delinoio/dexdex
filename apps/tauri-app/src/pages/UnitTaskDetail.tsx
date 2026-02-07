@@ -69,10 +69,25 @@ export function UnitTaskDetail() {
     enabled: !!task?.agentTaskId,
   });
 
-  // Auto-collapse the session log when the task transitions out of InProgress.
-  // We track the previous status so that only a genuine transition triggers the
-  // collapse (e.g. going from InProgress -> InReview), rather than collapsing
-  // every time the component re-renders with a non-InProgress status.
+  // Auto-show the diff when the task is first loaded in InReview status
+  // (e.g. user navigates to a task that is already awaiting review).
+  const hasInitializedDiffRef = useRef(false);
+  useEffect(() => {
+    if (
+      !hasInitializedDiffRef.current &&
+      task?.status === UnitTaskStatus.InReview &&
+      task?.gitPatch
+    ) {
+      hasInitializedDiffRef.current = true;
+      setShowDiff(true);
+    }
+  }, [task?.status, task?.gitPatch]);
+
+  // Auto-collapse the session log and auto-show the diff when the task
+  // transitions out of InProgress. We track the previous status so that only a
+  // genuine transition triggers the change (e.g. going from InProgress ->
+  // InReview), rather than toggling every time the component re-renders with a
+  // non-InProgress status.
   const prevTaskStatusRef = useRef(task?.status);
   useEffect(() => {
     const prevStatus = prevTaskStatusRef.current;
@@ -85,6 +100,8 @@ export function UnitTaskDetail() {
       currentStatus !== UnitTaskStatus.InProgress
     ) {
       setShowLog(false);
+      // Auto-show the diff when transitioning to review (or any post-InProgress state)
+      setShowDiff(true);
     }
   }, [task?.status]);
 
