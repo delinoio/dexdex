@@ -6,10 +6,12 @@ import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
+import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
+import { parseUnifiedDiff } from "@/lib/parseDiff";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
@@ -20,6 +22,8 @@ export function UnitTaskDetail() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showLog, setShowLog] = useState(true);
+  const [showDiff, setShowDiff] = useState(false);
+  const [selectedDiffFile, setSelectedDiffFile] = useState<string | undefined>();
 
   const { data, isLoading, error } = useTask(id ?? "");
   const approveMutation = useApproveTask();
@@ -99,6 +103,22 @@ export function UnitTaskDetail() {
       }
     }
   }, [task?.id, cancelMutation]);
+
+  // Parse git patch into structured diff files for the DiffViewer
+  const diffFiles = useMemo<DiffFile[]>(() => {
+    if (!task?.gitPatch) return [];
+    return parseUnifiedDiff(task.gitPatch);
+  }, [task?.gitPatch]);
+
+  // Handle View Diff button click
+  const handleViewDiff = useCallback(() => {
+    setShowDiff((prev) => {
+      if (!prev && diffFiles.length > 0 && !selectedDiffFile) {
+        setSelectedDiffFile(diffFiles[0].filePath);
+      }
+      return !prev;
+    });
+  }, [diffFiles, selectedDiffFile]);
 
   // Register keyboard shortcuts
   useTaskDetailShortcuts({
@@ -346,9 +366,56 @@ export function UnitTaskDetail() {
 
           {task.status !== UnitTaskStatus.InProgress &&
             task.status !== UnitTaskStatus.Unspecified && (
-              <div className="flex gap-2">
-                <Button variant="outline">View Diff</Button>
-                <Button variant="outline">Open in Editor</Button>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  {task.gitPatch && (
+                    <Button variant="outline" onClick={handleViewDiff}>
+                      {showDiff ? "Hide Diff" : "View Diff"}
+                    </Button>
+                  )}
+                </div>
+
+                {showDiff && diffFiles.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Changes</CardTitle>
+                      <CardDescription>
+                        {diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""} changed
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex gap-4">
+                        {diffFiles.length > 1 && (
+                          <div className="w-48 shrink-0 border-r border-[hsl(var(--border))] pr-4">
+                            <DiffFileList
+                              files={diffFiles}
+                              selectedFilePath={selectedDiffFile}
+                              onSelectFile={setSelectedDiffFile}
+                              viewedFiles={new Set()}
+                              commentCounts={{}}
+                            />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          {(selectedDiffFile
+                            ? diffFiles.filter((f) => f.filePath === selectedDiffFile)
+                            : diffFiles
+                          ).map((file) => (
+                            <DiffViewer
+                              key={file.filePath}
+                              file={file}
+                              comments={[]}
+                              onAddComment={() => {}}
+                              onEditComment={() => {}}
+                              onDeleteComment={() => {}}
+                              className="mb-4"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
