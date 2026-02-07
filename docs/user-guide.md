@@ -131,10 +131,10 @@ Statuses:
 The dashboard shows your tasks in a Kanban board layout:
 
 - **In Progress**: Tasks the AI is currently working on
-- **In Review**: Tasks ready for your review
-- **PR Open**: Tasks with open pull requests
+- **Action Required**: Tasks needing your action (review, approval)
+- **Waiting for Others**: Tasks waiting on external processes (PR open, cancelled)
 - **Done**: Completed tasks
-- **Rejected**: Tasks you've rejected
+- **Rejected/Failed**: Tasks that were rejected or failed
 
 Below the board, you'll see **TodoItems** requiring attention.
 

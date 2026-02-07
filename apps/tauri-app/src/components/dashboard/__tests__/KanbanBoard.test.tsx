@@ -35,28 +35,42 @@ describe("KanbanBoard", () => {
     render(<KanbanBoard unitTasks={[]} compositeTasks={[]} />);
 
     expect(screen.getByText("In Progress")).toBeInTheDocument();
-    expect(screen.getByText("In Review")).toBeInTheDocument();
-    expect(screen.getByText("PR Open")).toBeInTheDocument();
+    expect(screen.getByText("Action Required")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for Others")).toBeInTheDocument();
     expect(screen.getByText("Done")).toBeInTheDocument();
-    expect(screen.getByText("Rejected / Failed")).toBeInTheDocument();
+    expect(screen.getByText("Rejected/Failed")).toBeInTheDocument();
   });
 
   it("places unit tasks in correct columns based on status", () => {
     const tasks: UnitTask[] = [
       createMockUnitTask({ id: "1", title: "In Progress Task", status: UnitTaskStatus.InProgress }),
-      createMockUnitTask({ id: "2", title: "In Review Task", status: UnitTaskStatus.InReview }),
-      createMockUnitTask({ id: "3", title: "PR Open Task", status: UnitTaskStatus.PrOpen }),
-      createMockUnitTask({ id: "4", title: "Done Task", status: UnitTaskStatus.Done }),
-      createMockUnitTask({ id: "5", title: "Rejected Task", status: UnitTaskStatus.Rejected }),
+      createMockUnitTask({ id: "2", title: "Action Required Task", status: UnitTaskStatus.InReview }),
+      createMockUnitTask({ id: "3", title: "Approved Task", status: UnitTaskStatus.Approved }),
+      createMockUnitTask({ id: "4", title: "PR Open Task", status: UnitTaskStatus.PrOpen }),
+      createMockUnitTask({ id: "5", title: "Done Task", status: UnitTaskStatus.Done }),
+      createMockUnitTask({ id: "6", title: "Rejected Task", status: UnitTaskStatus.Rejected }),
     ];
 
     render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />);
 
     expect(screen.getByText("In Progress Task")).toBeInTheDocument();
-    expect(screen.getByText("In Review Task")).toBeInTheDocument();
+    expect(screen.getByText("Action Required Task")).toBeInTheDocument();
+    expect(screen.getByText("Approved Task")).toBeInTheDocument();
     expect(screen.getByText("PR Open Task")).toBeInTheDocument();
     expect(screen.getByText("Done Task")).toBeInTheDocument();
     expect(screen.getByText("Rejected Task")).toBeInTheDocument();
+  });
+
+  it("places cancelled tasks in Rejected/Failed column", () => {
+    const tasks: UnitTask[] = [
+      createMockUnitTask({ id: "1", title: "Cancelled Task", status: UnitTaskStatus.Cancelled }),
+      createMockUnitTask({ id: "2", title: "Failed Task", status: UnitTaskStatus.Failed }),
+    ];
+
+    render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />);
+
+    expect(screen.getByText("Cancelled Task")).toBeInTheDocument();
+    expect(screen.getByText("Failed Task")).toBeInTheDocument();
   });
 
   it("places composite tasks in correct columns based on status", () => {

@@ -24,8 +24,10 @@ function getStatusBadgeVariant(
       return "default";
     case "in_review":
     case "pending_approval":
+    case "approved":
       return "secondary";
     case "rejected":
+    case "failed":
       return "destructive";
     default:
       return "outline";
@@ -52,6 +54,8 @@ function formatStatus(status: UnitTaskStatus | CompositeTaskStatus): string {
       return "Approved";
     case "failed":
       return "Failed";
+    case "cancelled":
+      return "Cancelled";
     default:
       return status;
   }
