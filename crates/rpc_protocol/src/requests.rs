@@ -297,6 +297,8 @@ pub struct ReportTaskStatusRequest {
     pub status: UnitTaskStatus,
     pub output_log: Option<String>,
     pub error: Option<String>,
+    /// Git patch (unified diff) representing the changes made by the AI agent.
+    pub git_patch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

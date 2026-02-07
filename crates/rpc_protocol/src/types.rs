@@ -427,6 +427,10 @@ pub struct UnitTask {
     pub linked_pr_url: Option<String>,
     pub base_commit: Option<String>,
     pub end_commit: Option<String>,
+    /// Git patch (unified diff) representing the changes made by the AI agent.
+    /// Stored in the database so changes can be persisted without needing
+    /// write access to the repository.
+    pub git_patch: Option<String>,
     pub auto_fix_task_ids: Vec<String>,
     pub status: UnitTaskStatus,
     pub created_at: DateTime<Utc>,

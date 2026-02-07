@@ -89,6 +89,7 @@ fn entity_to_rpc_unit_task(task: &entities::UnitTask) -> rpc_protocol::UnitTask 
         linked_pr_url: task.linked_pr_url.clone(),
         base_commit: task.base_commit.clone(),
         end_commit: task.end_commit.clone(),
+        git_patch: task.git_patch.clone(),
         auto_fix_task_ids: task
             .auto_fix_task_ids
             .iter()

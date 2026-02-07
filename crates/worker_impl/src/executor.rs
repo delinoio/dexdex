@@ -324,6 +324,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let emitter = self.emitter.clone();
         // Reuse the existing repo_cache to avoid redundant clones
         let repo_cache = self.executor.repo_cache().clone();
+        let remote_url = repository.remote_url.clone();
+        let branch_name_clone = branch_name.clone();
 
         // Create a persisting emitter that both emits events AND persists them
         // incrementally. This ensures events are available for initial log
@@ -338,13 +340,52 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
         // Spawn the execution task and store the handle for cancellation support
         let handle = tokio::spawn(async move {
-            let result = executor.execute_and_wait(config).await;
+            // Execute without cleanup so we can generate a git patch from the
+            // worktree before deciding whether to clean it up.
+            let exec_result = executor.execute_and_wait_without_cleanup(config).await;
+            let result = exec_result.result;
+            let worktree_path = exec_result.worktree_path;
 
             // Final persist of all logs
             // Note: We use PersistingEventEmitter's logs as the source of truth.
             // result.logs() from TaskExecutor contains the same events, but
             // PersistingEventEmitter has already been handling incremental persistence.
             persisting_emitter.persist_logs().await;
+
+            // Generate git patch from the worktree if the task succeeded.
+            // This captures all changes made by the AI agent so they can be
+            // persisted in the database without needing write access to the
+            // repository.
+            let git_patch = if result.is_success() {
+                if let Some(ref wt_path) = worktree_path {
+                    match git_ops::generate_patch_async(wt_path).await {
+                        Ok(patch) => {
+                            if patch.is_some() {
+                                info!(
+                                    "Generated git patch for task {} ({} bytes)",
+                                    task_id,
+                                    patch.as_ref().map_or(0, |p| p.len())
+                                );
+                            } else {
+                                debug!("No changes detected for task {}", task_id);
+                            }
+                            patch
+                        }
+                        Err(e) => {
+                            warn!("Failed to generate git patch for task {}: {}", task_id, e);
+                            None
+                        }
+                    }
+                } else {
+                    debug!(
+                        "No worktree path available for task {}, skipping patch generation",
+                        task_id
+                    );
+                    None
+                }
+            } else {
+                None
+            };
 
             // Update task status based on result and emit events so the
             // frontend updates without requiring a manual refresh.
@@ -382,10 +423,41 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             };
 
-            if let Err(e) =
-                Self::update_task_status(&task_store, task_id, session_id, new_status).await
+            if let Err(e) = Self::update_task_status_with_patch(
+                &task_store,
+                task_id,
+                session_id,
+                new_status,
+                git_patch,
+            )
+            .await
             {
                 error!("Failed to update task status: {}", e);
+            }
+
+            // In local mode, preserve the worktree while the task is in
+            // review so the user can inspect changes directly. Only clean
+            // up if the task failed or was cancelled.
+            let should_preserve_worktree = result.is_success();
+            if !should_preserve_worktree {
+                if let Err(e) = executor.repo_cache().remove_worktree_for_task(
+                    &remote_url,
+                    &task_id.to_string(),
+                    &branch_name_clone,
+                ) {
+                    warn!(
+                        "Failed to cleanup worktree for task {}: {}. Manual cleanup may be \
+                         required.",
+                        task_id, e
+                    );
+                } else {
+                    info!("Cleaned up worktree for failed/cancelled task {}", task_id);
+                }
+            } else {
+                info!(
+                    "Preserving worktree for task {} (in review) for local inspection",
+                    task_id
+                );
             }
 
             // Always emit events regardless of whether the DB update
@@ -431,12 +503,13 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         Ok(())
     }
 
-    /// Updates a task's status.
-    async fn update_task_status(
+    /// Updates a task's status and optionally stores a git patch.
+    async fn update_task_status_with_patch(
         task_store: &Arc<SqliteTaskStore>,
         task_id: Uuid,
         session_id: Uuid,
         new_status: UnitTaskStatus,
+        git_patch: Option<String>,
     ) -> Result<(), WorkerError> {
         let mut task = task_store
             .get_unit_task(task_id)
@@ -445,6 +518,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
         task.status = new_status;
         task.updated_at = Utc::now();
+
+        if git_patch.is_some() {
+            task.git_patch = git_patch;
+        }
 
         task_store.update_unit_task(task).await?;
 
@@ -640,9 +717,9 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let execution_handles = self.execution_handles.clone();
 
         // Store remote_url, branch_name, and plan_filename for the spawned task
-        let remote_url = repository.remote_url.clone();
-        let branch_name_clone = branch_name.clone();
-        let plan_filename_clone = plan_filename.clone();
+        let remote_url = repository.remote_url;
+        let branch_name_clone = branch_name;
+        let plan_filename_clone = plan_filename;
 
         // Spawn the planning execution task with a timeout to prevent
         // indefinite hangs during the planning phase

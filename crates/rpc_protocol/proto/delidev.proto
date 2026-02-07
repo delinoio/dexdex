@@ -117,6 +117,7 @@ message UnitTask {
   UnitTaskStatus status = 11;
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
+  optional string git_patch = 14;
 }
 
 message CompositeTaskNode {
@@ -697,10 +698,11 @@ message GetNextTaskResponse {
 
 message ReportTaskStatusRequest {
   string worker_id = 1;
-  string task_id = 1;
-  UnitTaskStatus status = 2;
-  optional string output_log = 3;
-  optional string error = 4;
+  string task_id = 2;
+  UnitTaskStatus status = 3;
+  optional string output_log = 4;
+  optional string error = 5;
+  optional string git_patch = 6;
 }
 
 message ReportTaskStatusResponse {}

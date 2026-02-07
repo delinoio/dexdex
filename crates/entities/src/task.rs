@@ -51,6 +51,10 @@ pub struct UnitTask {
     pub base_commit: Option<String>,
     /// End commit hash.
     pub end_commit: Option<String>,
+    /// Git patch (unified diff) representing the changes made by the AI agent.
+    /// Stored in the database so changes can be persisted without needing
+    /// write access to the repository.
+    pub git_patch: Option<String>,
     /// Auto-fix AgentTask IDs.
     pub auto_fix_task_ids: Vec<Uuid>,
     /// Current status.
@@ -75,6 +79,7 @@ impl UnitTask {
             linked_pr_url: None,
             base_commit: None,
             end_commit: None,
+            git_patch: None,
             auto_fix_task_ids: Vec::new(),
             status: UnitTaskStatus::InProgress,
             created_at: now,

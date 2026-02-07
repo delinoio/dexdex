@@ -141,6 +141,7 @@ pub async fn get_next_task<S: TaskStore>(
                     linked_pr_url: task.linked_pr_url.clone(),
                     base_commit: task.base_commit.clone(),
                     end_commit: task.end_commit.clone(),
+                    git_patch: task.git_patch.clone(),
                     auto_fix_task_ids: task
                         .auto_fix_task_ids
                         .iter()
@@ -223,6 +224,11 @@ pub async fn report_task_status<S: TaskStore>(
         _ => entities::UnitTaskStatus::InProgress,
     };
     task.updated_at = chrono::Utc::now();
+
+    // Persist git patch if provided by the worker
+    if let Some(git_patch) = request.git_patch {
+        task.git_patch = Some(git_patch);
+    }
 
     state.store.update_unit_task(task).await?;
 
