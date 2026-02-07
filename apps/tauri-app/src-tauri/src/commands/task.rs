@@ -1729,6 +1729,76 @@ pub async fn get_composite_task_nodes(
     ))
 }
 
+/// Gets the worktree path for a task (desktop only, local mode only).
+///
+/// Returns the absolute path to the worktree directory for a given task ID,
+/// or `None` if the worktree does not exist on disk.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn get_worktree_path(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<Option<String>> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        // Worktree inspection is not available in remote mode because
+        // worktrees live on the worker machine.
+        return Ok(None);
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    // Look up the unit task to get its branch name for the worktree path
+    let task = runtime
+        .task_store_arc()
+        .get_unit_task(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
+
+    // Compute the data directory and worktrees path
+    let data_dir = crate::config::data_dir()?;
+    let worktrees_dir = data_dir.join("worktrees");
+
+    // Try the worktree path format used by the cache system:
+    // {worktrees_dir}/{task_id}-{branch_name}/
+    if let Some(branch_name) = &task.branch_name {
+        let wt_path = git_ops::worktree_path_for_task_with_cache(
+            &worktrees_dir,
+            &id.to_string(),
+            branch_name,
+        );
+        if wt_path.exists() {
+            return Ok(Some(wt_path.to_string_lossy().to_string()));
+        }
+    }
+
+    // Fallback: try the simple worktree path format: {worktrees_dir}/{task_id}
+    let wt_path = worktrees_dir.join(id.to_string());
+    if wt_path.exists() {
+        return Ok(Some(wt_path.to_string_lossy().to_string()));
+    }
+
+    Ok(None)
+}
+
+/// Gets the worktree path for a task (mobile stub - not supported).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn get_worktree_path(
+    _state: State<'_, Arc<RwLock<AppState>>>,
+    _task_id: String,
+) -> AppResult<Option<String>> {
+    // Worktree inspection is not available on mobile
+    Ok(None)
+}
+
 // Helper functions
 
 fn parse_agent_type(s: &str) -> AppResult<AiAgentType> {

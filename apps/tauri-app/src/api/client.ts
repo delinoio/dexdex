@@ -112,6 +112,10 @@ export async function respondTtyInput(params: RespondTtyInputParams): Promise<vo
   return invoke<void>("respond_tty_input", { params });
 }
 
+export async function getWorktreePath(taskId: string): Promise<string | null> {
+  return invoke<string | null>("get_worktree_path", { taskId });
+}
+
 // Repository commands
 
 export async function addRepository(

@@ -675,6 +675,10 @@ Changes made by AI agents are persisted as git patches in the database:
 - In local mode, the worktree is preserved while the task is in review
   so the user can inspect changes directly on disk
 - Worktrees for failed/cancelled tasks are cleaned up immediately
+- The frontend parses `git_patch` using `parseUnifiedDiff()` and displays
+  it via the `DiffViewer` component when the user clicks "View Diff"
+- The `get_worktree_path` Tauri command resolves the on-disk worktree
+  path; the "Open in Editor" button uses `tauri-plugin-opener` to reveal it
 ```
 
 ### Repository Caching

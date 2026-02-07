@@ -512,6 +512,7 @@ The review interface is built from the following components:
 | `CommentInputForm` | `components/review/InlineComment.tsx` | Form for adding new comments |
 | `LineComments` | `components/review/InlineComment.tsx` | Container for multiple comments on a line |
 | `useReviewComments` | `hooks/useReviewComments.ts` | Hook for comment CRUD operations |
+| `parseUnifiedDiff` | `lib/parseDiff.ts` | Parses unified diff (git patch) strings into `DiffFile[]` for rendering |
 
 ### Actions
 
