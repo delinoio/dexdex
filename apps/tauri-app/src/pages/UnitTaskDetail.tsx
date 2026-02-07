@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
@@ -30,6 +30,9 @@ export function UnitTaskDetail() {
   const rejectMutation = useRejectTask();
   const requestChangesMutation = useRequestChanges();
   const cancelMutation = useCancelTask();
+  const dismissApprovalMutation = useDismissApproval();
+  const createPrMutation = useCreatePr();
+  const commitToLocalMutation = useCommitToLocal();
 
   const task = data?.unitTask;
 
@@ -169,12 +172,28 @@ export function UnitTaskDetail() {
     setShowFeedback(false);
   };
 
+  const handleDismissApproval = async () => {
+    await dismissApprovalMutation.mutateAsync(task.id);
+  };
+
+  const handleCreatePr = async () => {
+    await createPrMutation.mutateAsync(task.id);
+  };
+
+  const handleCommitToLocal = async () => {
+    await commitToLocalMutation.mutateAsync(task.id);
+  };
+
   const getStatusBadgeVariant = (status: UnitTaskStatus) => {
     switch (status) {
       case UnitTaskStatus.InProgress:
         return "default";
       case UnitTaskStatus.InReview:
         return "secondary";
+      case UnitTaskStatus.Approved:
+      case UnitTaskStatus.PrOpen:
+      case UnitTaskStatus.Done:
+        return "default";
       case UnitTaskStatus.Rejected:
       case UnitTaskStatus.Failed:
       case UnitTaskStatus.Cancelled:
@@ -360,6 +379,58 @@ export function UnitTaskDetail() {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {task.status === UnitTaskStatus.Approved && (
+            <Card className="border-[hsl(var(--success))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--success))]"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  <CardTitle>Approved</CardTitle>
+                </div>
+                <CardDescription>
+                  This task has been approved. Choose how to apply the changes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleCreatePr}
+                    disabled={createPrMutation.isPending}
+                  >
+                    {createPrMutation.isPending ? "Creating PR..." : "Create PR"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleCommitToLocal}
+                    disabled={commitToLocalMutation.isPending}
+                  >
+                    {commitToLocalMutation.isPending ? "Committing..." : "Commit to Local"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={handleDismissApproval}
+                    disabled={dismissApprovalMutation.isPending}
+                  >
+                    {dismissApprovalMutation.isPending ? "Dismissing..." : "Dismiss Approval"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}

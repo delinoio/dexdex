@@ -81,6 +81,21 @@ pub struct UpdatePlanRequest {
     pub prompt: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DismissApprovalRequest {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePrRequest {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitToLocalRequest {
+    pub task_id: String,
+}
+
 // ============================================================================
 // Session Service Requests
 // ============================================================================

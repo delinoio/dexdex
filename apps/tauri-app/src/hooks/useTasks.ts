@@ -3,8 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveTask,
   cancelTask,
+  commitToLocal,
   createCompositeTask,
+  createPr,
   createUnitTask,
+  dismissApproval,
   getCompositeTaskNodes,
   getTask,
   listTasks,
@@ -138,6 +141,42 @@ export function useUpdatePlan() {
     mutationFn: ({ taskId, prompt }: { taskId: string; prompt: string }) =>
       updatePlanWithPrompt(taskId, prompt),
     onSuccess: (_data, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useDismissApproval() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: string) => dismissApproval(taskId),
+    onSuccess: (_data, taskId) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useCreatePr() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: string) => createPr(taskId),
+    onSuccess: (_data, taskId) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useCommitToLocal() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: string) => commitToLocal(taskId),
+    onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },

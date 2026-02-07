@@ -1729,6 +1729,270 @@ pub async fn get_composite_task_nodes(
     ))
 }
 
+/// Dismisses approval for a task, moving it back to InReview.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn dismiss_approval(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::DismissApprovalRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.dismiss_approval(request).await?;
+        info!("Dismissed approval via remote for task: {}", task_id);
+        return Ok(());
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+        if task.status != UnitTaskStatus::Approved {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} is not in Approved status (current: {:?})",
+                task_id, task.status
+            )));
+        }
+        let old_status = "approved".to_string();
+        task.status = UnitTaskStatus::InReview;
+        task.updated_at = chrono::Utc::now();
+        runtime.task_store_arc().update_unit_task(task).await?;
+        info!("Dismissed approval for unit task: {}", id);
+
+        let _ = app_handle.emit(
+            event_names::TASK_STATUS_CHANGED,
+            &TaskStatusChangedEvent {
+                task_id: task_id.clone(),
+                task_type: TaskType::UnitTask,
+                old_status,
+                new_status: "in_review".to_string(),
+            },
+        );
+
+        return Ok(());
+    }
+
+    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+}
+
+/// Dismisses approval for a task (mobile - remote mode only).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn dismiss_approval(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::DismissApprovalRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.dismiss_approval(request).await?;
+        info!("Dismissed approval via remote for task: {}", task_id);
+        return Ok(());
+    }
+
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
+/// Creates a pull request for an approved task.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn create_pr(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
+    task_id: String,
+) -> AppResult<String> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::CreatePrRequest {
+            task_id: task_id.clone(),
+        };
+
+        let response = client.create_pr(request).await?;
+        info!("Created PR via remote for task: {}", task_id);
+        return Ok(response.pr_url);
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+        if task.status != UnitTaskStatus::Approved {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} is not in Approved status (current: {:?})",
+                task_id, task.status
+            )));
+        }
+
+        // TODO: Implement actual PR creation via VCS provider API
+        // For now, transition the task status to PrOpen
+        let old_status = "approved".to_string();
+        task.status = UnitTaskStatus::PrOpen;
+        task.updated_at = chrono::Utc::now();
+        runtime.task_store_arc().update_unit_task(task).await?;
+        info!("Created PR for unit task: {}", id);
+
+        let _ = app_handle.emit(
+            event_names::TASK_STATUS_CHANGED,
+            &TaskStatusChangedEvent {
+                task_id: task_id.clone(),
+                task_type: TaskType::UnitTask,
+                old_status,
+                new_status: "pr_open".to_string(),
+            },
+        );
+
+        // Return an empty string for now; the actual PR URL will be returned
+        // once VCS provider integration is implemented.
+        return Ok(String::new());
+    }
+
+    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+}
+
+/// Creates a pull request for an approved task (mobile - remote mode only).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn create_pr(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<String> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::CreatePrRequest {
+            task_id: task_id.clone(),
+        };
+
+        let response = client.create_pr(request).await?;
+        info!("Created PR via remote for task: {}", task_id);
+        return Ok(response.pr_url);
+    }
+
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
+/// Commits approved task changes to the local git repository.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn commit_to_local(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::CommitToLocalRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.commit_to_local(request).await?;
+        info!("Committed to local via remote for task: {}", task_id);
+        return Ok(());
+    }
+
+    let id = Uuid::parse_str(&task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    let runtime = state
+        .local_runtime
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+    if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+        if task.status != UnitTaskStatus::Approved {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} is not in Approved status (current: {:?})",
+                task_id, task.status
+            )));
+        }
+
+        // TODO: Implement actual git commit to local repository
+        // For now, transition the task status to Done
+        let old_status = "approved".to_string();
+        task.status = UnitTaskStatus::Done;
+        task.updated_at = chrono::Utc::now();
+        runtime.task_store_arc().update_unit_task(task).await?;
+        info!("Committed to local for unit task: {}", id);
+
+        let _ = app_handle.emit(
+            event_names::TASK_STATUS_CHANGED,
+            &TaskStatusChangedEvent {
+                task_id: task_id.clone(),
+                task_type: TaskType::UnitTask,
+                old_status,
+                new_status: "done".to_string(),
+            },
+        );
+
+        return Ok(());
+    }
+
+    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+}
+
+/// Commits approved task changes to the local git repository (mobile - remote
+/// mode only).
+#[cfg(not(desktop))]
+#[tauri::command]
+pub async fn commit_to_local(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::CommitToLocalRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.commit_to_local(request).await?;
+        info!("Committed to local via remote for task: {}", task_id);
+        return Ok(());
+    }
+
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
 // Helper functions
 
 fn parse_agent_type(s: &str) -> AppResult<AiAgentType> {

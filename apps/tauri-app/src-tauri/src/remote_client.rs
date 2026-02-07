@@ -159,6 +159,27 @@ impl RemoteClient {
         self.post("/api/task/update-plan", &request).await
     }
 
+    /// Dismisses approval for a task, moving it back to InReview.
+    pub async fn dismiss_approval(
+        &self,
+        request: DismissApprovalRequest,
+    ) -> AppResult<DismissApprovalResponse> {
+        self.post("/api/task/dismiss-approval", &request).await
+    }
+
+    /// Creates a pull request for an approved task.
+    pub async fn create_pr(&self, request: CreatePrRequest) -> AppResult<CreatePrResponse> {
+        self.post("/api/task/create-pr", &request).await
+    }
+
+    /// Commits approved task changes to the local git repository.
+    pub async fn commit_to_local(
+        &self,
+        request: CommitToLocalRequest,
+    ) -> AppResult<CommitToLocalResponse> {
+        self.post("/api/task/commit-to-local", &request).await
+    }
+
     // =========================================================================
     // Repository API
     // =========================================================================

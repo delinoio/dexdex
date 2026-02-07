@@ -653,10 +653,13 @@ Store patch in database (git_patch field)
         ▼
 AI work done (in_review)
         ▼
-Human review ──┬──► Commit to repo (done)
-               ├──► Create PR (pr_open → done)
+Human review ──┬──► Approve (approved)
                ├──► Request changes (back to in_progress)
                └──► Reject (rejected)
+
+Approved ──────┬──► Create PR (pr_open → done)
+               ├──► Commit to local repo (done)
+               └──► Dismiss approval (back to in_review)
 
 Note: While in `in_progress`, the user can cancel the task at any time,
 which transitions the status to `cancelled`. The agent execution is
