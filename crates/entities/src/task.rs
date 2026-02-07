@@ -10,8 +10,11 @@ use crate::AiAgentType;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UnitTaskStatus {
-    /// AI is working.
+    /// Task created but not yet executing (e.g., waiting for dependencies in
+    /// a composite task graph).
     #[default]
+    Pending,
+    /// AI is working.
     InProgress,
     /// AI work complete, awaiting human review.
     InReview,
@@ -81,7 +84,7 @@ impl UnitTask {
             end_commit: None,
             git_patch: None,
             auto_fix_task_ids: Vec::new(),
-            status: UnitTaskStatus::InProgress,
+            status: UnitTaskStatus::Pending,
             created_at: now,
             updated_at: now,
         }
@@ -298,7 +301,7 @@ mod tests {
         assert_eq!(task.prompt, "Fix the bug");
         assert_eq!(task.title, Some("Bug Fix".to_string()));
         assert_eq!(task.branch_name, Some("fix/bug-123".to_string()));
-        assert_eq!(task.status, UnitTaskStatus::InProgress);
+        assert_eq!(task.status, UnitTaskStatus::Pending);
     }
 
     #[test]

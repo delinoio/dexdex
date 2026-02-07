@@ -40,6 +40,7 @@ enum UnitTaskStatus {
   UNIT_TASK_STATUS_REJECTED = 6;
   UNIT_TASK_STATUS_FAILED = 7;
   UNIT_TASK_STATUS_CANCELLED = 8;
+  UNIT_TASK_STATUS_PENDING = 9;
 }
 
 enum CompositeTaskStatus {

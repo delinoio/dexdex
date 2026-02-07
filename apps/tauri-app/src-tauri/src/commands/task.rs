@@ -379,8 +379,11 @@ pub async fn create_unit_task(
             .create_agent_task(agent_task)
             .await?;
 
-        // Create the UnitTask
+        // Create the UnitTask. Standalone tasks execute immediately, so they
+        // start as InProgress (not Pending, which is for composite task children
+        // that may need to wait for dependencies).
         let mut task = UnitTask::new(repo_group_id, agent_task.id, &params.prompt);
+        task.status = UnitTaskStatus::InProgress;
         if let Some(title) = params.title {
             task = task.with_title(title);
         }
@@ -1728,6 +1731,7 @@ fn parse_agent_type(s: &str) -> AppResult<AiAgentType> {
 
 fn parse_unit_status(s: &str) -> AppResult<UnitTaskStatus> {
     match s.to_lowercase().as_str() {
+        "pending" => Ok(UnitTaskStatus::Pending),
         "in_progress" => Ok(UnitTaskStatus::InProgress),
         "in_review" => Ok(UnitTaskStatus::InReview),
         "approved" => Ok(UnitTaskStatus::Approved),
@@ -1816,6 +1820,10 @@ mod tests {
 
     #[test]
     fn test_parse_unit_status_all_variants() {
+        assert!(matches!(
+            parse_unit_status("pending"),
+            Ok(UnitTaskStatus::Pending)
+        ));
         assert!(matches!(
             parse_unit_status("in_progress"),
             Ok(UnitTaskStatus::InProgress)

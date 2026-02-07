@@ -21,7 +21,7 @@ const columns: {
   {
     id: "in-progress",
     title: "In Progress",
-    unitStatuses: [UnitTaskStatus.InProgress],
+    unitStatuses: [UnitTaskStatus.Pending, UnitTaskStatus.InProgress],
     compositeStatuses: [CompositeTaskStatus.Planning, CompositeTaskStatus.InProgress],
   },
   {

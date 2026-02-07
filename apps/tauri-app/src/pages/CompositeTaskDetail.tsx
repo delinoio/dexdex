@@ -200,6 +200,7 @@ export function CompositeTaskDetail() {
         return "outline";
       case UnitTaskStatus.Rejected:
         return "destructive";
+      case UnitTaskStatus.Pending:
       case UnitTaskStatus.Unspecified:
       default:
         return "secondary";
@@ -208,6 +209,8 @@ export function CompositeTaskDetail() {
 
   const formatUnitTaskStatus = (status?: UnitTaskStatus): string => {
     switch (status) {
+      case UnitTaskStatus.Pending:
+        return "Pending";
       case UnitTaskStatus.InProgress:
         return "In Progress";
       case UnitTaskStatus.InReview:

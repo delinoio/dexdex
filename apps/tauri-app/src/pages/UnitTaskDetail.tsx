@@ -250,6 +250,7 @@ export function UnitTaskDetail() {
     switch (status) {
       case UnitTaskStatus.InProgress:
         return "default";
+      case UnitTaskStatus.Pending:
       case UnitTaskStatus.InReview:
         return "secondary";
       case UnitTaskStatus.Approved:
@@ -267,6 +268,8 @@ export function UnitTaskDetail() {
 
   const formatStatus = (status: UnitTaskStatus): string => {
     switch (status) {
+      case UnitTaskStatus.Pending:
+        return "Pending";
       case UnitTaskStatus.InProgress:
         return "In Progress";
       case UnitTaskStatus.InReview:
@@ -327,6 +330,34 @@ export function UnitTaskDetail() {
 
           {tokenUsage && (
             <TokenUsageCard tokenUsage={tokenUsage} />
+          )}
+
+          {task.status === UnitTaskStatus.Pending && (
+            <Card className="border-[hsl(var(--muted-foreground))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--muted-foreground))]"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  <CardTitle>Pending</CardTitle>
+                </div>
+                <CardDescription>
+                  This task is waiting for its dependencies to complete before execution starts.
+                </CardDescription>
+              </CardHeader>
+            </Card>
           )}
 
           {task.status === UnitTaskStatus.InProgress && (

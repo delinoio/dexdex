@@ -34,12 +34,14 @@ fn to_entity_unit_status(status: UnitTaskStatus) -> EntityUnitTaskStatus {
         UnitTaskStatus::Rejected => EntityUnitTaskStatus::Rejected,
         UnitTaskStatus::Failed => EntityUnitTaskStatus::Failed,
         UnitTaskStatus::Cancelled => EntityUnitTaskStatus::Cancelled,
+        UnitTaskStatus::Pending => EntityUnitTaskStatus::Pending,
     }
 }
 
 /// Converts entity UnitTaskStatus to RPC UnitTaskStatus.
 fn to_rpc_unit_status(status: EntityUnitTaskStatus) -> UnitTaskStatus {
     match status {
+        EntityUnitTaskStatus::Pending => UnitTaskStatus::Pending,
         EntityUnitTaskStatus::InProgress => UnitTaskStatus::InProgress,
         EntityUnitTaskStatus::InReview => UnitTaskStatus::InReview,
         EntityUnitTaskStatus::Approved => UnitTaskStatus::Approved,

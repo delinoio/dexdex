@@ -26,6 +26,7 @@ export enum AiAgentType {
 
 export enum UnitTaskStatus {
   Unspecified = "unspecified",
+  Pending = "pending",
   InProgress = "in_progress",
   InReview = "in_review",
   Approved = "approved",

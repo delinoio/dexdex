@@ -316,6 +316,7 @@ pub enum UnitTaskStatus {
     Rejected,
     Failed,
     Cancelled,
+    Pending,
 }
 
 /// Composite task status.

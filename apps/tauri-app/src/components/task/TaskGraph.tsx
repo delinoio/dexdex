@@ -42,6 +42,11 @@ const STATUS_COLORS: Record<
     border: "hsl(var(--border))",
     text: "hsl(var(--muted-foreground))",
   },
+  [UnitTaskStatus.Pending]: {
+    bg: "hsl(var(--muted))",
+    border: "hsl(var(--border))",
+    text: "hsl(var(--muted-foreground))",
+  },
   [UnitTaskStatus.InProgress]: {
     bg: "hsl(217 91% 60% / 0.1)",
     border: "hsl(217 91% 60%)",

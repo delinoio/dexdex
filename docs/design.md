@@ -321,6 +321,7 @@ A single task unit visible to users.
 
 ```
 enum UnitTaskStatus {
+  pending       // Created but not yet executing (waiting for dependencies)
   in_progress   // AI is working
   in_review     // AI work complete, awaiting human review
   approved      // Human approved
@@ -331,6 +332,10 @@ enum UnitTaskStatus {
   cancelled     // Task was cancelled by user
 }
 ```
+
+Standalone unit tasks are created with `in_progress` status (they execute immediately).
+Child unit tasks of a composite task are created with `pending` status and transition
+to `in_progress` only when `execute_unit_task` runs (i.e., their dependencies are met).
 
 ### CompositeTask
 
@@ -793,19 +798,22 @@ Executor parses plan_yaml  │
 Validates plan again       │
 Creates CompositeTaskNode  │
 + UnitTask records         │
+(status: pending)          │
 (with cleanup on error)    │
          ▼                 │
 Start root tasks           │
-(no dependencies)          │
+(pending → in_progress)    │
          ▼                 │
 Monitor task graph         │
 (configurable interval):   │
   - Task completes →       │
     start ready dependents │
+    (pending → in_progress)│
   - Task fails →           │
-    leave dependents       │
+    leave dependents as    │
+    pending (stuck)        │
          ▼                 │
-All tasks done             │
+All tasks done/stuck       │
 (status: done or failed)   │
 ```
 

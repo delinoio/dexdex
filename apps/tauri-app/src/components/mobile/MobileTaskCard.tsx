@@ -25,6 +25,7 @@ function getStatusBadgeVariant(
     case "in_progress":
     case "planning":
       return "default";
+    case "pending":
     case "in_review":
     case "pending_approval":
     case "approved":
@@ -39,6 +40,8 @@ function getStatusBadgeVariant(
 
 function formatStatus(status: UnitTaskStatus | CompositeTaskStatus): string {
   switch (status) {
+    case "pending":
+      return "Pending";
     case "in_progress":
       return "In Progress";
     case "in_review":
@@ -48,7 +51,7 @@ function formatStatus(status: UnitTaskStatus | CompositeTaskStatus): string {
     case "planning":
       return "Planning";
     case "pending_approval":
-      return "Pending";
+      return "Pending Approval";
     case "done":
       return "Done";
     case "rejected":

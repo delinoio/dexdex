@@ -255,6 +255,40 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             .map_err(|e| format!("Failed to get task: {}", e))?
             .ok_or_else(|| format!("Task not found: {}", task_id))?;
 
+        // Transition Pending → InProgress when execution actually starts.
+        // Standalone tasks are already InProgress; composite task children start
+        // as Pending and only transition here once their dependencies are met.
+        if task.status == UnitTaskStatus::Pending {
+            let old_status = "pending".to_string();
+            let mut updated_task = task.clone();
+            updated_task.status = UnitTaskStatus::InProgress;
+            updated_task.updated_at = Utc::now();
+            self.task_store
+                .update_unit_task(updated_task)
+                .await
+                .map_err(|e| format!("Failed to update task status to InProgress: {}", e))?;
+
+            // Emit status change so the frontend updates immediately
+            if let Err(e) = self
+                .emitter
+                .emit_task_status_changed(TaskStatusChangedEvent {
+                    task_id: task_id.to_string(),
+                    task_type: TaskType::UnitTask,
+                    old_status,
+                    new_status: "in_progress".to_string(),
+                })
+            {
+                warn!(
+                    "Failed to emit Pending → InProgress status changed event for task {}: {}",
+                    task_id, e
+                );
+            }
+            info!(
+                "Transitioned unit task {} from Pending to InProgress",
+                task_id
+            );
+        }
+
         // Get the repository group to find repositories
         let repo_group = self
             .task_store
@@ -629,9 +663,13 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             }
         }
 
-        // Only update if all tasks are in a terminal state
-        let all_terminal = all_statuses.iter().all(|s| Self::is_terminal_status(s));
-        if !all_terminal {
+        // Only update if all tasks are in a terminal or stuck-pending state.
+        // A Pending task whose dependencies have all completed/failed will
+        // never transition to InProgress, so we treat it as stuck (failed).
+        let all_done_or_stuck = all_statuses
+            .iter()
+            .all(|s| Self::is_terminal_status(s) || *s == UnitTaskStatus::Pending);
+        if !all_done_or_stuck {
             debug!(
                 "Not all unit tasks are terminal for composite task {}, skipping status update",
                 composite_task_id
@@ -642,7 +680,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let any_failed = all_statuses.iter().any(|s| {
             matches!(
                 s,
-                UnitTaskStatus::Failed | UnitTaskStatus::Rejected | UnitTaskStatus::Cancelled
+                UnitTaskStatus::Failed
+                    | UnitTaskStatus::Rejected
+                    | UnitTaskStatus::Cancelled
+                    | UnitTaskStatus::Pending
             )
         });
 
@@ -1704,9 +1745,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     None => continue,
                 };
 
-                // Only consider tasks that are InProgress (initial state) and
-                // not yet being executed
-                if *status != UnitTaskStatus::InProgress {
+                // Only consider tasks that are Pending (waiting for
+                // dependencies) and not yet being executed. Pending is the
+                // initial state for composite task child unit tasks.
+                if *status != UnitTaskStatus::Pending {
                     continue;
                 }
 
@@ -1760,21 +1802,24 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             }
 
-            // Check if all tasks are in a terminal state using the shared
-            // helper to stay in sync with `is_successfully_complete`.
-            let all_terminal = node_statuses
-                .values()
-                .all(|status| Self::is_terminal_status(status));
+            // Check if all tasks are in a terminal or stuck-pending state.
+            // A task is terminal if it has reached a final status. A Pending
+            // task is considered stuck when no newly ready tasks were found
+            // in this iteration (its dependencies failed and it can never start).
+            let all_done_or_stuck = node_statuses.values().all(|status| {
+                Self::is_terminal_status(status) || *status == UnitTaskStatus::Pending
+            });
 
-            if all_terminal && newly_ready.is_empty() {
-                // All tasks reached terminal state - update composite task
-                // status
+            if all_done_or_stuck && newly_ready.is_empty() {
+                // All tasks either completed or are stuck (pending with failed deps).
+                // Stuck Pending tasks count as failures.
                 let any_failed = node_statuses.values().any(|status| {
                     matches!(
                         status,
                         UnitTaskStatus::Failed
                             | UnitTaskStatus::Rejected
                             | UnitTaskStatus::Cancelled
+                            | UnitTaskStatus::Pending
                     )
                 });
 
