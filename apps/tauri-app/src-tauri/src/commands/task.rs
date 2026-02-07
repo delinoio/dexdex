@@ -1324,9 +1324,8 @@ pub async fn request_changes(
     if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
         if task.status != UnitTaskStatus::InReview {
             return Err(AppError::InvalidRequest(format!(
-                "Task {} is not in InReview status (current: {})",
-                task_id,
-                format!("{:?}", task.status)
+                "Task {} is not in InReview status (current: {:?})",
+                task_id, task.status
             )));
         }
 
