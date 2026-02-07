@@ -2004,8 +2004,8 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 .trim_matches('"')
                 .to_string();
             info!(
-                "Subtask started on unit task {}: transitioning parent composite task {} \
-                 from {} to InProgress",
+                "Subtask started on unit task {}: transitioning parent composite task {} from {} \
+                 to InProgress",
                 task_id, composite_task_id, old_ct_status
             );
             ct.status = CompositeTaskStatus::InProgress;
@@ -2015,14 +2015,14 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     "Failed to update composite task {} status to InProgress: {}",
                     composite_task_id, e
                 );
-            } else if let Err(e) =
-                self.emitter
-                    .emit_task_status_changed(TaskStatusChangedEvent {
-                        task_id: composite_task_id.to_string(),
-                        task_type: TaskType::CompositeTask,
-                        old_status: old_ct_status,
-                        new_status: "in_progress".to_string(),
-                    })
+            } else if let Err(e) = self
+                .emitter
+                .emit_task_status_changed(TaskStatusChangedEvent {
+                    task_id: composite_task_id.to_string(),
+                    task_type: TaskType::CompositeTask,
+                    old_status: old_ct_status,
+                    new_status: "in_progress".to_string(),
+                })
             {
                 warn!(
                     "Failed to emit status changed event for composite task {}: {}",
