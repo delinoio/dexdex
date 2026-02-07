@@ -73,16 +73,18 @@ export function useTaskLogs({
   const isComplete = taskStatus !== "in_progress";
 
   // Reset events when agent task changes
-  const [prevAgentTaskId, setPrevAgentTaskId] = useState(agentTaskId);
-  if (prevAgentTaskId !== agentTaskId) {
-    setPrevAgentTaskId(agentTaskId);
-    setEvents([]);
-    setSessions([]);
-    setError(null);
-    eventIdCounter.current = 0;
-    initialFetchDone.current = false;
-    realtimeBuffer.current = [];
-  }
+  const prevAgentTaskIdRef = useRef(agentTaskId);
+  useEffect(() => {
+    if (prevAgentTaskIdRef.current !== agentTaskId) {
+      setEvents([]);
+      setSessions([]);
+      setError(null);
+      eventIdCounter.current = 0;
+      initialFetchDone.current = false;
+      realtimeBuffer.current = [];
+      prevAgentTaskIdRef.current = agentTaskId;
+    }
+  }, [agentTaskId]);
 
   // Append a new event from the real-time listener.
   // If the initial fetch hasn't completed yet, buffer the event so we can

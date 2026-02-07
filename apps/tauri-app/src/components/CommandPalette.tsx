@@ -87,7 +87,7 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const [previousActiveElement, setPreviousActiveElement] = useState<HTMLElement | null>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
   const filteredCommands = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -108,7 +108,7 @@ export function CommandPalette() {
   useEffect(() => {
     if (isCommandPaletteOpen) {
       // Store the previously focused element to restore focus on close
-      setPreviousActiveElement(document.activeElement as HTMLElement);
+      previousActiveElement.current = document.activeElement as HTMLElement;
       setSearchQuery("");
       setSelectedIndex(0);
       // Defer focus to next tick to ensure dialog is fully rendered
@@ -118,12 +118,12 @@ export function CommandPalette() {
       return () => clearTimeout(timeoutId);
     } else {
       // Restore focus to previously focused element when closing
-      if (previousActiveElement) {
-        previousActiveElement.focus();
-        setPreviousActiveElement(null);
+      if (previousActiveElement.current) {
+        previousActiveElement.current.focus();
+        previousActiveElement.current = null;
       }
     }
-  }, [isCommandPaletteOpen, previousActiveElement]);
+  }, [isCommandPaletteOpen]);
 
   // Reset selected index when filtered commands change
   useEffect(() => {
