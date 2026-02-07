@@ -14,6 +14,7 @@ import { useTaskLogs } from "@/hooks/useTaskLogs";
 import { parseUnifiedDiff } from "@/lib/parseDiff";
 import { getWorktreePath } from "@/api/client";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { notify } from "@/stores/notificationStore";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
@@ -114,11 +115,13 @@ export function UnitTaskDetail() {
 
   // Handle View Diff button click
   const handleViewDiff = useCallback(() => {
-    setShowDiff((prev) => !prev);
-    if (!showDiff && diffFiles.length > 0 && !selectedDiffFile) {
-      setSelectedDiffFile(diffFiles[0].filePath);
-    }
-  }, [showDiff, diffFiles, selectedDiffFile]);
+    setShowDiff((prev) => {
+      if (!prev && diffFiles.length > 0 && !selectedDiffFile) {
+        setSelectedDiffFile(diffFiles[0].filePath);
+      }
+      return !prev;
+    });
+  }, [diffFiles, selectedDiffFile]);
 
   // Handle Open in Editor button click
   const handleOpenInEditor = useCallback(async () => {
@@ -129,9 +132,11 @@ export function UnitTaskDetail() {
         await revealItemInDir(worktreePath);
       } else {
         console.warn("Worktree not found for task:", task.id);
+        notify.warning("Worktree not found", "Could not locate the worktree directory for this task.");
       }
     } catch (err) {
       console.error("Failed to open worktree in editor:", err);
+      notify.error("Failed to open in editor", String(err));
     }
   }, [task?.id]);
 

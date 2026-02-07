@@ -136,8 +136,12 @@ export function parseUnifiedDiff(patch: string): DiffFile[] {
               // Empty line at the end of the diff
               i++;
               continue;
+            } else if (hunkLine.trim() !== "") {
+              // Unexpected non-empty line format - log and stop parsing this hunk
+              console.warn(`Unexpected line format in diff at line ${i}: "${hunkLine}"`);
+              break;
             } else {
-              // Context line without leading space (some diff formats)
+              // Empty line at end of hunk
               break;
             }
             i++;
