@@ -12,7 +12,7 @@ use std::{
 use chrono::Utc;
 pub use coding_agents::executor::ExecutionResult;
 use coding_agents::{
-    AgentResult, TimestampedEvent,
+    AgentResult, NormalizedEvent, TimestampedEvent,
     executor::{
         AgentOutputEvent, EventEmitter, ExecutionResultWithWorktree, TaskCompletedEvent,
         TaskExecutionConfig, TaskExecutor, TaskStatusChangedEvent, TaskType, TtyInputRequestEvent,
@@ -1831,15 +1831,12 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
         info!("Subtask will run in existing worktree: {:?}", worktree_path);
 
-        // Transition task status to InProgress while the subtask runs
+        // Transition task status to InProgress while the subtask runs.
+        // Re-use the task fetched above to avoid a redundant database query and
+        // reduce the race window between read and write.
         let old_status = "approved".to_string();
         {
-            let mut task = self
-                .task_store
-                .get_unit_task(task_id)
-                .await
-                .map_err(|e| format!("Failed to get task: {}", e))?
-                .ok_or_else(|| format!("Task not found: {}", task_id))?;
+            let mut task = task.clone();
             task.status = UnitTaskStatus::InProgress;
             task.updated_at = Utc::now();
             self.task_store
@@ -1926,10 +1923,24 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             };
 
-            // Update task status
+            // Update task status and extract PR URL if applicable
             if let Ok(Some(mut task)) = task_store.get_unit_task(task_id).await {
                 task.status = new_status;
                 task.updated_at = Utc::now();
+
+                // For PR creation subtasks, extract the PR URL from agent output
+                if success && target_status == UnitTaskStatus::PrOpen {
+                    if let Some(pr_url) = extract_pr_url_from_logs(result.logs()) {
+                        info!("Extracted PR URL for task {}: {}", task_id, pr_url);
+                        task.linked_pr_url = Some(pr_url);
+                    } else {
+                        warn!(
+                            "PR creation subtask for task {} succeeded but no PR URL found in logs",
+                            task_id
+                        );
+                    }
+                }
+
                 if let Err(e) = task_store.update_unit_task(task).await {
                     error!("Failed to update task status after subtask: {}", e);
                 }
@@ -1992,6 +2003,65 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             false
         }
     }
+}
+
+/// Extracts a PR URL from agent output logs.
+///
+/// Scans the JSON-serialized log lines for `TextOutput` events containing
+/// a GitHub/GitLab/Bitbucket PR URL. Returns the first PR URL found, or
+/// `None` if no URL is present.
+fn extract_pr_url_from_logs(logs: &[String]) -> Option<String> {
+    for log_line in logs {
+        // Each log line is a JSON-serialized TimestampedEvent
+        if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(log_line) {
+            let content = match &timestamped.event {
+                NormalizedEvent::TextOutput { content, .. } => Some(content.as_str()),
+                NormalizedEvent::ToolResult { output, .. } => output.as_str(),
+                _ => None,
+            };
+
+            if let Some(text) = content {
+                if let Some(url) = find_pr_url_in_text(text) {
+                    return Some(url);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Searches text for a pull request / merge request URL.
+///
+/// Supported patterns:
+/// - GitHub: `https://github.com/{owner}/{repo}/pull/{number}`
+/// - GitLab: `https://gitlab.com/{owner}/{repo}/-/merge_requests/{number}`
+/// - Bitbucket: `https://bitbucket.org/{owner}/{repo}/pull-requests/{number}`
+fn find_pr_url_in_text(text: &str) -> Option<String> {
+    // Split by whitespace and common delimiters to find URL tokens
+    for token in text.split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '<' || c == '>') {
+        let token = token.trim_end_matches(|c: char| c == '.' || c == ',' || c == ')' || c == ']');
+        if token.starts_with("https://github.com/") && token.contains("/pull/") {
+            // Validate it looks like a proper GitHub PR URL
+            let parts: Vec<&str> = token.splitn(7, '/').collect();
+            // https: / / github.com / owner / repo / pull / number
+            if parts.len() >= 7 {
+                if let Some(pr_num) = parts[6].split('/').next() {
+                    if pr_num.chars().all(|c| c.is_ascii_digit()) && !pr_num.is_empty() {
+                        // Reconstruct the canonical URL up to the PR number
+                        return Some(format!(
+                            "https://github.com/{}/{}/pull/{}",
+                            parts[3], parts[4], pr_num
+                        ));
+                    }
+                }
+            }
+        } else if token.starts_with("https://gitlab.com/") && token.contains("/-/merge_requests/") {
+            return Some(token.to_string());
+        } else if token.starts_with("https://bitbucket.org/") && token.contains("/pull-requests/") {
+            return Some(token.to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -2131,5 +2201,157 @@ mod tests {
         fn emit_task_completed(&self, _event: TaskCompletedEvent) -> AgentResult<()> {
             Ok(())
         }
+    }
+
+    // =========================================================================
+    // PR URL Extraction Tests
+    // =========================================================================
+
+    /// Helper to create a JSON-serialized TextOutput log line.
+    fn make_text_log(content: &str) -> String {
+        let event = TimestampedEvent {
+            timestamp: Utc::now(),
+            event: NormalizedEvent::TextOutput {
+                content: content.to_string(),
+                stream: false,
+            },
+        };
+        serde_json::to_string(&event).unwrap()
+    }
+
+    /// Helper to create a JSON-serialized ToolResult log line.
+    fn make_tool_result_log(output: &str) -> String {
+        let event = TimestampedEvent {
+            timestamp: Utc::now(),
+            event: NormalizedEvent::ToolResult {
+                tool_name: "bash".to_string(),
+                output: serde_json::Value::String(output.to_string()),
+                is_error: false,
+            },
+        };
+        serde_json::to_string(&event).unwrap()
+    }
+
+    #[test]
+    fn test_find_pr_url_github() {
+        let url = find_pr_url_in_text(
+            "Created PR: https://github.com/delinoio/delidev/pull/123",
+        );
+        assert_eq!(
+            url,
+            Some("https://github.com/delinoio/delidev/pull/123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_pr_url_github_in_sentence() {
+        let url = find_pr_url_in_text(
+            "I've created the pull request at https://github.com/owner/repo/pull/42. Please review it.",
+        );
+        assert_eq!(
+            url,
+            Some("https://github.com/owner/repo/pull/42".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_pr_url_no_url() {
+        assert_eq!(find_pr_url_in_text("No URL here"), None);
+        assert_eq!(find_pr_url_in_text("https://github.com/owner/repo"), None);
+        assert_eq!(find_pr_url_in_text(""), None);
+    }
+
+    #[test]
+    fn test_find_pr_url_invalid_pr_number() {
+        // /pull/ without a number should not match
+        assert_eq!(
+            find_pr_url_in_text("https://github.com/owner/repo/pull/abc"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_find_pr_url_gitlab() {
+        let url = find_pr_url_in_text(
+            "MR: https://gitlab.com/owner/repo/-/merge_requests/456",
+        );
+        assert_eq!(
+            url,
+            Some("https://gitlab.com/owner/repo/-/merge_requests/456".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_pr_url_bitbucket() {
+        let url = find_pr_url_in_text(
+            "PR: https://bitbucket.org/owner/repo/pull-requests/789",
+        );
+        assert_eq!(
+            url,
+            Some("https://bitbucket.org/owner/repo/pull-requests/789".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_pr_url_from_logs_text_output() {
+        let logs = vec![
+            make_text_log("Starting PR creation..."),
+            make_text_log("Pushing branch to remote..."),
+            make_text_log("Created PR: https://github.com/delinoio/delidev/pull/217"),
+        ];
+        assert_eq!(
+            extract_pr_url_from_logs(&logs),
+            Some("https://github.com/delinoio/delidev/pull/217".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_pr_url_from_logs_tool_result() {
+        let logs = vec![
+            make_text_log("Creating PR..."),
+            make_tool_result_log("https://github.com/owner/repo/pull/99\n"),
+        ];
+        assert_eq!(
+            extract_pr_url_from_logs(&logs),
+            Some("https://github.com/owner/repo/pull/99".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_pr_url_from_logs_no_url() {
+        let logs = vec![
+            make_text_log("Starting agent..."),
+            make_text_log("Done."),
+        ];
+        assert_eq!(extract_pr_url_from_logs(&logs), None);
+    }
+
+    #[test]
+    fn test_extract_pr_url_from_logs_empty() {
+        assert_eq!(extract_pr_url_from_logs(&[]), None);
+    }
+
+    #[test]
+    fn test_extract_pr_url_from_logs_returns_first_match() {
+        let logs = vec![
+            make_text_log("First PR: https://github.com/owner/repo/pull/1"),
+            make_text_log("Second PR: https://github.com/owner/repo/pull/2"),
+        ];
+        assert_eq!(
+            extract_pr_url_from_logs(&logs),
+            Some("https://github.com/owner/repo/pull/1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_pr_url_from_logs_skips_invalid_json() {
+        let logs = vec![
+            "not valid json".to_string(),
+            make_text_log("PR: https://github.com/owner/repo/pull/42"),
+        ];
+        assert_eq!(
+            extract_pr_url_from_logs(&logs),
+            Some("https://github.com/owner/repo/pull/42".to_string())
+        );
     }
 }
