@@ -575,6 +575,123 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             )
     }
 
+    /// Re-evaluates the status of a composite task based on the current
+    /// statuses of all its child unit tasks.
+    ///
+    /// If all child unit tasks are in a terminal state, the composite task
+    /// is updated to `Done` (if all succeeded) or `Failed` (if any failed).
+    /// This is used after subtask completion to keep the composite task status
+    /// consistent without relying on the graph monitor (which exits after
+    /// initial execution).
+    async fn reevaluate_composite_task_status(
+        task_store: &SqliteTaskStore,
+        emitter: &dyn EventEmitter,
+        composite_task_id: Uuid,
+    ) {
+        // Get all nodes for this composite task
+        let nodes = match task_store
+            .list_composite_task_nodes(composite_task_id)
+            .await
+        {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                warn!(
+                    "Failed to list nodes for composite task {} during re-evaluation: {}",
+                    composite_task_id, e
+                );
+                return;
+            }
+        };
+
+        if nodes.is_empty() {
+            return;
+        }
+
+        // Collect all unit task statuses
+        let mut all_statuses: Vec<UnitTaskStatus> = Vec::new();
+        for node in &nodes {
+            match task_store.get_unit_task(node.unit_task_id).await {
+                Ok(Some(ut)) => all_statuses.push(ut.status),
+                Ok(None) => {
+                    warn!(
+                        "Unit task {} not found during composite task re-evaluation",
+                        node.unit_task_id
+                    );
+                    return;
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to get unit task {} during composite task re-evaluation: {}",
+                        node.unit_task_id, e
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Only update if all tasks are in a terminal state
+        let all_terminal = all_statuses.iter().all(|s| Self::is_terminal_status(s));
+        if !all_terminal {
+            debug!(
+                "Not all unit tasks are terminal for composite task {}, skipping status update",
+                composite_task_id
+            );
+            return;
+        }
+
+        let any_failed = all_statuses.iter().any(|s| {
+            matches!(
+                s,
+                UnitTaskStatus::Failed | UnitTaskStatus::Rejected | UnitTaskStatus::Cancelled
+            )
+        });
+
+        let new_status = if any_failed {
+            CompositeTaskStatus::Failed
+        } else {
+            CompositeTaskStatus::Done
+        };
+
+        if let Ok(Some(mut ct)) = task_store.get_composite_task(composite_task_id).await {
+            if ct.status == new_status {
+                return;
+            }
+            let old_status = serde_json::to_string(&ct.status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
+            info!(
+                "Re-evaluating composite task {}: {} -> {:?} (all unit tasks terminal)",
+                composite_task_id, old_status, new_status
+            );
+            ct.status = new_status;
+            ct.updated_at = chrono::Utc::now();
+            if let Err(e) = task_store.update_composite_task(ct).await {
+                warn!(
+                    "Failed to update composite task {} status during re-evaluation: {}",
+                    composite_task_id, e
+                );
+            } else {
+                let new_status_str = serde_json::to_string(&new_status)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string();
+                if let Err(e) = emitter.emit_task_status_changed(TaskStatusChangedEvent {
+                    task_id: composite_task_id.to_string(),
+                    task_type: TaskType::CompositeTask,
+                    old_status,
+                    new_status: new_status_str,
+                }) {
+                    warn!(
+                        "Failed to emit status changed event for composite task {} during \
+                         re-evaluation: {}",
+                        composite_task_id, e
+                    );
+                }
+            }
+        }
+    }
+
     /// Executes the planning phase of a composite task asynchronously.
     ///
     /// This spawns a background task that:
@@ -1861,6 +1978,59 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             );
         }
 
+        // If this unit task belongs to a composite task, ensure the composite
+        // task is also marked as InProgress so the dashboard reflects ongoing
+        // work.
+        let parent_composite_task_id = match self
+            .task_store
+            .find_composite_task_id_by_unit_task_id(task_id)
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                warn!(
+                    "Failed to look up parent composite task for unit task {}: {}",
+                    task_id, e
+                );
+                None
+            }
+        };
+        if let Some(composite_task_id) = parent_composite_task_id
+            && let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await
+            && ct.status != CompositeTaskStatus::InProgress
+        {
+            let old_ct_status = serde_json::to_string(&ct.status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
+            info!(
+                "Subtask started on unit task {}: transitioning parent composite task {} from {} \
+                 to InProgress",
+                task_id, composite_task_id, old_ct_status
+            );
+            ct.status = CompositeTaskStatus::InProgress;
+            ct.updated_at = Utc::now();
+            if let Err(e) = self.task_store.update_composite_task(ct).await {
+                warn!(
+                    "Failed to update composite task {} status to InProgress: {}",
+                    composite_task_id, e
+                );
+            } else if let Err(e) = self
+                .emitter
+                .emit_task_status_changed(TaskStatusChangedEvent {
+                    task_id: composite_task_id.to_string(),
+                    task_type: TaskType::CompositeTask,
+                    old_status: old_ct_status,
+                    new_status: "in_progress".to_string(),
+                })
+            {
+                warn!(
+                    "Failed to emit status changed event for composite task {}: {}",
+                    composite_task_id, e
+                );
+            }
+        }
+
         // Create the execution config
         let config = TaskExecutionConfig {
             task_id,
@@ -1877,6 +2047,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let emitter = self.emitter.clone();
         let tty_manager = self.executor.tty_request_manager();
         let execution_handles = self.execution_handles.clone();
+        let parent_composite_id = parent_composite_task_id;
 
         // Create a persisting emitter for the subtask session
         let persisting_emitter = Arc::new(PersistingEventEmitter::new(
@@ -2008,6 +2179,17 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                     "Failed to emit task completed event for subtask {}: {}",
                     task_id, e
                 );
+            }
+
+            // If this unit task belongs to a composite task, re-evaluate the
+            // composite task status now that the subtask has completed.
+            if let Some(composite_task_id) = parent_composite_id {
+                Self::reevaluate_composite_task_status(
+                    &task_store,
+                    &*persisting_emitter,
+                    composite_task_id,
+                )
+                .await;
             }
 
             // Remove handle from the map after completion

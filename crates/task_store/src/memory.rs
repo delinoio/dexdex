@@ -574,6 +574,17 @@ impl TaskStore for MemoryTaskStore {
             .collect())
     }
 
+    async fn find_composite_task_id_by_unit_task_id(
+        &self,
+        unit_task_id: Uuid,
+    ) -> TaskStoreResult<Option<Uuid>> {
+        let nodes = self.composite_task_nodes.read().await;
+        Ok(nodes
+            .values()
+            .find(|n| n.unit_task_id == unit_task_id)
+            .map(|n| n.composite_task_id))
+    }
+
     async fn update_composite_task_node(
         &self,
         node: CompositeTaskNode,
