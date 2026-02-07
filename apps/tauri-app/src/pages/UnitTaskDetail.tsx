@@ -15,7 +15,7 @@ import {
 import { AgentLogViewer, StaticSessionLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDeleteTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
@@ -34,6 +34,7 @@ export function UnitTaskDetail() {
   const [showDiff, setShowDiff] = useState(false);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | undefined>();
   const [showRequestChangesDialog, setShowRequestChangesDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [extraComment, setExtraComment] = useState("");
 
   const { data, isLoading, error } = useTask(id ?? "");
@@ -41,6 +42,7 @@ export function UnitTaskDetail() {
   const rejectMutation = useRejectTask();
   const requestChangesMutation = useRequestChanges();
   const cancelMutation = useCancelTask();
+  const deleteMutation = useDeleteTask();
   const dismissApprovalMutation = useDismissApproval();
   const createPrMutation = useCreatePr();
   const commitToLocalMutation = useCommitToLocal();
@@ -131,6 +133,17 @@ export function UnitTaskDetail() {
       }
     }
   }, [task?.id, cancelMutation]);
+
+  const handleDelete = useCallback(async () => {
+    if (task?.id && !deleteMutation.isPending) {
+      try {
+        await deleteMutation.mutateAsync(task.id);
+        navigate("/");
+      } catch (error) {
+        console.error("Failed to delete task:", error);
+      }
+    }
+  }, [task?.id, deleteMutation, navigate]);
 
   // Parse git patch into structured diff files for the DiffViewer
   const diffFiles = useMemo<DiffFile[]>(() => {
@@ -308,9 +321,18 @@ export function UnitTaskDetail() {
               )}
             </div>
           </div>
-          <Button variant="outline" onClick={() => navigate("/")}>
-            ← Back
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              className="text-[hsl(var(--destructive))]"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              Delete
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/")}>
+              ← Back
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -749,6 +771,33 @@ export function UnitTaskDetail() {
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Task</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1386,6 +1386,84 @@ pub async fn cancel_task(
     ))
 }
 
+/// Deletes a task (unit or composite).
+///
+/// For unit tasks that are currently in progress, the execution is cancelled
+/// first before deletion.
+#[tauri::command]
+pub async fn delete_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        // Remote mode: make API call to main server
+        let client = state.get_remote_client()?;
+
+        let request = requests::DeleteTaskRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.delete_task(request).await?;
+        info!("Deleted task via remote: {}", task_id);
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        // If the task is currently running, cancel the execution first
+        if let Some(task) = runtime.task_store_arc().get_unit_task(id).await? {
+            if task.status == UnitTaskStatus::InProgress {
+                let executor = runtime
+                    .executor()
+                    .await
+                    .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+                executor.cancel_execution(id).await;
+                info!("Cancelled running execution before deleting task: {}", id);
+            }
+        }
+
+        // Try to delete unit task first
+        if runtime.task_store_arc().get_unit_task(id).await?.is_some() {
+            runtime.task_store_arc().delete_unit_task(id).await?;
+            info!("Deleted unit task: {}", id);
+            return Ok(());
+        }
+
+        // Try composite task
+        if runtime
+            .task_store_arc()
+            .get_composite_task(id)
+            .await?
+            .is_some()
+        {
+            runtime.task_store_arc().delete_composite_task(id).await?;
+            info!("Deleted composite task: {}", id);
+            return Ok(());
+        }
+
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    }
+
+    #[cfg(not(desktop))]
+    let _ = &task_id;
+
+    #[allow(unreachable_code)]
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
 /// Responds to a TTY input request from an agent.
 #[tauri::command]
 pub async fn respond_tty_input(

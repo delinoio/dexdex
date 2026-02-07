@@ -673,6 +673,12 @@ Note: While in `in_progress`, the user can cancel the task at any time,
 which transitions the status to `cancelled`. The agent execution is
 aborted and any partial work is preserved in the worktree.
 
+Note: The user can delete a task in any status. If the task is currently
+`in_progress`, the agent execution is cancelled first before deletion.
+Deletion permanently removes the task from the database. Both the unit
+task detail page and composite task detail page include a "Delete" button
+with a confirmation dialog.
+
 On each status transition, `task-status-changed` and `task-completed`
 events are emitted so the frontend updates automatically.
 
