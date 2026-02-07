@@ -25,15 +25,15 @@ const columns: {
     compositeStatuses: [CompositeTaskStatus.Planning, CompositeTaskStatus.InProgress],
   },
   {
-    id: "in-review",
-    title: "In Review",
-    unitStatuses: [UnitTaskStatus.InReview],
+    id: "action-required",
+    title: "Action Required",
+    unitStatuses: [UnitTaskStatus.InReview, UnitTaskStatus.Approved],
     compositeStatuses: [CompositeTaskStatus.PendingApproval],
   },
   {
-    id: "pr-open",
-    title: "PR Open",
-    unitStatuses: [UnitTaskStatus.PrOpen, UnitTaskStatus.Approved],
+    id: "waiting-for-others",
+    title: "Waiting for Others",
+    unitStatuses: [UnitTaskStatus.PrOpen, UnitTaskStatus.Cancelled],
     compositeStatuses: [],
   },
   {
@@ -43,8 +43,8 @@ const columns: {
     compositeStatuses: [CompositeTaskStatus.Done],
   },
   {
-    id: "rejected",
-    title: "Rejected / Failed",
+    id: "rejected-failed",
+    title: "Rejected/Failed",
     unitStatuses: [UnitTaskStatus.Rejected, UnitTaskStatus.Failed],
     compositeStatuses: [CompositeTaskStatus.Rejected, CompositeTaskStatus.Failed],
   },

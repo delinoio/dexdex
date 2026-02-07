@@ -159,7 +159,8 @@ Main view showing task status in a Kanban-style layout.
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌────────┐│
-│  │ In-Progress │ │  In-Review  │ │   PR-Open   │ │    Done     │ │Rejected││
+│  │ In Progress │ │   Action    │ │Waiting for  │ │    Done     │ │Rejected││
+│  │             │ │  Required   │ │  Others     │ │             │ │/Failed ││
 │  ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────┤ ├────────┤│
 │  │             │ │             │ │             │ │             │ │        ││
 │  │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │ │        ││
@@ -192,11 +193,11 @@ Main view showing task status in a Kanban-style layout.
 
 | Column | Description |
 |--------|-------------|
-| In-Progress | AI is currently working on the task |
-| In-Review | AI work complete, awaiting human review |
-| PR-Open | PR created on VCS provider |
-| Done | PR merged, task complete |
-| Rejected | Task rejected and discarded |
+| In Progress | AI is currently working on the task |
+| Action Required | Tasks needing human action (review, approval) |
+| Waiting for Others | Tasks waiting on external processes (PR open, cancelled) |
+| Done | Task complete |
+| Rejected/Failed | Task rejected or failed |
 
 ### Task Card
 
