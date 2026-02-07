@@ -1995,40 +1995,39 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 None
             }
         };
-        if let Some(composite_task_id) = parent_composite_task_id {
-            if let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await {
-                if ct.status != CompositeTaskStatus::InProgress {
-                    let old_ct_status = serde_json::to_string(&ct.status)
-                        .unwrap_or_default()
-                        .trim_matches('"')
-                        .to_string();
-                    info!(
-                        "Subtask started on unit task {}: transitioning parent composite task {} \
-                         from {} to InProgress",
-                        task_id, composite_task_id, old_ct_status
-                    );
-                    ct.status = CompositeTaskStatus::InProgress;
-                    ct.updated_at = Utc::now();
-                    if let Err(e) = self.task_store.update_composite_task(ct).await {
-                        warn!(
-                            "Failed to update composite task {} status to InProgress: {}",
-                            composite_task_id, e
-                        );
-                    } else if let Err(e) =
-                        self.emitter
-                            .emit_task_status_changed(TaskStatusChangedEvent {
-                                task_id: composite_task_id.to_string(),
-                                task_type: TaskType::CompositeTask,
-                                old_status: old_ct_status,
-                                new_status: "in_progress".to_string(),
-                            })
-                    {
-                        warn!(
-                            "Failed to emit status changed event for composite task {}: {}",
-                            composite_task_id, e
-                        );
-                    }
-                }
+        if let Some(composite_task_id) = parent_composite_task_id
+            && let Ok(Some(mut ct)) = self.task_store.get_composite_task(composite_task_id).await
+            && ct.status != CompositeTaskStatus::InProgress
+        {
+            let old_ct_status = serde_json::to_string(&ct.status)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
+            info!(
+                "Subtask started on unit task {}: transitioning parent composite task {} \
+                 from {} to InProgress",
+                task_id, composite_task_id, old_ct_status
+            );
+            ct.status = CompositeTaskStatus::InProgress;
+            ct.updated_at = Utc::now();
+            if let Err(e) = self.task_store.update_composite_task(ct).await {
+                warn!(
+                    "Failed to update composite task {} status to InProgress: {}",
+                    composite_task_id, e
+                );
+            } else if let Err(e) =
+                self.emitter
+                    .emit_task_status_changed(TaskStatusChangedEvent {
+                        task_id: composite_task_id.to_string(),
+                        task_type: TaskType::CompositeTask,
+                        old_status: old_ct_status,
+                        new_status: "in_progress".to_string(),
+                    })
+            {
+                warn!(
+                    "Failed to emit status changed event for composite task {}: {}",
+                    composite_task_id, e
+                );
             }
         }
 

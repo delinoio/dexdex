@@ -594,24 +594,22 @@ pub async fn request_changes<S: TaskStore>(
         .store
         .find_composite_task_id_by_unit_task_id(task_id)
         .await
+        && let Ok(Some(mut ct)) = state.store.get_composite_task(composite_task_id).await
+        && ct.status != entities::CompositeTaskStatus::InProgress
     {
-        if let Ok(Some(mut ct)) = state.store.get_composite_task(composite_task_id).await {
-            if ct.status != entities::CompositeTaskStatus::InProgress {
-                tracing::info!(
-                    composite_task_id = %composite_task_id,
-                    task_id = %task_id,
-                    "Transitioning parent composite task to InProgress due to request_changes"
-                );
-                ct.status = entities::CompositeTaskStatus::InProgress;
-                ct.updated_at = chrono::Utc::now();
-                if let Err(e) = state.store.update_composite_task(ct).await {
-                    tracing::warn!(
-                        composite_task_id = %composite_task_id,
-                        error = %e,
-                        "Failed to update composite task status to InProgress"
-                    );
-                }
-            }
+        tracing::info!(
+            composite_task_id = %composite_task_id,
+            task_id = %task_id,
+            "Transitioning parent composite task to InProgress due to request_changes"
+        );
+        ct.status = entities::CompositeTaskStatus::InProgress;
+        ct.updated_at = chrono::Utc::now();
+        if let Err(e) = state.store.update_composite_task(ct).await {
+            tracing::warn!(
+                composite_task_id = %composite_task_id,
+                error = %e,
+                "Failed to update composite task status to InProgress"
+            );
         }
     }
 
