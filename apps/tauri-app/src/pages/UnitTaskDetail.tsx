@@ -23,7 +23,7 @@ import { useReviewComments } from "@/hooks/useReviewComments";
 import { parseUnifiedDiff } from "@/lib/parseDiff";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 export function UnitTaskDetail() {
   const { id } = useParams<{ id: string }>();
@@ -71,28 +71,28 @@ export function UnitTaskDetail() {
 
   // Auto-show the diff when the task is first loaded in InReview status
   // (e.g. user navigates to a task that is already awaiting review).
-  const hasInitializedDiffRef = useRef(false);
+  const [hasInitializedDiff, setHasInitializedDiff] = useState(false);
   useEffect(() => {
     if (
-      !hasInitializedDiffRef.current &&
+      !hasInitializedDiff &&
       task?.status === UnitTaskStatus.InReview &&
       task?.gitPatch
     ) {
-      hasInitializedDiffRef.current = true;
+      setHasInitializedDiff(true);
       setShowDiff(true);
     }
-  }, [task?.status, task?.gitPatch]);
+  }, [hasInitializedDiff, task?.status, task?.gitPatch]);
 
   // Auto-collapse the session log and auto-show the diff when the task
   // transitions out of InProgress. We track the previous status so that only a
   // genuine transition triggers the change (e.g. going from InProgress ->
   // InReview), rather than toggling every time the component re-renders with a
   // non-InProgress status.
-  const prevTaskStatusRef = useRef(task?.status);
+  const [prevTaskStatus, setPrevTaskStatus] = useState(task?.status);
   useEffect(() => {
-    const prevStatus = prevTaskStatusRef.current;
+    const prevStatus = prevTaskStatus;
     const currentStatus = task?.status;
-    prevTaskStatusRef.current = currentStatus;
+    setPrevTaskStatus(currentStatus);
 
     if (
       prevStatus === UnitTaskStatus.InProgress &&
@@ -103,7 +103,7 @@ export function UnitTaskDetail() {
       // Auto-show the diff when transitioning to review (or any post-InProgress state)
       setShowDiff(true);
     }
-  }, [task?.status]);
+  }, [task?.status, prevTaskStatus]);
 
   // Extract token usage from session_end events
   const tokenUsage = useMemo<TokenUsage | null>(() => {

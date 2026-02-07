@@ -87,8 +87,7 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
+  const [previousActiveElement, setPreviousActiveElement] = useState<HTMLElement | null>(null);
 
   const filteredCommands = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -109,7 +108,7 @@ export function CommandPalette() {
   useEffect(() => {
     if (isCommandPaletteOpen) {
       // Store the previously focused element to restore focus on close
-      previousActiveElement.current = document.activeElement as HTMLElement;
+      setPreviousActiveElement(document.activeElement as HTMLElement);
       setSearchQuery("");
       setSelectedIndex(0);
       // Defer focus to next tick to ensure dialog is fully rendered
@@ -119,12 +118,12 @@ export function CommandPalette() {
       return () => clearTimeout(timeoutId);
     } else {
       // Restore focus to previously focused element when closing
-      if (previousActiveElement.current) {
-        previousActiveElement.current.focus();
-        previousActiveElement.current = null;
+      if (previousActiveElement) {
+        previousActiveElement.focus();
+        setPreviousActiveElement(null);
       }
     }
-  }, [isCommandPaletteOpen]);
+  }, [isCommandPaletteOpen, previousActiveElement]);
 
   // Reset selected index when filtered commands change
   useEffect(() => {
@@ -211,7 +210,6 @@ export function CommandPalette() {
       onKeyDown={handleKeyDown}
     >
       <div
-        ref={dialogRef}
         className="fixed left-[50%] top-[20%] w-full max-w-lg translate-x-[-50%] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-lg"
         onClick={handleContentClick}
         role="dialog"

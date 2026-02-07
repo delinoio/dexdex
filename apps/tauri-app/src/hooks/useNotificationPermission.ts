@@ -1,5 +1,5 @@
 // Hook for requesting notification permission on startup
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import {
   isPermissionGranted,
   requestPermission,
@@ -15,20 +15,14 @@ import {
  * granted or denied permission, no prompt will be shown.
  */
 export function useNotificationPermission(): void {
-  const hasRequested = useRef(false);
-
   useEffect(() => {
-    // Only request once per session
-    if (hasRequested.current) {
-      return;
-    }
-    hasRequested.current = true;
+    let cancelled = false;
 
     async function checkAndRequestPermission() {
       try {
         const granted = await isPermissionGranted();
 
-        if (granted) {
+        if (granted || cancelled) {
           return;
         }
 
@@ -39,5 +33,9 @@ export function useNotificationPermission(): void {
     }
 
     checkAndRequestPermission();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 }
