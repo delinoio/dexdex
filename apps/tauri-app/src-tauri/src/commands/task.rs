@@ -1272,6 +1272,10 @@ pub async fn update_plan_with_prompt(
 }
 
 /// Requests changes for a task.
+///
+/// In local mode, this creates a subtask that applies the requested changes
+/// using the AI agent. The feedback (including any inline review comments)
+/// is passed as the prompt. On completion the task returns to InReview.
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn request_changes(
@@ -1307,19 +1311,61 @@ pub async fn request_changes(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-    // Try to find and update unit task
+    // Validate executor exists before transitioning state to avoid leaving
+    // the task stuck in Approved if the executor is unavailable.
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+    // Verify the unit task exists and is in a reviewable state.
+    // We need to first approve the task so execute_subtask can run
+    // (it requires Approved status).
     if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
-        task.status = UnitTaskStatus::InProgress;
+        if task.status != UnitTaskStatus::InReview {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} is not in InReview status (current: {:?})",
+                task_id, task.status
+            )));
+        }
+
+        // Transition to Approved so execute_subtask can pick it up
+        task.status = UnitTaskStatus::Approved;
         task.updated_at = chrono::Utc::now();
         runtime.task_store_arc().update_unit_task(task).await?;
-        info!(
-            "Requested changes for unit task: {} (feedback: {})",
-            id, feedback
-        );
-        return Ok(());
+    } else {
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
     }
 
-    Err(AppError::NotFound(format!("Task not found: {}", task_id)))
+    let prompt = format!(
+        "The reviewer has requested changes to your work. Please apply the following feedback and \
+         fix any issues mentioned. After applying all changes, make sure the code compiles and \
+         works correctly.\n\n--- Requested Changes ---\n{}",
+        feedback
+    );
+
+    if let Err(e) = executor
+        .execute_subtask(id, prompt, UnitTaskStatus::InReview)
+        .await
+    {
+        // Revert task status back to InReview on failure so the user can retry
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            task.status = UnitTaskStatus::InReview;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+        }
+        return Err(AppError::Internal(format!(
+            "Failed to start request-changes subtask: {}",
+            e
+        )));
+    }
+
+    info!(
+        "Started request-changes subtask for unit task: {} (feedback length: {})",
+        id,
+        feedback.len()
+    );
+    Ok(())
 }
 
 /// Requests changes for a task (mobile - remote mode only).

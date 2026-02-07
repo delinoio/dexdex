@@ -118,4 +118,45 @@ describe("useReviewComments", () => {
     expect(lineComments).toHaveLength(3);
     expect(result.current.hasCommentsForLine("src/test.ts", 10)).toBe(true);
   });
+
+  it("clears all comments", () => {
+    const { result } = renderHook(() => useReviewComments({ taskId: "task-1" }));
+
+    act(() => {
+      result.current.addComment("src/test.ts", 10, "Comment 1");
+      result.current.addComment("src/other.ts", 20, "Comment 2");
+      result.current.addComment("src/third.ts", 30, "Comment 3");
+    });
+
+    expect(result.current.comments).toHaveLength(3);
+    expect(result.current.commentCount).toBe(3);
+
+    act(() => {
+      result.current.clearAll();
+    });
+
+    expect(result.current.comments).toHaveLength(0);
+    expect(result.current.commentCount).toBe(0);
+  });
+
+  it("clears comments when taskId changes", () => {
+    let taskId = "task-1";
+    const { result, rerender } = renderHook(() =>
+      useReviewComments({ taskId })
+    );
+
+    act(() => {
+      result.current.addComment("src/test.ts", 10, "Comment 1");
+      result.current.addComment("src/other.ts", 20, "Comment 2");
+    });
+
+    expect(result.current.comments).toHaveLength(2);
+
+    // Simulate navigating to a different task
+    taskId = "task-2";
+    rerender();
+
+    expect(result.current.comments).toHaveLength(0);
+    expect(result.current.commentCount).toBe(0);
+  });
 });

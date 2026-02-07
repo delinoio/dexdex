@@ -1,7 +1,7 @@
 // Hook for managing inline review comments
 // Uses local state management (no backend API required)
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 export interface ReviewComment {
   id: string;
@@ -22,6 +22,7 @@ export interface UseReviewCommentsReturn {
   addComment: (filePath: string, lineNumber: number, content: string) => void;
   updateComment: (commentId: string, content: string) => void;
   deleteComment: (commentId: string) => void;
+  clearAll: () => void;
   getCommentsForFile: (filePath: string) => ReviewComment[];
   getCommentsForLine: (filePath: string, lineNumber: number) => ReviewComment[];
   hasCommentsForLine: (filePath: string, lineNumber: number) => boolean;
@@ -42,6 +43,12 @@ export function useReviewComments({
 }: UseReviewCommentsOptions): UseReviewCommentsReturn {
   const [comments, setComments] = useState<ReviewComment[]>([]);
 
+  // Clear comments when taskId changes to prevent stale comments from
+  // appearing when navigating between tasks (React Router may reuse component).
+  useEffect(() => {
+    setComments([]);
+  }, [taskId]);
+
   const addComment = useCallback(
     (filePath: string, lineNumber: number, content: string) => {
       const now = new Date().toISOString();
@@ -56,7 +63,7 @@ export function useReviewComments({
       };
       setComments((prev) => [...prev, newComment]);
     },
-    [taskId]
+    []
   );
 
   const updateComment = useCallback((commentId: string, content: string) => {
@@ -71,6 +78,10 @@ export function useReviewComments({
 
   const deleteComment = useCallback((commentId: string) => {
     setComments((prev) => prev.filter((comment) => comment.id !== commentId));
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setComments([]);
   }, []);
 
   const getCommentsForFile = useCallback(
@@ -107,6 +118,7 @@ export function useReviewComments({
     addComment,
     updateComment,
     deleteComment,
+    clearAll,
     getCommentsForFile,
     getCommentsForLine,
     hasCommentsForLine,
