@@ -224,6 +224,7 @@ The `coding_agents` crate also provides platform-agnostic task execution:
 - `EventEmitter` trait: Platform-specific event emission (Tauri, CLI, etc.)
 - `TtyInputRequestManager`: Manages pending TTY input requests
 - `TaskExecutionConfig`: Configuration for executing a task
+- `run_agent_in_worktree()`: Runs an agent in an existing worktree (used for subtasks)
 
 This design allows the same execution logic to be reused across different platforms (desktop app, CLI, server) by implementing the `EventEmitter` trait.
 
@@ -657,8 +658,8 @@ Human review ──┬──► Approve (approved)
                ├──► Request changes (back to in_progress)
                └──► Reject (rejected)
 
-Approved ──────┬──► Create PR (pr_open → done)
-               ├──► Commit to local repo (done)
+Approved ──────┬──► Create PR (subtask → pr_open)
+               ├──► Commit to local repo (subtask → done)
                └──► Dismiss approval (back to in_review)
 
 Note: While in `in_progress`, the user can cancel the task at any time,
@@ -667,6 +668,37 @@ aborted and any partial work is preserved in the worktree.
 
 On each status transition, `task-status-changed` and `task-completed`
 events are emitted so the frontend updates automatically.
+
+### Subtasks
+
+Subtasks are agent sessions that run within an existing unit task's
+worktree. They are used for post-approval operations like PR creation
+and committing to local. Key characteristics:
+
+- A subtask creates a new `AgentSession` under the same `AgentTask`
+- It runs in the existing worktree (no new worktree is created)
+- The parent task transitions to `in_progress` while the subtask runs
+- On success, the task transitions to the target status (e.g. `pr_open`)
+- On failure or cancellation, the task reverts to `approved`
+- Subtasks are not shown separately in the dashboard - they use the
+  same task ID as the parent
+- The subtask can be cancelled using the same "Stop Agent" button
+- Each session (main execution + subtasks) has its own collapsible
+  "Agent Session Log" section in the task detail view. The backend
+  returns all sessions grouped via `SessionLogsGroup` in the
+  `get_task_logs` response.
+
+```
+Approved ──► execute_subtask(prompt, target_status)
+                    │
+                    ├── Create new AgentSession
+                    ├── Transition to in_progress
+                    ├── Run agent in existing worktree
+                    │
+                    ├── Success → target_status (pr_open / done)
+                    ├── Failure → approved (user can retry)
+                    └── Cancelled → approved
+```
 
 ### Change Persistence
 

@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { Textarea } from "@/components/ui/Textarea";
-import { AgentLogViewer } from "@/components/task/AgentLogViewer";
+import { AgentLogViewer, StaticSessionLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
@@ -22,6 +22,8 @@ export function UnitTaskDetail() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showLog, setShowLog] = useState(true);
+  // Tracks which session IDs are collapsed (all default to expanded)
+  const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set());
   const [showDiff, setShowDiff] = useState(false);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | undefined>();
 
@@ -37,7 +39,7 @@ export function UnitTaskDetail() {
   const task = data?.unitTask;
 
   // Fetch task logs to extract token usage from session_end events
-  const { events } = useTaskLogs({
+  const { events, sessions } = useTaskLogs({
     taskId: task?.id ?? "",
     agentTaskId: task?.agentTaskId ?? "",
     taskStatus: task?.status ?? UnitTaskStatus.Unspecified,
@@ -383,6 +385,76 @@ export function UnitTaskDetail() {
             </Card>
           )}
 
+          {task.status === UnitTaskStatus.PrOpen && (
+            <Card className="border-[hsl(var(--success))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--success))]"
+                  >
+                    <circle cx="18" cy="18" r="3" />
+                    <circle cx="6" cy="6" r="3" />
+                    <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                    <line x1="6" y1="9" x2="6" y2="21" />
+                  </svg>
+                  <CardTitle>Pull Request Created</CardTitle>
+                </div>
+                <CardDescription>
+                  A pull request has been created for this task.
+                </CardDescription>
+              </CardHeader>
+              {task.linkedPrUrl && (
+                <CardContent>
+                  <a
+                    href={task.linkedPrUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-[hsl(var(--primary))] underline"
+                  >
+                    {task.linkedPrUrl}
+                  </a>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {task.status === UnitTaskStatus.Done && (
+            <Card className="border-[hsl(var(--success))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--success))]"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  <CardTitle>Completed</CardTitle>
+                </div>
+                <CardDescription>
+                  This task has been completed and the changes have been applied.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+
           {task.status === UnitTaskStatus.Approved && (
             <Card className="border-[hsl(var(--success))]">
               <CardHeader>
@@ -490,36 +562,96 @@ export function UnitTaskDetail() {
               </div>
             )}
 
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Agent Session Log</CardTitle>
-                  <CardDescription>
-                    Output from the AI coding agent
-                  </CardDescription>
+          {/* Render separate log sections per agent session.
+              Previous (completed) sessions use a static viewer; the latest
+              session uses the real-time streaming AgentLogViewer. */}
+          {sessions.length > 1 ? (
+            sessions.map((session, idx) => {
+              const isLatest = idx === sessions.length - 1;
+              const isCollapsed = collapsedSessions.has(session.sessionId);
+              return (
+                <Card key={session.sessionId}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>{session.label}</CardTitle>
+                        <CardDescription>
+                          {isLatest
+                            ? "Active agent session"
+                            : `Completed session`}
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setCollapsedSessions((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(session.sessionId)) {
+                              next.delete(session.sessionId);
+                            } else {
+                              next.add(session.sessionId);
+                            }
+                            return next;
+                          })
+                        }
+                      >
+                        {isCollapsed ? "Show" : "Hide"}
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  {!isCollapsed && (
+                    <CardContent>
+                      {isLatest ? (
+                        <AgentLogViewer
+                          taskId={task.id}
+                          agentTaskId={task.agentTaskId}
+                          taskStatus={task.status}
+                          className="min-h-64 max-h-[500px]"
+                        />
+                      ) : (
+                        <StaticSessionLogViewer
+                          events={session.events}
+                          className="min-h-32 max-h-[500px]"
+                        />
+                      )}
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })
+          ) : (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Agent Session Log</CardTitle>
+                    <CardDescription>
+                      Output from the AI coding agent
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleLog}
+                    title="Toggle log visibility (L)"
+                  >
+                    {showLog ? "Hide" : "Show"}
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleToggleLog}
-                  title="Toggle log visibility (L)"
-                >
-                  {showLog ? "Hide" : "Show"}
-                </Button>
-              </div>
-            </CardHeader>
-            {showLog && (
-              <CardContent>
-                <AgentLogViewer
-                  taskId={task.id}
-                  agentTaskId={task.agentTaskId}
-                  taskStatus={task.status}
-                  className="min-h-64 max-h-[500px]"
-                />
-              </CardContent>
-            )}
-          </Card>
+              </CardHeader>
+              {showLog && (
+                <CardContent>
+                  <AgentLogViewer
+                    taskId={task.id}
+                    agentTaskId={task.agentTaskId}
+                    taskStatus={task.status}
+                    className="min-h-64 max-h-[500px]"
+                  />
+                </CardContent>
+              )}
+            </Card>
+          )}
         </div>
       </div>
     </div>
