@@ -156,6 +156,33 @@ export function AgentLogViewer({ taskId, agentTaskId, taskStatus, className }: A
   );
 }
 
+interface StaticSessionLogViewerProps {
+  events: NormalizedEventEntry[];
+  className?: string;
+}
+
+/**
+ * A static log viewer that renders pre-fetched events without real-time
+ * streaming. Used for completed sessions (e.g. previous subtask sessions).
+ */
+export function StaticSessionLogViewer({ events, className }: StaticSessionLogViewerProps) {
+  return (
+    <div className={cn("flex flex-col h-full", className)}>
+      <div className="flex-1 overflow-y-auto font-mono text-sm bg-muted/30 rounded-lg p-4 space-y-2">
+        {events.length === 0 ? (
+          <div className="text-muted-foreground">
+            No logs available for this session.
+          </div>
+        ) : (
+          events.map((entry) => (
+            <LogEntry key={entry.id} entry={entry} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface LogEntryProps {
   entry: NormalizedEventEntry;
 }

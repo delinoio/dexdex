@@ -251,6 +251,19 @@ pub struct NormalizedEventEntry {
     pub event: NormalizedEvent,
 }
 
+/// A group of log events belonging to a single agent session.
+#[cfg(desktop)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLogsGroup {
+    pub session_id: String,
+    /// Human-readable label, e.g. "Main Execution" or "Create PR".
+    pub label: String,
+    pub events: Vec<NormalizedEventEntry>,
+    pub is_complete: bool,
+    pub created_at: String,
+}
+
 /// Response for get_task_logs command.
 #[cfg(desktop)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -259,6 +272,10 @@ pub struct TaskLogsResponse {
     pub events: Vec<NormalizedEventEntry>,
     pub is_complete: bool,
     pub last_event_id: Option<i64>,
+    /// All sessions for this agent task, each with their own events.
+    /// The first session is the main execution; subsequent sessions are
+    /// subtasks.
+    pub sessions: Vec<SessionLogsGroup>,
 }
 
 /// Response for get_task_logs command (mobile stub).
@@ -269,6 +286,7 @@ pub struct TaskLogsResponse {
     pub events: Vec<serde_json::Value>,
     pub is_complete: bool,
     pub last_event_id: Option<i64>,
+    pub sessions: Vec<serde_json::Value>,
 }
 
 /// Parameters for responding to a TTY input request.
@@ -1360,6 +1378,7 @@ pub async fn get_task_logs(
             events: Vec::new(),
             is_complete: true,
             last_event_id: None,
+            sessions: Vec::new(),
         });
     }
 
@@ -1390,7 +1409,7 @@ pub async fn get_task_logs(
         .list_agent_sessions(agent_task_id)
         .await?;
 
-    // Sort sessions by created_at to ensure we get the latest one
+    // Sort sessions by created_at to ensure chronological order
     sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // If no sessions, return empty (task hasn't started yet)
@@ -1399,33 +1418,68 @@ pub async fn get_task_logs(
             events: Vec::new(),
             is_complete: false,
             last_event_id: None,
+            sessions: Vec::new(),
         });
     }
 
-    // Get the latest session's output log (safe because we checked is_empty()
-    // above)
-    let session = sessions
-        .last()
-        .ok_or_else(|| AppError::Internal("Sessions list became empty unexpectedly".to_string()))?;
+    // Build grouped session logs for all sessions
+    let mut session_groups: Vec<SessionLogsGroup> = Vec::new();
+    for (session_idx, session) in sessions.iter().enumerate() {
+        let mut session_events = Vec::new();
 
-    // Determine completion based on whether the session has completed
-    let is_complete = session.completed_at.is_some();
+        if let Some(output_log) = &session.output_log {
+            for (idx, line) in output_log.lines().enumerate() {
+                let event_id = idx as i64;
+
+                if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
+                    session_events.push(NormalizedEventEntry {
+                        id: event_id,
+                        timestamp: timestamped.timestamp.to_rfc3339(),
+                        event: timestamped.event,
+                    });
+                } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+                    session_events.push(NormalizedEventEntry {
+                        id: event_id,
+                        timestamp: session.created_at.to_rfc3339(),
+                        event,
+                    });
+                }
+            }
+        }
+
+        // First session is "Main Execution", subsequent are subtask sessions
+        let label = if session_idx == 0 {
+            "Main Execution".to_string()
+        } else {
+            format!("Subtask {}", session_idx)
+        };
+
+        session_groups.push(SessionLogsGroup {
+            session_id: session.id.to_string(),
+            label,
+            events: session_events,
+            is_complete: session.completed_at.is_some(),
+            created_at: session.created_at.to_rfc3339(),
+        });
+    }
+
+    // For backward compatibility, the top-level `events` field still contains
+    // the latest session's events (used by the real-time streaming path).
+    let latest_session = sessions.last().unwrap();
+    let is_complete = latest_session.completed_at.is_some();
     let mut events = Vec::new();
     let mut last_event_id: Option<i64> = None;
 
-    if let Some(output_log) = &session.output_log {
-        // Parse the output log (each line is a JSON timestamped event)
+    if let Some(output_log) = &latest_session.output_log {
         for (idx, line) in output_log.lines().enumerate() {
             let event_id = idx as i64;
 
-            // Skip events before after_event_id
             if let Some(after_id) = after_event_id {
                 if event_id <= after_id {
                     continue;
                 }
             }
 
-            // Try to parse as TimestampedEvent first (new format with timestamps)
             if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
                 events.push(NormalizedEventEntry {
                     id: event_id,
@@ -1434,11 +1488,9 @@ pub async fn get_task_logs(
                 });
                 last_event_id = Some(event_id);
             } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
-                // Fallback: parse as NormalizedEvent for backwards compatibility
-                // with logs created before timestamps were added
                 events.push(NormalizedEventEntry {
                     id: event_id,
-                    timestamp: session.created_at.to_rfc3339(),
+                    timestamp: latest_session.created_at.to_rfc3339(),
                     event,
                 });
                 last_event_id = Some(event_id);
@@ -1450,6 +1502,7 @@ pub async fn get_task_logs(
         events,
         is_complete,
         last_event_id,
+        sessions: session_groups,
     })
 }
 
@@ -1477,6 +1530,7 @@ pub async fn get_task_logs(
             events: Vec::new(),
             is_complete: true,
             last_event_id: None,
+            sessions: Vec::new(),
         });
     }
 

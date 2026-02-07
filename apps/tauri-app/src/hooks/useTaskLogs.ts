@@ -10,6 +10,7 @@ import type {
   AgentOutputEvent,
   NormalizedEvent,
   NormalizedEventEntry,
+  SessionLogsGroup,
   UnitTaskStatus,
 } from "@/api/types";
 
@@ -30,6 +31,8 @@ interface UseTaskLogsOptions {
 
 interface UseTaskLogsResult {
   events: NormalizedEventEntry[];
+  /** All sessions for this agent task, each with their own log events. */
+  sessions: SessionLogsGroup[];
   isLoading: boolean;
   isComplete: boolean;
   error: Error | null;
@@ -54,6 +57,7 @@ export function useTaskLogs({
   enabled = true,
 }: UseTaskLogsOptions): UseTaskLogsResult {
   const [events, setEvents] = useState<NormalizedEventEntry[]>([]);
+  const [sessions, setSessions] = useState<SessionLogsGroup[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const eventIdCounter = useRef(0);
@@ -73,6 +77,7 @@ export function useTaskLogs({
   useEffect(() => {
     if (prevAgentTaskIdRef.current !== agentTaskId) {
       setEvents([]);
+      setSessions([]);
       setError(null);
       eventIdCounter.current = 0;
       initialFetchDone.current = false;
@@ -163,6 +168,11 @@ export function useTaskLogs({
         const fetchedEvents = result.events;
         eventIdCounter.current = fetchedEvents.length;
 
+        // Store session groups from the backend
+        if (result.sessions) {
+          setSessions(result.sessions);
+        }
+
         // Drain the real-time buffer: create entries for events that arrived
         // during the fetch. We use a simple heuristic to skip events already
         // present in the fetched snapshot: compare by serialised JSON of the
@@ -209,6 +219,7 @@ export function useTaskLogs({
 
   return {
     events,
+    sessions,
     isLoading,
     isComplete,
     error,

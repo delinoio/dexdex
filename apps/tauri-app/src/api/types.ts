@@ -488,10 +488,22 @@ export interface NormalizedEventEntry {
   event: NormalizedEvent;
 }
 
+/** A group of log events belonging to a single agent session. */
+export interface SessionLogsGroup {
+  sessionId: string;
+  /** Human-readable label, e.g. "Main Execution" or "Subtask 1". */
+  label: string;
+  events: NormalizedEventEntry[];
+  isComplete: boolean;
+  createdAt: string;
+}
+
 export interface TaskLogsResponse {
   events: NormalizedEventEntry[];
   isComplete: boolean;
   lastEventId?: number;
+  /** All sessions for this agent task, each with their own events. */
+  sessions: SessionLogsGroup[];
 }
 
 export interface RespondTtyInputParams {
