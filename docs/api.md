@@ -327,6 +327,50 @@ Requests changes on a task.
   ```
 - **Response**: Updated task object with feedback appended to prompt
 
+### Dismiss Approval
+
+Dismisses approval for an approved task, moving it back to `in_review` status.
+
+- **URL**: `POST /api/task/dismiss-approval`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "uuid"
+  }
+  ```
+- **Response**: `{}`
+
+### Create PR
+
+Creates a pull request for an approved task on the VCS provider.
+
+- **URL**: `POST /api/task/create-pr`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "uuid"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "pr_url": "https://github.com/org/repo/pull/123"
+  }
+  ```
+
+### Commit to Local
+
+Commits an approved task's changes to the local git repository.
+
+- **URL**: `POST /api/task/commit-to-local`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "uuid"
+  }
+  ```
+- **Response**: `{}`
+
 ---
 
 ## Session Management

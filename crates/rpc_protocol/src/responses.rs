@@ -63,6 +63,17 @@ pub struct UpdatePlanResponse {
     pub task: CompositeTask,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DismissApprovalResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePrResponse {
+    pub pr_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitToLocalResponse {}
+
 // ============================================================================
 // Session Service Responses
 // ============================================================================

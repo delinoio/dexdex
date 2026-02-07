@@ -413,6 +413,15 @@ async fn reject_task(task_id: String) -> Result<(), Error>;
 
 #[tauri::command]
 async fn request_changes(task_id: String, feedback: String) -> Result<(), Error>;
+
+#[tauri::command]
+async fn dismiss_approval(task_id: String) -> Result<(), Error>;
+
+#[tauri::command]
+async fn create_pr(task_id: String) -> Result<String, Error>;
+
+#[tauri::command]
+async fn commit_to_local(task_id: String) -> Result<(), Error>;
 ```
 
 ### Repository Management

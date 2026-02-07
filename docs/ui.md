@@ -346,7 +346,20 @@ Type `@` to reference files:
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                            │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  [View Diff]        [Request Changes]        [Reject]                      │
+│  [View Diff]        [Approve]  [Request Changes]  [Reject]                 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+**When Approved** (`status: approved`):
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ ✓ Approved                                                          │   │
+│  ├─────────────────────────────────────────────────────────────────────┤   │
+│  │  This task has been approved. Choose how to apply the changes.      │   │
+│  │                                                                     │   │
+│  │  [Create PR]   [Commit to Local]   [Dismiss Approval]              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -516,13 +529,21 @@ The review interface is built from the following components:
 
 ### Actions
 
+#### In Review Actions
+
 | Action | Description |
 |--------|-------------|
-| Submit Review | Open review submission dialog |
-| Commit | Merge changes to repository |
-| Create PR | Create PR on VCS provider |
+| Approve | Approve the task changes |
 | Request Changes | Send feedback for AI rework |
 | Reject | Discard the task |
+
+#### Approved Actions
+
+| Action | Description |
+|--------|-------------|
+| Create PR | Create PR on VCS provider (transitions to `pr_open`) |
+| Commit to Local | Commit changes to local git repository (transitions to `done`) |
+| Dismiss Approval | Move task back to `in_review` status |
 
 ---
 

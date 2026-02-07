@@ -86,6 +86,18 @@ export async function cancelTask(taskId: string): Promise<void> {
   return invoke<void>("cancel_task", { taskId });
 }
 
+export async function dismissApproval(taskId: string): Promise<void> {
+  return invoke<void>("dismiss_approval", { taskId });
+}
+
+export async function createPr(taskId: string): Promise<string> {
+  return invoke<string>("create_pr", { taskId });
+}
+
+export async function commitToLocal(taskId: string): Promise<void> {
+  return invoke<void>("commit_to_local", { taskId });
+}
+
 export async function updatePlanWithPrompt(
   taskId: string,
   prompt: string
