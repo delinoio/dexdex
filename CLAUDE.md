@@ -9,3 +9,41 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
+
+### Project Structure
+
+This is a monorepo with three main components:
+
+| Component | Path | Description |
+|-----------|------|-------------|
+| Main Server | `apps/main-server/` | Rust backend (Axum), task management, RPC server |
+| Worker Server | `apps/worker-server/` | Rust worker, runs AI agents in Docker sandboxes |
+| Desktop App | `apps/tauri-app/` | Tauri + React frontend |
+
+Shared Rust crates live in `crates/`:
+- `entities` — Core entity definitions
+- `coding_agents` — AI agent abstraction, Docker sandboxing, task execution
+- `task_store` — Task persistence (SQLite, PostgreSQL, in-memory)
+- `rpc_protocol` — Connect RPC protocol definitions (Protobuf)
+- `git_ops` — Git operations, worktree management
+- `auth` — JWT authentication & RBAC
+- `secrets` — Cross-platform keychain access
+- `worker_impl` — Local worker implementation
+- `config` — Configuration management
+- `plan_parser` — YAML plan parsing
+
+### API Reference
+
+The RPC API is defined in `crates/rpc_protocol/proto/delidev.proto`. When you need to find or modify an RPC method or message type, read this file first — it lists all method names and message types, eliminating the need to guess and grep.
+
+### Types and Schemas
+
+- Never use `any` type in TypeScript. Use concrete types instead.
+- Prefer schema-based parsers (e.g., Zod) over raw `JSON.parse`.
+- Avoid loose interfaces and undocumented data structures. If AI has to make assumptions about the shape of data, those assumptions may be wrong and all subsequent reasoning can spiral out of control.
+
+### Utility Functions
+
+- Input sanitization utilities are in `crates/entities/src/lib.rs` (e.g., `sanitize_user_input()`, `validate_prompt()`).
+- Frontend shared utilities are in `apps/tauri-app/src/lib/`.
+- Read the relevant utility file before writing new helper functions to avoid duplicating existing code.
