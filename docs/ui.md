@@ -700,6 +700,7 @@ All multiline inputs (textareas) support `Cmd+Enter` (macOS) / `Ctrl+Enter` (Win
 | Inline Comment Edit | Review interface | Save Comment |
 | New Comment Form | Review interface | Add Comment |
 | Update Plan | Composite task detail | Update Plan |
+| Request Changes | Unit task detail | Submit Review |
 
 ### Review Interface
 
