@@ -360,7 +360,7 @@ Creates a pull request for an approved task on the VCS provider.
 
 ### Cancel Task
 
-Cancels a running task (must be in `in_progress` status).
+Cancels a running task (must be in `in_progress` status). Updates the task status to `cancelled` in the database and signals the executing worker (if any) to stop via the worker's `/cancel` endpoint. Worker signaling is best-effort; the task status is updated regardless.
 
 - **URL**: `POST /api/task/cancel`
 - **Request Body**:
@@ -370,6 +370,15 @@ Cancels a running task (must be in `in_progress` status).
   }
   ```
 - **Response**: `{}`
+- **Error** (task not in `in_progress` status):
+  ```json
+  {
+    "error": {
+      "code": "INVALID_REQUEST",
+      "message": "Task <uuid> is not in InProgress status (current: InReview)"
+    }
+  }
+  ```
 
 ### Commit to Local
 
@@ -412,7 +421,7 @@ Gets all nodes for a composite task with their dependency information.
 
 ### Get Task Logs
 
-Gets task logs (agent sessions and their events) for an agent task.
+Gets task logs (agent sessions and their events) for an agent task. The server returns raw sessions with `output_log` fields; the client is responsible for parsing individual events from the `output_log` (each line is a JSON event). The `events` array is empty (kept for backward compatibility), and `last_event_id` indicates the 0-based index of the last log line in the latest session.
 
 - **URL**: `POST /api/task/get-logs`
 - **Request Body**:
@@ -422,6 +431,7 @@ Gets task logs (agent sessions and their events) for an agent task.
     "after_event_id": null
   }
   ```
+  - `after_event_id`: Optional. Used for incremental polling — the client can skip events up to this ID (0-based line index within the latest session's `output_log`).
 - **Response**:
   ```json
   {
@@ -432,20 +442,11 @@ Gets task logs (agent sessions and their events) for an agent task.
         "ai_agent_type": "claude_code",
         "started_at": "2026-02-01T00:00:00Z",
         "completed_at": "2026-02-01T00:01:00Z",
-        "output_log": "...",
+        "output_log": "{\"timestamp\":\"...\",\"event\":{...}}\n...",
         "created_at": "2026-02-01T00:00:00Z"
       }
     ],
-    "events": [
-      {
-        "timestamp": "2026-02-01T00:00:00Z",
-        "event": {
-          "type": "text_output",
-          "content": "Hello",
-          "stream": false
-        }
-      }
-    ],
+    "events": [],
     "last_event_id": 42
   }
   ```

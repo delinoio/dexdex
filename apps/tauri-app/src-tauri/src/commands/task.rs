@@ -1153,6 +1153,47 @@ pub async fn request_changes(
     ))
 }
 
+/// Parses an output_log string into a list of normalized event entries.
+///
+/// Each line in the log is attempted to be parsed as a `TimestampedEvent`
+/// first, then as a bare `NormalizedEvent`. Lines that fail both parse
+/// attempts are logged at debug level and skipped.
+#[cfg(desktop)]
+fn parse_output_log_events(
+    output_log: Option<&str>,
+    fallback_timestamp: &str,
+) -> Vec<NormalizedEventEntry> {
+    let Some(log) = output_log else {
+        return Vec::new();
+    };
+
+    let mut events = Vec::new();
+    for (idx, line) in log.lines().enumerate() {
+        let event_id = idx as i64;
+
+        if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
+            events.push(NormalizedEventEntry {
+                id: event_id,
+                timestamp: timestamped.timestamp.to_rfc3339(),
+                event: timestamped.event,
+            });
+        } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
+            events.push(NormalizedEventEntry {
+                id: event_id,
+                timestamp: fallback_timestamp.to_string(),
+                event,
+            });
+        } else {
+            tracing::debug!(
+                line_index = idx,
+                "Failed to parse log line as event, skipping"
+            );
+        }
+    }
+
+    events
+}
+
 /// Gets logs for an agent task.
 ///
 /// Returns normalized events from the agent session output.
@@ -1178,33 +1219,15 @@ pub async fn get_task_logs(
 
         #[cfg(desktop)]
         {
-            // Build session groups from the response
+            // Build session groups from the response sessions' output_log.
+            // The server sends raw sessions (with output_log) and we parse
+            // events client-side, avoiding data duplication.
             let mut session_groups: Vec<SessionLogsGroup> = Vec::new();
             for (idx, rpc_session) in response.sessions.iter().enumerate() {
-                let mut session_events = Vec::new();
-
-                if let Some(output_log) = &rpc_session.output_log {
-                    for (event_idx, line) in output_log.lines().enumerate() {
-                        let event_id = event_idx as i64;
-                        if let Ok(timestamped) =
-                            serde_json::from_str::<TimestampedEvent>(line)
-                        {
-                            session_events.push(NormalizedEventEntry {
-                                id: event_id,
-                                timestamp: timestamped.timestamp.to_rfc3339(),
-                                event: timestamped.event,
-                            });
-                        } else if let Ok(event) =
-                            serde_json::from_str::<NormalizedEvent>(line)
-                        {
-                            session_events.push(NormalizedEventEntry {
-                                id: event_id,
-                                timestamp: rpc_session.created_at.to_rfc3339(),
-                                event,
-                            });
-                        }
-                    }
-                }
+                let session_events = parse_output_log_events(
+                    rpc_session.output_log.as_deref(),
+                    &rpc_session.created_at.to_rfc3339(),
+                );
 
                 let label = if idx == 0 {
                     "Main Execution".to_string()
@@ -1221,23 +1244,24 @@ pub async fn get_task_logs(
                 });
             }
 
-            // Convert top-level events
-            let events: Vec<NormalizedEventEntry> = response
-                .events
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, te)| {
-                    let event_id = response
-                        .last_event_id
-                        .map(|last| last - (response.events.len() as i64 - 1 - idx as i64))
-                        .unwrap_or(idx as i64);
-                    Some(NormalizedEventEntry {
-                        id: event_id,
-                        timestamp: te.timestamp.to_rfc3339(),
-                        event: te.event.clone(),
-                    })
-                })
-                .collect();
+            // Build top-level events from the latest session's output_log,
+            // respecting after_event_id for incremental polling.
+            let (events, last_event_id) = if let Some(latest_session) = response.sessions.last() {
+                let all_events = parse_output_log_events(
+                    latest_session.output_log.as_deref(),
+                    &latest_session.created_at.to_rfc3339(),
+                );
+                let last_id = all_events.last().map(|e| e.id);
+                // Filter by after_event_id for incremental updates
+                let filtered: Vec<NormalizedEventEntry> = if let Some(after_id) = after_event_id {
+                    all_events.into_iter().filter(|e| e.id > after_id).collect()
+                } else {
+                    all_events
+                };
+                (filtered, last_id)
+            } else {
+                (Vec::new(), None)
+            };
 
             let is_complete = response
                 .sessions
@@ -1248,7 +1272,7 @@ pub async fn get_task_logs(
             return Ok(TaskLogsResponse {
                 events,
                 is_complete,
-                last_event_id: response.last_event_id,
+                last_event_id,
                 sessions: session_groups,
             });
         }
@@ -1307,32 +1331,14 @@ pub async fn get_task_logs(
             });
         }
 
-        // Build grouped session logs for all sessions
+        // Build grouped session logs for all sessions using the shared helper
         let mut session_groups: Vec<SessionLogsGroup> = Vec::new();
         for (session_idx, session) in sessions.iter().enumerate() {
-            let mut session_events = Vec::new();
+            let session_events = parse_output_log_events(
+                session.output_log.as_deref(),
+                &session.created_at.to_rfc3339(),
+            );
 
-            if let Some(output_log) = &session.output_log {
-                for (idx, line) in output_log.lines().enumerate() {
-                    let event_id = idx as i64;
-
-                    if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
-                        session_events.push(NormalizedEventEntry {
-                            id: event_id,
-                            timestamp: timestamped.timestamp.to_rfc3339(),
-                            event: timestamped.event,
-                        });
-                    } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
-                        session_events.push(NormalizedEventEntry {
-                            id: event_id,
-                            timestamp: session.created_at.to_rfc3339(),
-                            event,
-                        });
-                    }
-                }
-            }
-
-            // First session is "Main Execution", subsequent are subtask sessions
             let label = if session_idx == 0 {
                 "Main Execution".to_string()
             } else {
@@ -1348,40 +1354,20 @@ pub async fn get_task_logs(
             });
         }
 
-        // For backward compatibility, the top-level `events` field still contains
-        // the latest session's events (used by the real-time streaming path).
+        // Build top-level events from the latest session's output_log,
+        // respecting after_event_id for incremental streaming.
         let latest_session = sessions.last().unwrap();
         let is_complete = latest_session.completed_at.is_some();
-        let mut events = Vec::new();
-        let mut last_event_id: Option<i64> = None;
-
-        if let Some(output_log) = &latest_session.output_log {
-            for (idx, line) in output_log.lines().enumerate() {
-                let event_id = idx as i64;
-
-                if let Some(after_id) = after_event_id {
-                    if event_id <= after_id {
-                        continue;
-                    }
-                }
-
-                if let Ok(timestamped) = serde_json::from_str::<TimestampedEvent>(line) {
-                    events.push(NormalizedEventEntry {
-                        id: event_id,
-                        timestamp: timestamped.timestamp.to_rfc3339(),
-                        event: timestamped.event,
-                    });
-                    last_event_id = Some(event_id);
-                } else if let Ok(event) = serde_json::from_str::<NormalizedEvent>(line) {
-                    events.push(NormalizedEventEntry {
-                        id: event_id,
-                        timestamp: latest_session.created_at.to_rfc3339(),
-                        event,
-                    });
-                    last_event_id = Some(event_id);
-                }
-            }
-        }
+        let all_events = parse_output_log_events(
+            latest_session.output_log.as_deref(),
+            &latest_session.created_at.to_rfc3339(),
+        );
+        let last_event_id = all_events.last().map(|e| e.id);
+        let events: Vec<NormalizedEventEntry> = if let Some(after_id) = after_event_id {
+            all_events.into_iter().filter(|e| e.id > after_id).collect()
+        } else {
+            all_events
+        };
 
         return Ok(TaskLogsResponse {
             events,
@@ -1654,14 +1640,11 @@ pub async fn get_composite_task_nodes(
         for rpc_node in nodes_resp.nodes {
             let node_id = Uuid::parse_str(&rpc_node.id)
                 .map_err(|e| AppError::InvalidRequest(format!("Invalid node ID: {}", e)))?;
-            let ct_id = Uuid::parse_str(&rpc_node.composite_task_id)
-                .map_err(|e| {
-                    AppError::InvalidRequest(format!("Invalid composite task ID: {}", e))
-                })?;
+            let ct_id = Uuid::parse_str(&rpc_node.composite_task_id).map_err(|e| {
+                AppError::InvalidRequest(format!("Invalid composite task ID: {}", e))
+            })?;
             let ut_id = Uuid::parse_str(&rpc_node.unit_task_id)
-                .map_err(|e| {
-                    AppError::InvalidRequest(format!("Invalid unit task ID: {}", e))
-                })?;
+                .map_err(|e| AppError::InvalidRequest(format!("Invalid unit task ID: {}", e)))?;
             let depends_on_ids: Vec<Uuid> = rpc_node
                 .depends_on_ids
                 .iter()

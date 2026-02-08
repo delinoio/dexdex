@@ -676,8 +676,10 @@ when the user has written inline review comments, prompting them to submit
 the feedback via "Request Changes" first.
 
 Note: While in `in_progress`, the user can cancel the task at any time,
-which transitions the status to `cancelled`. The agent execution is
-aborted and any partial work is preserved in the worktree.
+which transitions the status to `cancelled`. The server signals the worker
+executing the task (via the worker's `/cancel` endpoint) to abort agent
+execution. Worker signaling is best-effort; the task status is updated
+in the database regardless. Any partial work is preserved in the worktree.
 
 Note: The user can delete a task in any status. If the task is currently
 `in_progress`, the agent execution is cancelled first before deletion.

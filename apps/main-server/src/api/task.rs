@@ -613,6 +613,10 @@ fn validate_composite_task_plan(plan_yaml: &str) -> ServerResult<Plan> {
 }
 
 /// Cancels a running task.
+///
+/// This updates the task status to Cancelled in the database and also
+/// signals the worker executing this task (if any) to stop via the
+/// worker's `/cancel` endpoint.
 pub async fn cancel_task<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<CancelTaskRequest>,
@@ -638,6 +642,46 @@ pub async fn cancel_task<S: TaskStore>(
     task.status = EntityUnitTaskStatus::Cancelled;
     task.updated_at = chrono::Utc::now();
     state.store.update_unit_task(task).await?;
+
+    // Signal the worker to stop execution. This is best-effort: the task
+    // status has already been updated in the database, so even if the worker
+    // signal fails, the worker will eventually detect the cancellation when
+    // it reports back.
+    let worker_endpoint = {
+        let registry = state.worker_registry.read().await;
+        registry
+            .find_worker_by_task_id(task_id)
+            .map(|w| w.endpoint_url.clone())
+    };
+
+    if let Some(endpoint_url) = worker_endpoint {
+        let cancel_url = format!("{}/cancel", endpoint_url.trim_end_matches('/'));
+        tracing::info!(task_id = %task_id, cancel_url = %cancel_url, "Signaling worker to cancel task");
+
+        let http_client = reqwest::Client::new();
+        let payload = serde_json::json!({ "task_id": task_id });
+        match http_client.post(&cancel_url).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::info!(task_id = %task_id, "Worker acknowledged cancellation");
+            }
+            Ok(resp) => {
+                tracing::warn!(
+                    task_id = %task_id,
+                    status = %resp.status(),
+                    "Worker returned non-success status for cancellation"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    task_id = %task_id,
+                    error = %e,
+                    "Failed to signal worker for cancellation (task status already updated)"
+                );
+            }
+        }
+    } else {
+        tracing::debug!(task_id = %task_id, "No worker found for task, skipping worker signal");
+    }
 
     tracing::info!(task_id = %task_id, "Task cancelled");
 
@@ -708,9 +752,9 @@ pub async fn create_pr<S: TaskStore>(
     // Reset to InProgress so the worker picks it up for PR creation
     task.status = EntityUnitTaskStatus::InProgress;
     task.prompt = format!(
-        "{}\n\n--- Create PR ---\nCreate a pull request with the changes from this task. Push \
-         the current branch to the remote and create a PR using the available tools (e.g. `gh \
-         pr create`). Output the PR URL.",
+        "{}\n\n--- Create PR ---\nCreate a pull request with the changes from this task. Push the \
+         current branch to the remote and create a PR using the available tools (e.g. `gh pr \
+         create`). Output the PR URL.",
         task.prompt
     );
     task.updated_at = chrono::Utc::now();
@@ -752,7 +796,11 @@ pub async fn get_composite_task_nodes<S: TaskStore>(
             id: node.id.to_string(),
             composite_task_id: node.composite_task_id.to_string(),
             unit_task_id: node.unit_task_id.to_string(),
-            depends_on_ids: node.depends_on_ids.iter().map(|id| id.to_string()).collect(),
+            depends_on_ids: node
+                .depends_on_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect(),
             created_at: node.created_at,
         })
         .collect();
@@ -814,42 +862,20 @@ pub async fn get_task_logs<S: TaskStore>(
         })
         .collect();
 
-    // Parse events from the latest session's output log
-    let mut events = Vec::new();
-    let mut last_event_id: Option<i64> = None;
-
-    if let Some(latest_session) = sessions.last() {
-        if let Some(output_log) = &latest_session.output_log {
-            for (idx, line) in output_log.lines().enumerate() {
-                let event_id = idx as i64;
-
-                if let Some(after_id) = request.after_event_id {
-                    if event_id <= after_id {
-                        continue;
-                    }
-                }
-
-                if let Ok(timestamped) =
-                    serde_json::from_str::<rpc_protocol::TimestampedEvent>(line)
-                {
-                    events.push(timestamped);
-                    last_event_id = Some(event_id);
-                } else if let Ok(event) =
-                    serde_json::from_str::<rpc_protocol::NormalizedEvent>(line)
-                {
-                    events.push(rpc_protocol::TimestampedEvent {
-                        timestamp: latest_session.created_at,
-                        event,
-                    });
-                    last_event_id = Some(event_id);
-                }
-            }
-        }
-    }
+    // Compute last_event_id from the latest session's output log line count.
+    // The client parses events directly from sessions' output_log fields,
+    // so we only need to provide last_event_id for incremental polling and
+    // an empty events list (the client builds events from output_log).
+    let last_event_id: Option<i64> = sessions.last().and_then(|s| {
+        s.output_log.as_ref().map(|log| {
+            let total_lines = log.lines().count() as i64;
+            if total_lines > 0 { total_lines - 1 } else { 0 }
+        })
+    });
 
     Ok(Json(GetTaskLogsResponse {
         sessions: rpc_sessions,
-        events,
+        events: Vec::new(),
         last_event_id,
     }))
 }

@@ -192,6 +192,13 @@ impl WorkerRegistry {
         self.workers.len()
     }
 
+    /// Finds the worker currently executing a given task.
+    pub fn find_worker_by_task_id(&self, task_id: Uuid) -> Option<&RegisteredWorker> {
+        self.workers
+            .values()
+            .find(|w| w.current_task_id == Some(task_id) && w.status == WorkerStatus::Busy)
+    }
+
     /// Returns the number of available workers.
     pub fn available_count(&self) -> usize {
         self.workers

@@ -2768,6 +2768,7 @@ dependencies = [
  "hex",
  "hmac",
  "plan_parser",
+ "reqwest",
  "rpc_protocol",
  "serde",
  "serde_json",
