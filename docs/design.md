@@ -693,7 +693,10 @@ is acceptable for the current single-user desktop use case; a cleanup job
 or transactional cascade should be considered for multi-user deployments.
 
 Both the unit task detail page and composite task detail page include a
-"Delete" button with a confirmation dialog.
+"Delete" button with a confirmation dialog. Additionally, the dashboard
+Kanban board displays a three-dot action menu on each task card (both
+unit and composite) that allows deleting tasks directly from the list
+view without navigating into the detail page.
 
 On each status transition, `task-status-changed` and `task-completed`
 events are emitted so the frontend updates automatically.

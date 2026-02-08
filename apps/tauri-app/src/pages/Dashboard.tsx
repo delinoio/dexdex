@@ -1,14 +1,25 @@
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { PlusIcon, RefreshIcon, AlertCircleIcon } from "@/components/ui/Icons";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/Dialog";
 import { KanbanBoard } from "@/components/dashboard/KanbanBoard";
-import { useTasks } from "@/hooks/useTasks";
+import { useTasks, useDeleteTask } from "@/hooks/useTasks";
 import { useUiStore } from "@/stores/uiStore";
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { data, isLoading, error, refetch, isRefetching } = useTasks({});
   const setTaskCreationOpen = useUiStore((state) => state.setTaskCreationOpen);
+  const deleteMutation = useDeleteTask();
+  const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
 
   const handleTaskClick = (taskId: string, isUnit: boolean) => {
     if (isUnit) {
@@ -26,6 +37,24 @@ export function Dashboard() {
   const handleRetry = () => {
     refetch();
   };
+
+  const handleDeleteRequest = useCallback((taskId: string) => {
+    setDeleteTaskId(taskId);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTaskId || deleteMutation.isPending) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTaskId);
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+    }
+    setDeleteTaskId(null);
+  }, [deleteTaskId, deleteMutation]);
+
+  const handleDeleteCancel = useCallback(() => {
+    setDeleteTaskId(null);
+  }, []);
 
   if (isLoading) {
     return (
@@ -92,8 +121,33 @@ export function Dashboard() {
           unitTasks={unitTasks}
           compositeTasks={compositeTasks}
           onTaskClick={handleTaskClick}
+          onDeleteTask={handleDeleteRequest}
         />
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteTaskId !== null} onOpenChange={(open) => { if (!open) handleDeleteCancel(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Task</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleDeleteCancel}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ interface KanbanBoardProps {
   unitTasks: UnitTask[];
   compositeTasks: CompositeTask[];
   onTaskClick?: (taskId: string, isUnit: boolean) => void;
+  onDeleteTask?: (taskId: string) => void;
 }
 
 type TaskWithType =
@@ -54,6 +55,7 @@ export function KanbanBoard({
   unitTasks,
   compositeTasks,
   onTaskClick,
+  onDeleteTask,
 }: KanbanBoardProps) {
   const getTasksForColumn = (column: typeof columns[number]): TaskWithType[] => {
     const tasks: TaskWithType[] = [];
@@ -96,6 +98,7 @@ export function KanbanBoard({
                 key={task.id}
                 task={task}
                 onClick={() => onTaskClick?.(task.id, type === "unit")}
+                onDelete={onDeleteTask}
               />
             ))}
             {tasks.length === 0 && (

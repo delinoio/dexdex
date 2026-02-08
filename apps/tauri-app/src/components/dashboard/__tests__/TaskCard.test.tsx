@@ -149,4 +149,56 @@ describe("TaskCard", () => {
     const card = screen.getByRole("button");
     expect(card).toHaveClass("hover:border-[hsl(var(--primary))]");
   });
+
+  it("shows dropdown menu trigger when onDelete is provided", () => {
+    const task = createMockUnitTask();
+    render(<TaskCard task={task} onDelete={vi.fn()} />);
+
+    expect(screen.getByLabelText("Task actions")).toBeInTheDocument();
+  });
+
+  it("does not show dropdown menu trigger when onDelete is not provided", () => {
+    const task = createMockUnitTask();
+    render(<TaskCard task={task} />);
+
+    expect(screen.queryByLabelText("Task actions")).not.toBeInTheDocument();
+  });
+
+  it("opens dropdown menu and shows delete option on trigger click", () => {
+    const task = createMockUnitTask();
+    render(<TaskCard task={task} onDelete={vi.fn()} />);
+
+    const trigger = screen.getByLabelText("Task actions");
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole("menuitem", { name: /Delete/i })).toBeInTheDocument();
+  });
+
+  it("calls onDelete with task id when delete is clicked", () => {
+    const onDelete = vi.fn();
+    const task = createMockUnitTask({ id: "task-123" });
+    render(<TaskCard task={task} onDelete={onDelete} />);
+
+    const trigger = screen.getByLabelText("Task actions");
+    fireEvent.click(trigger);
+
+    const deleteItem = screen.getByRole("menuitem", { name: /Delete/i });
+    fireEvent.click(deleteItem);
+
+    expect(onDelete).toHaveBeenCalledWith("task-123");
+  });
+
+  it("calls onDelete for composite tasks", () => {
+    const onDelete = vi.fn();
+    const task = createMockCompositeTask({ id: "composite-456" });
+    render(<TaskCard task={task} onDelete={onDelete} />);
+
+    const trigger = screen.getByLabelText("Task actions");
+    fireEvent.click(trigger);
+
+    const deleteItem = screen.getByRole("menuitem", { name: /Delete/i });
+    fireEvent.click(deleteItem);
+
+    expect(onDelete).toHaveBeenCalledWith("composite-456");
+  });
 });

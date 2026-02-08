@@ -2,13 +2,20 @@ import { memo, type KeyboardEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
-import { UnitTaskIcon, CompositeTaskIcon } from "@/components/ui/Icons";
+import { UnitTaskIcon, CompositeTaskIcon, MoreVerticalIcon, TrashIcon } from "@/components/ui/Icons";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/DropdownMenu";
 import type { UnitTask, CompositeTask, UnitTaskStatus, CompositeTaskStatus } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 interface TaskCardProps {
   task: UnitTask | CompositeTask;
   onClick?: () => void;
+  onDelete?: (taskId: string) => void;
 }
 
 function isUnitTask(task: UnitTask | CompositeTask): task is UnitTask {
@@ -61,7 +68,7 @@ function formatStatus(status: UnitTaskStatus | CompositeTaskStatus): string {
   }
 }
 
-export const TaskCard = memo(function TaskCard({ task, onClick }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({ task, onClick, onDelete }: TaskCardProps) {
   const title = task.title || task.prompt.slice(0, 50) + (task.prompt.length > 50 ? "..." : "");
   const isUnit = isUnitTask(task);
   const status = task.status;
@@ -91,9 +98,30 @@ export const TaskCard = memo(function TaskCard({ task, onClick }: TaskCardProps)
           <CardTitle className="text-sm font-medium line-clamp-2">
             {title}
           </CardTitle>
-          <Badge variant={getStatusBadgeVariant(status)} className="shrink-0">
-            {formatStatus(status)}
-          </Badge>
+          <div className="flex items-center gap-1 shrink-0">
+            <Badge variant={getStatusBadgeVariant(status)} className="shrink-0">
+              {formatStatus(status)}
+            </Badge>
+            {onDelete && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--accent-foreground))]"
+                  aria-label="Task actions"
+                >
+                  <MoreVerticalIcon size={14} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    destructive
+                    onClick={() => onDelete(task.id)}
+                  >
+                    <TrashIcon size={14} className="mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="pb-3">
@@ -106,7 +134,7 @@ export const TaskCard = memo(function TaskCard({ task, onClick }: TaskCardProps)
             )}
             {isUnit ? "Unit" : "Composite"}
           </span>
-          <span aria-hidden="true">•</span>
+          <span aria-hidden="true">&bull;</span>
           <FormattedDateTime date={task.createdAt} />
         </div>
         <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))] line-clamp-2">

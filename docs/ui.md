@@ -206,7 +206,8 @@ Each task card shows:
 - Repository name
 - Current status indicator
 - Progress (for CompositeTask: X/Y nodes complete)
-- Quick actions
+- Three-dot action menu with:
+  - Delete (with confirmation dialog)
 
 ---
 

@@ -264,6 +264,16 @@ export const MessageSquareIcon = createIcon(
   "MessageSquareIcon"
 );
 
+// More vertical (three dots) icon
+export const MoreVerticalIcon = createIcon(
+  <>
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="12" cy="5" r="1" />
+    <circle cx="12" cy="19" r="1" />
+  </>,
+  "MoreVerticalIcon"
+);
+
 // Brain icon
 export const BrainIcon = createIcon(
   <>
