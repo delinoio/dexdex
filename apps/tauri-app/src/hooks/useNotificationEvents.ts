@@ -18,7 +18,7 @@ import type {
 
 export function useNotificationEvents(): void {
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     const unlisteners: UnlistenFn[] = [];
     const { addNotification } = useNotificationCenterStore.getState();
 
@@ -37,6 +37,8 @@ export function useNotificationEvents(): void {
 
     async function setup() {
       try {
+        if (controller.signal.aborted) return;
+
         // Listen for task status changes
         const unlistenStatus = await listen<TaskStatusChangedEvent>(
           "task-status-changed",
@@ -84,7 +86,7 @@ export function useNotificationEvents(): void {
           }
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenStatus();
           return;
         }
@@ -122,7 +124,7 @@ export function useNotificationEvents(): void {
           }
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenCompleted();
           return;
         }
@@ -149,7 +151,7 @@ export function useNotificationEvents(): void {
           }
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenTty();
           return;
         }
@@ -162,7 +164,7 @@ export function useNotificationEvents(): void {
     setup();
 
     return () => {
-      cancelled = true;
+      controller.abort();
       for (const unlisten of unlisteners) {
         unlisten();
       }

@@ -19,11 +19,13 @@ export function useTaskStatusEvents(): void {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     const unlisteners: UnlistenFn[] = [];
 
     async function setup() {
       try {
+        if (controller.signal.aborted) return;
+
         // When a task's status changes, invalidate its detail, list views,
         // and composite task nodes (for task graph updates on plan completion)
         const unlistenStatus = await listen<TaskStatusChangedEvent>(
@@ -36,7 +38,7 @@ export function useTaskStatusEvents(): void {
           },
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenStatus();
           return;
         }
@@ -52,7 +54,7 @@ export function useTaskStatusEvents(): void {
           },
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenCompleted();
           return;
         }
@@ -65,7 +67,7 @@ export function useTaskStatusEvents(): void {
     setup();
 
     return () => {
-      cancelled = true;
+      controller.abort();
       for (const unlisten of unlisteners) {
         unlisten();
       }
