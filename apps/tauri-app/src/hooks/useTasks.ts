@@ -9,9 +9,12 @@ import {
   createUnitTask,
   deleteTask,
   dismissApproval,
+  fixCi,
   getCompositeTaskNodes,
+  getPrStatus,
   getTask,
   listTasks,
+  reflectReviews,
   rejectTask,
   requestChanges,
   updatePlanWithPrompt,
@@ -22,6 +25,9 @@ import type {
   ListTasksParams,
 } from "@/api/types";
 
+// Polling interval for PR status checks (30 seconds)
+const PR_STATUS_POLL_INTERVAL_MS = 30_000;
+
 // Query keys
 export const taskKeys = {
   all: ["tasks"] as const,
@@ -31,6 +37,7 @@ export const taskKeys = {
   detail: (id: string) => [...taskKeys.details(), id] as const,
   compositeNodes: (compositeTaskId: string) =>
     [...taskKeys.all, "compositeNodes", compositeTaskId] as const,
+  prStatus: (taskId: string) => [...taskKeys.all, "prStatus", taskId] as const,
 };
 
 // Query hooks
@@ -197,5 +204,53 @@ export function useCommitToLocal() {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
+  });
+}
+
+export function useFixCi() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, ciLogs }: { taskId: string; ciLogs?: string }) =>
+      fixCi(taskId, ciLogs),
+    onSuccess: (_data, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useReflectReviews() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      reviewComments,
+    }: {
+      taskId: string;
+      reviewComments?: string;
+    }) => reflectReviews(taskId, reviewComments),
+    onSuccess: (_data, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Polls the PR status (CI failures and reviews) for a task in PrOpen status.
+ *
+ * Only enabled when the task is in PrOpen status and has a linked PR URL.
+ * Polls every 30 seconds.
+ */
+export function usePrStatus(taskId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: taskKeys.prStatus(taskId),
+    queryFn: () => getPrStatus(taskId),
+    enabled: !!taskId && enabled,
+    refetchInterval: PR_STATUS_POLL_INTERVAL_MS,
+    // Keep stale data while re-fetching to avoid flickering
+    staleTime: PR_STATUS_POLL_INTERVAL_MS / 2,
   });
 }

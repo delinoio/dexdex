@@ -2,13 +2,15 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { PlusIcon, RefreshIcon, AlertCircleIcon } from "@/components/ui/Icons";
 import { KanbanBoard } from "@/components/dashboard/KanbanBoard";
-import { useTasks } from "@/hooks/useTasks";
+import { useTasks, useFixCi, useReflectReviews } from "@/hooks/useTasks";
 import { useUiStore } from "@/stores/uiStore";
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { data, isLoading, error, refetch, isRefetching } = useTasks({});
   const setTaskCreationOpen = useUiStore((state) => state.setTaskCreationOpen);
+  const fixCiMutation = useFixCi();
+  const reflectReviewsMutation = useReflectReviews();
 
   const handleTaskClick = (taskId: string, isUnit: boolean) => {
     if (isUnit) {
@@ -25,6 +27,14 @@ export function Dashboard() {
 
   const handleRetry = () => {
     refetch();
+  };
+
+  const handleFixCi = (taskId: string) => {
+    fixCiMutation.mutate({ taskId });
+  };
+
+  const handleReflectReviews = (taskId: string) => {
+    reflectReviewsMutation.mutate({ taskId });
   };
 
   if (isLoading) {
@@ -92,6 +102,10 @@ export function Dashboard() {
           unitTasks={unitTasks}
           compositeTasks={compositeTasks}
           onTaskClick={handleTaskClick}
+          onFixCi={handleFixCi}
+          onReflectReviews={handleReflectReviews}
+          isFixCiPending={fixCiMutation.isPending}
+          isReflectReviewsPending={reflectReviewsMutation.isPending}
         />
       </div>
     </div>

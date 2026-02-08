@@ -74,6 +74,12 @@ pub struct CreatePrResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitToLocalResponse {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixCiResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReflectReviewsResponse {}
+
 // ============================================================================
 // Session Service Responses
 // ============================================================================

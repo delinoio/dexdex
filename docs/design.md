@@ -668,6 +668,9 @@ repository path. The backend directly applies the task's git patch to the
 selected repository using `git apply` and commits the changes. No AI agent
 is involved — it is a direct git operation.
 
+PR Open ───────┬──► Fix CI Failures (subtask → pr_open)
+               └──► Reflect PR Reviews (subtask → pr_open)
+
 Note: In local mode, "Request Changes" creates a subtask (like "Create PR"
 and "Commit to Local") that applies the reviewer's feedback using the AI
 agent. Inline review comments from the diff viewer and an optional extra
@@ -707,8 +710,9 @@ events are emitted so the frontend updates automatically.
 ### Subtasks
 
 Subtasks are agent sessions that run within an existing unit task's
-worktree. They are used for post-approval operations like PR creation
-and applying requested changes. Key characteristics:
+worktree. They are used for post-approval operations like PR creation,
+committing to local, applying requested changes, fixing CI failures,
+and reflecting PR reviews. Key characteristics:
 
 - A subtask creates a new `AgentSession` under the same `AgentTask`
 - It runs in the existing worktree (no new worktree is created)
@@ -717,7 +721,8 @@ and applying requested changes. Key characteristics:
   also transitioned to `in_progress` while the subtask runs, and
   re-evaluated (to `done` or `failed`) when the subtask completes
 - On success, the task transitions to the target status (e.g. `pr_open`)
-- On failure or cancellation, the task reverts to `approved`
+- On failure or cancellation, the task reverts to the previous status
+  (`approved` for pre-PR subtasks, `pr_open` for post-PR subtasks)
 - Subtasks are not shown separately in the dashboard - they use the
   same task ID as the parent
 - The subtask can be cancelled using the same "Stop Agent" button
@@ -738,6 +743,17 @@ Approved ──► execute_subtask(prompt, target_status)
                     ├── Failure → approved (user can retry)
                     ├── Cancelled → approved
                     └── Re-evaluate parent composite task status (if applicable)
+```
+
+For post-PR subtasks (Fix CI, Reflect Reviews), the flow starts from
+`pr_open` instead of `approved`:
+
+```
+PR Open ──► transition to approved ──► execute_subtask(prompt, pr_open)
+                    │
+                    ├── Success → pr_open (task stays on PR)
+                    ├── Failure → pr_open (reverted)
+                    └── Cancelled → pr_open (reverted)
 ```
 
 ### Change Persistence
@@ -883,22 +899,65 @@ The `update_plan_with_prompt` Tauri command handles this flow.
 
 ### PR Auto-Management
 
-#### Auto-Fix Review Comments
+After a PR is created (task in `pr_open` status), the task detail page and
+Dashboard show dedicated buttons for common PR maintenance tasks. Each button
+creates a subtask that runs in the existing worktree and pushes changes to the
+PR branch. Buttons are shown conditionally based on PR status polling.
 
-When enabled:
-1. PR receives review comment
-2. Check author against filter
-3. Create AgentTask to address feedback
-4. AI applies fix and pushes
-5. Repeat up to `maxAutoFixAttempts`
+#### PR Status Polling
 
-#### Auto-Fix CI Failures
+The frontend polls the `get_pr_status` Tauri command every 30 seconds for tasks
+in `pr_open` status. This queries the GitHub API to determine:
+- **CI failures**: Checks the PR head commit for failed check runs or commit
+  statuses (conclusion: `failure`, `timed_out`, or `action_required`)
+- **Reviews**: Checks whether the PR has any non-pending reviews
 
-When enabled:
-1. CI fails on PR
-2. Create AgentTask to fix
-3. AI analyzes logs, fixes, pushes
-4. Repeat up to `maxAutoFixAttempts`
+Requires a `GITHUB_TOKEN` in the keychain or environment. If no token is
+available, both buttons are hidden.
+
+#### Fix CI Failures (Button)
+
+Shown only when CI has failed on the PR (polled via `get_pr_status`):
+1. User clicks "Fix CI Failures" button on the task detail page or Dashboard
+2. Task transitions: `pr_open` → `approved` → `in_progress` (via `execute_subtask`)
+3. AI agent analyzes CI failure logs, identifies issues, and pushes fixes
+4. On success: task returns to `pr_open`
+5. On failure: task reverts to `pr_open`
+6. Optional CI logs can be passed to provide context to the agent
+
+#### Reflect PR Reviews (Button)
+
+Shown only when the PR has reviews (polled via `get_pr_status`):
+1. User clicks "Reflect PR Reviews" button on the task detail page or Dashboard
+2. Task transitions: `pr_open` → `approved` → `in_progress` (via `execute_subtask`)
+3. AI agent reads review comments on the PR and applies requested changes
+4. On success: task returns to `pr_open`
+5. On failure: task reverts to `pr_open`
+6. Optional review comments can be passed to provide context to the agent
+
+#### Input Validation
+
+Both `ci_logs` and `review_comments` are optional user-provided strings that are
+sanitized with `sanitize_user_input()` and validated against `MAX_FEEDBACK_LENGTH`
+(10,000 characters) before being appended to the agent prompt.
+
+#### Remote Mode (Not Yet Implemented)
+
+The Tauri client defines RPC request/response types (`FixCiRequest`,
+`ReflectReviewsRequest`) and client methods for remote mode, but the main-server
+does not yet implement the corresponding endpoints. This needs to be added when
+remote mode support is extended.
+
+#### Configuration (Future)
+
+Automation of these actions can be configured in `.delidev/config.toml`:
+```toml
+[automation]
+autoFixReviewComments = true
+autoFixReviewCommentsFilter = "write_access_only"
+autoFixCIFailures = true
+maxAutoFixAttempts = 3
+```
 
 ### TTY Input Proxy
 

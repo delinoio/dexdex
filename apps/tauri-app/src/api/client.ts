@@ -17,6 +17,7 @@ import type {
   ListTasksResult,
   ListWorkspacesParams,
   ListWorkspacesResult,
+  PrStatusResponse,
   Repository,
   RepositoryGroup,
   RepositorySettings,
@@ -100,6 +101,21 @@ export async function createPr(taskId: string): Promise<string> {
 
 export async function commitToLocal(taskId: string, localPath: string): Promise<void> {
   return invoke<void>("commit_to_local", { taskId, localPath });
+}
+
+export async function fixCi(taskId: string, ciLogs?: string): Promise<void> {
+  return invoke<void>("fix_ci", { taskId, ciLogs });
+}
+
+export async function reflectReviews(
+  taskId: string,
+  reviewComments?: string
+): Promise<void> {
+  return invoke<void>("reflect_reviews", { taskId, reviewComments });
+}
+
+export async function getPrStatus(taskId: string): Promise<PrStatusResponse> {
+  return invoke<PrStatusResponse>("get_pr_status", { taskId });
 }
 
 export async function updatePlanWithPrompt(

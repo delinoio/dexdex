@@ -15,7 +15,7 @@ import {
 import { AgentLogViewer, StaticSessionLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDeleteTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDeleteTask, useDismissApproval, useCreatePr, useCommitToLocal, useFixCi, useReflectReviews, usePrStatus } from "@/hooks/useTasks";
 import { useMode } from "@/hooks/useMode";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
@@ -49,9 +49,15 @@ export function UnitTaskDetail() {
   const createPrMutation = useCreatePr();
   const commitToLocalMutation = useCommitToLocal();
   const { data: mode } = useMode();
+  const fixCiMutation = useFixCi();
+  const reflectReviewsMutation = useReflectReviews();
 
   const task = data?.unitTask;
   const isLocalMode = mode === "local";
+
+  // Poll PR status to conditionally show Fix CI / Reflect Reviews buttons
+  const isPrOpen = task?.status === UnitTaskStatus.PrOpen;
+  const { data: prStatus } = usePrStatus(task?.id ?? "", isPrOpen);
 
   // Manage inline review comments (local state)
   const {
@@ -284,6 +290,14 @@ export function UnitTaskDetail() {
     });
     if (!selectedPath) return;
     await commitToLocalMutation.mutateAsync({ taskId: task.id, localPath: selectedPath });
+  };
+
+  const handleFixCi = async () => {
+    await fixCiMutation.mutateAsync({ taskId: task.id });
+  };
+
+  const handleReflectReviews = async () => {
+    await reflectReviewsMutation.mutateAsync({ taskId: task.id });
   };
 
   const getStatusBadgeVariant = (status: UnitTaskStatus) => {
@@ -551,8 +565,8 @@ export function UnitTaskDetail() {
                   A pull request has been created for this task.
                 </CardDescription>
               </CardHeader>
-              {task.linkedPrUrl && (
-                <CardContent>
+              <CardContent className="space-y-4">
+                {task.linkedPrUrl && (
                   <a
                     href={task.linkedPrUrl}
                     target="_blank"
@@ -561,8 +575,30 @@ export function UnitTaskDetail() {
                   >
                     {task.linkedPrUrl}
                   </a>
-                </CardContent>
-              )}
+                )}
+                {(prStatus?.hasCiFailure || prStatus?.hasReviews) && (
+                  <div className="flex gap-2">
+                    {prStatus.hasCiFailure && (
+                      <Button
+                        variant="outline"
+                        onClick={handleFixCi}
+                        disabled={fixCiMutation.isPending}
+                      >
+                        {fixCiMutation.isPending ? "Fixing CI..." : "Fix CI Failures"}
+                      </Button>
+                    )}
+                    {prStatus.hasReviews && (
+                      <Button
+                        variant="outline"
+                        onClick={handleReflectReviews}
+                        disabled={reflectReviewsMutation.isPending}
+                      >
+                        {reflectReviewsMutation.isPending ? "Reflecting..." : "Reflect PR Reviews"}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
             </Card>
           )}
 

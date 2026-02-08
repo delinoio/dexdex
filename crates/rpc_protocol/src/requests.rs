@@ -96,6 +96,18 @@ pub struct CommitToLocalRequest {
     pub task_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixCiRequest {
+    pub task_id: String,
+    pub ci_logs: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReflectReviewsRequest {
+    pub task_id: String,
+    pub review_comments: Option<String>,
+}
+
 // ============================================================================
 // Session Service Requests
 // ============================================================================

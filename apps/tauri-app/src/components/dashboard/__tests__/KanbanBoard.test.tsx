@@ -1,8 +1,26 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { KanbanBoard } from "../KanbanBoard";
 import { UnitTaskStatus, CompositeTaskStatus } from "@/api/types";
 import type { UnitTask, CompositeTask } from "@/api/types";
+
+// Mock the API client to prevent actual Tauri invoke calls
+vi.mock("@/api/client", () => ({
+  getPrStatus: vi.fn().mockResolvedValue({ hasCiFailure: false, hasReviews: false }),
+}));
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+  };
+}
 
 const createMockUnitTask = (overrides?: Partial<UnitTask>): UnitTask => ({
   id: "unit-1",
@@ -32,7 +50,7 @@ const createMockCompositeTask = (overrides?: Partial<CompositeTask>): CompositeT
 
 describe("KanbanBoard", () => {
   it("renders all columns", () => {
-    render(<KanbanBoard unitTasks={[]} compositeTasks={[]} />);
+    render(<KanbanBoard unitTasks={[]} compositeTasks={[]} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("In Progress")).toBeInTheDocument();
     expect(screen.getByText("Action Required")).toBeInTheDocument();
@@ -51,7 +69,7 @@ describe("KanbanBoard", () => {
       createMockUnitTask({ id: "6", title: "Rejected Task", status: UnitTaskStatus.Rejected }),
     ];
 
-    render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />);
+    render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("In Progress Task")).toBeInTheDocument();
     expect(screen.getByText("Action Required Task")).toBeInTheDocument();
@@ -67,7 +85,7 @@ describe("KanbanBoard", () => {
       createMockUnitTask({ id: "2", title: "Failed Task", status: UnitTaskStatus.Failed }),
     ];
 
-    render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />);
+    render(<KanbanBoard unitTasks={tasks} compositeTasks={[]} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("Cancelled Task")).toBeInTheDocument();
     expect(screen.getByText("Failed Task")).toBeInTheDocument();
@@ -81,7 +99,7 @@ describe("KanbanBoard", () => {
       createMockCompositeTask({ id: "4", title: "Rejected Composite", status: CompositeTaskStatus.Rejected }),
     ];
 
-    render(<KanbanBoard unitTasks={[]} compositeTasks={tasks} />);
+    render(<KanbanBoard unitTasks={[]} compositeTasks={tasks} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("Planning Task")).toBeInTheDocument();
     expect(screen.getByText("Pending Approval Task")).toBeInTheDocument();
@@ -90,7 +108,7 @@ describe("KanbanBoard", () => {
   });
 
   it("shows 'No tasks' message for empty columns", () => {
-    render(<KanbanBoard unitTasks={[]} compositeTasks={[]} />);
+    render(<KanbanBoard unitTasks={[]} compositeTasks={[]} />, { wrapper: createWrapper() });
 
     const noTasksMessages = screen.getAllByText("No tasks");
     expect(noTasksMessages.length).toBe(5); // All 5 columns should show "No tasks"
@@ -100,7 +118,7 @@ describe("KanbanBoard", () => {
     const onTaskClick = vi.fn();
     const task = createMockUnitTask({ id: "test-unit-id" });
 
-    render(<KanbanBoard unitTasks={[task]} compositeTasks={[]} onTaskClick={onTaskClick} />);
+    render(<KanbanBoard unitTasks={[task]} compositeTasks={[]} onTaskClick={onTaskClick} />, { wrapper: createWrapper() });
 
     fireEvent.click(screen.getByRole("button", { name: /Test Task/i }));
     expect(onTaskClick).toHaveBeenCalledWith("test-unit-id", true);
@@ -110,7 +128,7 @@ describe("KanbanBoard", () => {
     const onTaskClick = vi.fn();
     const task = createMockCompositeTask({ id: "test-composite-id" });
 
-    render(<KanbanBoard unitTasks={[]} compositeTasks={[task]} onTaskClick={onTaskClick} />);
+    render(<KanbanBoard unitTasks={[]} compositeTasks={[task]} onTaskClick={onTaskClick} />, { wrapper: createWrapper() });
 
     fireEvent.click(screen.getByRole("button", { name: /Test Composite/i }));
     expect(onTaskClick).toHaveBeenCalledWith("test-composite-id", false);
@@ -122,7 +140,7 @@ describe("KanbanBoard", () => {
       createMockUnitTask({ id: "2", status: UnitTaskStatus.InProgress }),
     ];
 
-    render(<KanbanBoard unitTasks={unitTasks} compositeTasks={[]} />);
+    render(<KanbanBoard unitTasks={unitTasks} compositeTasks={[]} />, { wrapper: createWrapper() });
 
     // The count "2" should be displayed in the In Progress column header
     expect(screen.getByText("2")).toBeInTheDocument();
@@ -142,7 +160,7 @@ describe("KanbanBoard", () => {
       updatedAt: "2024-01-15T10:00:00Z",
     });
 
-    render(<KanbanBoard unitTasks={[olderTask, newerTask]} compositeTasks={[]} />);
+    render(<KanbanBoard unitTasks={[olderTask, newerTask]} compositeTasks={[]} />, { wrapper: createWrapper() });
 
     const taskCards = screen.getAllByRole("button");
     // Newer task should appear before older task
@@ -163,7 +181,7 @@ describe("KanbanBoard", () => {
       status: CompositeTaskStatus.InProgress,
     });
 
-    render(<KanbanBoard unitTasks={[unitTask]} compositeTasks={[compositeTask]} />);
+    render(<KanbanBoard unitTasks={[unitTask]} compositeTasks={[compositeTask]} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("Unit in Progress")).toBeInTheDocument();
     expect(screen.getByText("Composite in Progress")).toBeInTheDocument();

@@ -1,8 +1,26 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { TaskCard } from "../TaskCard";
 import { UnitTaskStatus, CompositeTaskStatus } from "@/api/types";
 import type { UnitTask, CompositeTask } from "@/api/types";
+
+// Mock the API client to prevent actual Tauri invoke calls
+vi.mock("@/api/client", () => ({
+  getPrStatus: vi.fn().mockResolvedValue({ hasCiFailure: false, hasReviews: false }),
+}));
+
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+  };
+}
 
 const createMockUnitTask = (overrides?: Partial<UnitTask>): UnitTask => ({
   id: "unit-1",
@@ -33,7 +51,7 @@ const createMockCompositeTask = (overrides?: Partial<CompositeTask>): CompositeT
 describe("TaskCard", () => {
   it("renders unit task correctly", () => {
     const task = createMockUnitTask();
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("Login Bug Fix")).toBeInTheDocument();
     expect(screen.getByText("In Progress")).toBeInTheDocument();
@@ -42,7 +60,7 @@ describe("TaskCard", () => {
 
   it("renders composite task correctly", () => {
     const task = createMockCompositeTask();
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("User Auth Implementation")).toBeInTheDocument();
     expect(screen.getByText("Planning")).toBeInTheDocument();
@@ -54,7 +72,7 @@ describe("TaskCard", () => {
       title: undefined,
       prompt: "This is a very long prompt that should be truncated when displayed",
     });
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     // Both title area (truncated) and content area (full) show the prompt
     // Using getAllByText since it appears in both places
@@ -65,7 +83,7 @@ describe("TaskCard", () => {
   it("handles click events", () => {
     const onClick = vi.fn();
     const task = createMockUnitTask();
-    render(<TaskCard task={task} onClick={onClick} />);
+    render(<TaskCard task={task} onClick={onClick} />, { wrapper: createWrapper() });
 
     fireEvent.click(screen.getByRole("button"));
     expect(onClick).toHaveBeenCalledTimes(1);
@@ -74,7 +92,7 @@ describe("TaskCard", () => {
   it("is keyboard accessible - Enter key", () => {
     const onClick = vi.fn();
     const task = createMockUnitTask();
-    render(<TaskCard task={task} onClick={onClick} />);
+    render(<TaskCard task={task} onClick={onClick} />, { wrapper: createWrapper() });
 
     const card = screen.getByRole("button");
     fireEvent.keyDown(card, { key: "Enter" });
@@ -84,7 +102,7 @@ describe("TaskCard", () => {
   it("is keyboard accessible - Space key", () => {
     const onClick = vi.fn();
     const task = createMockUnitTask();
-    render(<TaskCard task={task} onClick={onClick} />);
+    render(<TaskCard task={task} onClick={onClick} />, { wrapper: createWrapper() });
 
     const card = screen.getByRole("button");
     fireEvent.keyDown(card, { key: " " });
@@ -93,7 +111,7 @@ describe("TaskCard", () => {
 
   it("has correct aria-label for accessibility", () => {
     const task = createMockUnitTask();
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     const card = screen.getByRole("button");
     expect(card).toHaveAttribute(
@@ -114,7 +132,7 @@ describe("TaskCard", () => {
 
     statuses.forEach(({ status, label }) => {
       const task = createMockUnitTask({ status });
-      const { unmount } = render(<TaskCard task={task} />);
+      const { unmount } = render(<TaskCard task={task} />, { wrapper: createWrapper() });
       expect(screen.getByText(label)).toBeInTheDocument();
       unmount();
     });
@@ -122,7 +140,7 @@ describe("TaskCard", () => {
 
   it("displays creation date correctly", () => {
     const task = createMockUnitTask();
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     // The date format depends on locale, but it should be present
     expect(screen.getByText(/2024/)).toBeInTheDocument();
@@ -130,21 +148,21 @@ describe("TaskCard", () => {
 
   it("displays task prompt in content area", () => {
     const task = createMockUnitTask({ prompt: "Test prompt content" });
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     expect(screen.getByText("Test prompt content")).toBeInTheDocument();
   });
 
   it("has tabIndex 0 for keyboard focus", () => {
     const task = createMockUnitTask();
-    render(<TaskCard task={task} />);
+    render(<TaskCard task={task} />, { wrapper: createWrapper() });
 
     expect(screen.getByRole("button")).toHaveAttribute("tabIndex", "0");
   });
 
   it("applies hover styles class when onClick is provided", () => {
     const task = createMockUnitTask();
-    render(<TaskCard task={task} onClick={() => {}} />);
+    render(<TaskCard task={task} onClick={() => {}} />, { wrapper: createWrapper() });
 
     const card = screen.getByRole("button");
     expect(card).toHaveClass("hover:border-[hsl(var(--primary))]");

@@ -1873,6 +1873,540 @@ pub async fn commit_to_local(
     ))
 }
 
+/// Sanitizes and validates an optional user-provided input string.
+///
+/// Returns `None` if the input is `None` or empty after sanitization.
+/// Returns an error if the sanitized input exceeds `MAX_FEEDBACK_LENGTH`.
+fn sanitize_optional_input(input: Option<String>, field_name: &str) -> AppResult<Option<String>> {
+    match input {
+        Some(raw) => {
+            let sanitized = entities::sanitize_user_input(&raw);
+            if sanitized.is_empty() {
+                return Ok(None);
+            }
+            if sanitized.len() > entities::MAX_FEEDBACK_LENGTH {
+                return Err(AppError::InvalidRequest(format!(
+                    "{} exceeds maximum length of {} characters",
+                    field_name,
+                    entities::MAX_FEEDBACK_LENGTH
+                )));
+            }
+            Ok(Some(sanitized))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Shared logic for executing a subtask on a PrOpen task.
+///
+/// Verifies the task is in PrOpen status, transitions it to Approved,
+/// builds the prompt, and starts the subtask. Reverts status on failure.
+#[cfg(desktop)]
+async fn execute_pr_open_subtask(
+    runtime: &crate::single_process::SingleProcessRuntime,
+    task_id: &str,
+    base_prompt: &str,
+    extra_input: Option<String>,
+    extra_label: &str,
+    subtask_name: &str,
+) -> AppResult<()> {
+    let id = Uuid::parse_str(task_id)
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+    // Verify the task is in PrOpen status
+    if let Some(task) = runtime.task_store_arc().get_unit_task(id).await? {
+        if task.status != UnitTaskStatus::PrOpen {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} is not in PrOpen status (current: {:?})",
+                task_id, task.status
+            )));
+        }
+
+        // Transition to Approved so execute_subtask can pick it up
+        let mut task = task;
+        task.status = UnitTaskStatus::Approved;
+        task.updated_at = chrono::Utc::now();
+        runtime.task_store_arc().update_unit_task(task).await?;
+    } else {
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    }
+
+    let executor = runtime
+        .executor()
+        .await
+        .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+
+    let mut prompt = base_prompt.to_string();
+
+    if let Some(extra) = extra_input {
+        prompt.push_str(&format!("\n\n--- {} ---\n{}", extra_label, extra));
+    }
+
+    if let Err(e) = executor
+        .execute_subtask(id, prompt, UnitTaskStatus::PrOpen)
+        .await
+    {
+        // Revert task status back to PrOpen on failure
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            task.status = UnitTaskStatus::PrOpen;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+        }
+        return Err(AppError::Internal(format!(
+            "Failed to start {} subtask: {}",
+            subtask_name, e
+        )));
+    }
+
+    info!("Started {} subtask for unit task: {}", subtask_name, id);
+    Ok(())
+}
+
+/// Fixes CI failures for a task with an open PR.
+///
+/// Creates a subtask that analyzes CI failure logs and pushes fixes
+/// to the existing PR branch. The task must be in PrOpen status.
+#[tauri::command]
+pub async fn fix_ci(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
+    task_id: String,
+    ci_logs: Option<String>,
+) -> AppResult<()> {
+    let ci_logs = sanitize_optional_input(ci_logs, "CI logs")?;
+
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::FixCiRequest {
+            task_id: task_id.clone(),
+            ci_logs: ci_logs.clone(),
+        };
+
+        client.fix_ci(request).await?;
+        info!("Started fix CI via remote for task: {}", task_id);
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        let _ = &app_handle;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        execute_pr_open_subtask(
+            runtime,
+            &task_id,
+            "The CI pipeline has failed for the pull request associated with this task. Please \
+             analyze the CI failure logs, identify the issues, fix them, and push the changes to \
+             the branch so CI passes.",
+            ci_logs,
+            "CI Failure Logs",
+            "fix-ci",
+        )
+        .await?;
+
+        return Ok(());
+    }
+
+    #[cfg(not(desktop))]
+    let _ = (&app_handle, &ci_logs);
+
+    #[allow(unreachable_code)]
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
+/// Reflects PR review comments for a task with an open PR.
+///
+/// Creates a subtask that reads human review comments on the PR and applies
+/// the requested changes. Only reviews from humans with write permission should
+/// be reflected. The task must be in PrOpen status.
+#[tauri::command]
+pub async fn reflect_reviews(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
+    task_id: String,
+    review_comments: Option<String>,
+) -> AppResult<()> {
+    let review_comments = sanitize_optional_input(review_comments, "Review comments")?;
+
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::ReflectReviewsRequest {
+            task_id: task_id.clone(),
+            review_comments: review_comments.clone(),
+        };
+
+        client.reflect_reviews(request).await?;
+        info!("Started reflect reviews via remote for task: {}", task_id);
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        let _ = &app_handle;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        execute_pr_open_subtask(
+            runtime,
+            &task_id,
+            "The pull request associated with this task has received review comments from human \
+             reviewers with write permission. Please read the review comments on the PR, apply \
+             the requested changes, and push the updated code to the branch.",
+            review_comments,
+            "Review Comments",
+            "reflect-reviews",
+        )
+        .await?;
+
+        return Ok(());
+    }
+
+    #[cfg(not(desktop))]
+    let _ = (&app_handle, &review_comments);
+
+    #[allow(unreachable_code)]
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
+/// Response for the `get_pr_status` command.
+///
+/// Contains information about a PR's CI status and review state,
+/// used by the frontend to conditionally show action buttons.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrStatusResponse {
+    /// Whether at least one required CI check has failed.
+    pub has_ci_failure: bool,
+    /// Whether the PR has at least one review.
+    pub has_reviews: bool,
+}
+
+/// Gets the CI and review status of a PR associated with a task.
+///
+/// Queries the GitHub API to determine:
+/// - Whether any required CI checks have failed
+/// - Whether the PR has any reviews
+///
+/// The frontend polls this endpoint to conditionally show
+/// "Fix CI Failures" and "Reflect PR Reviews" buttons.
+#[tauri::command]
+pub async fn get_pr_status(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<PrStatusResponse> {
+    let state = state.read().await;
+
+    // Look up the task to get its linked PR URL
+    #[cfg(desktop)]
+    {
+        if state.mode == AppMode::Local {
+            let runtime = state
+                .local_runtime
+                .as_ref()
+                .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+            let id = Uuid::parse_str(&task_id)
+                .map_err(|_| AppError::InvalidRequest("Invalid task ID".to_string()))?;
+
+            let task = runtime
+                .task_store_arc()
+                .get_unit_task(id)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Task {}", task_id)))?;
+
+            if task.status != UnitTaskStatus::PrOpen {
+                return Ok(PrStatusResponse {
+                    has_ci_failure: false,
+                    has_reviews: false,
+                });
+            }
+
+            let pr_url = match &task.linked_pr_url {
+                Some(url) => url.clone(),
+                None => {
+                    return Ok(PrStatusResponse {
+                        has_ci_failure: false,
+                        has_reviews: false,
+                    });
+                }
+            };
+
+            // Parse owner, repo, PR number from the URL
+            let (owner, repo, pr_number) = parse_github_pr_url(&pr_url)?;
+
+            // Get GitHub token from keychain or environment
+            let github_token = state
+                .keychain
+                .get_by_name(secrets::SecretKey::GithubToken.key_name())
+                .await
+                .ok()
+                .flatten()
+                .or_else(|| std::env::var("GITHUB_TOKEN").ok())
+                .or_else(|| std::env::var("GH_TOKEN").ok());
+
+            let github_token = match github_token {
+                Some(token) if !token.is_empty() => token,
+                _ => {
+                    info!(
+                        "No GitHub token available for PR status check (task: {})",
+                        task_id
+                    );
+                    return Ok(PrStatusResponse {
+                        has_ci_failure: false,
+                        has_reviews: false,
+                    });
+                }
+            };
+
+            let http_client = &state.http_client;
+
+            // Check CI status and reviews in parallel
+            let (ci_result, reviews_result) = tokio::join!(
+                check_ci_status(http_client, &github_token, &owner, &repo, pr_number),
+                check_pr_reviews(http_client, &github_token, &owner, &repo, pr_number),
+            );
+
+            let has_ci_failure = ci_result.unwrap_or_else(|e| {
+                tracing::warn!("Failed to check CI status for PR {}: {}", pr_url, e);
+                false
+            });
+
+            let has_reviews = reviews_result.unwrap_or_else(|e| {
+                tracing::warn!("Failed to check PR reviews for PR {}: {}", pr_url, e);
+                false
+            });
+
+            info!(
+                "PR status for task {}: has_ci_failure={}, has_reviews={}",
+                task_id, has_ci_failure, has_reviews
+            );
+
+            return Ok(PrStatusResponse {
+                has_ci_failure,
+                has_reviews,
+            });
+        }
+    }
+
+    // Remote mode: not yet supported, return defaults
+    #[cfg(not(desktop))]
+    let _ = &task_id;
+
+    Ok(PrStatusResponse {
+        has_ci_failure: false,
+        has_reviews: false,
+    })
+}
+
+/// Parses a GitHub PR URL into (owner, repo, pr_number).
+///
+/// Supports URLs like:
+/// - `https://github.com/owner/repo/pull/123`
+fn parse_github_pr_url(url: &str) -> AppResult<(String, String, u64)> {
+    // Parse URLs like: https://github.com/owner/repo/pull/123
+    let parts: Vec<&str> = url.split('/').collect();
+
+    // Expected: ["https:", "", "github.com", "owner", "repo", "pull", "123"]
+    if parts.len() < 7 || parts[5] != "pull" {
+        return Err(AppError::InvalidRequest(format!(
+            "Invalid GitHub PR URL: {}",
+            url
+        )));
+    }
+
+    let owner = parts[3].to_string();
+    let repo = parts[4].to_string();
+    let pr_number: u64 = parts[6]
+        .parse()
+        .map_err(|_| AppError::InvalidRequest(format!("Invalid PR number in URL: {}", url)))?;
+
+    Ok((owner, repo, pr_number))
+}
+
+/// Checks the CI status for a PR by querying the GitHub API for check runs
+/// on the PR's head commit.
+///
+/// Returns `true` if at least one required check has failed (conclusion is
+/// "failure", "timed_out", or "action_required").
+async fn check_ci_status(
+    client: &reqwest::Client,
+    token: &str,
+    owner: &str,
+    repo: &str,
+    pr_number: u64,
+) -> Result<bool, String> {
+    // First, get the PR to find the head SHA
+    let pr_url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}",
+        owner, repo, pr_number
+    );
+
+    let pr_response = client
+        .get(&pr_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "delidev")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch PR: {}", e))?;
+
+    if !pr_response.status().is_success() {
+        return Err(format!(
+            "GitHub API error fetching PR: {}",
+            pr_response.status()
+        ));
+    }
+
+    let pr_data: serde_json::Value = pr_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse PR response: {}", e))?;
+
+    let head_sha = pr_data["head"]["sha"]
+        .as_str()
+        .ok_or_else(|| "Missing head SHA in PR response".to_string())?;
+
+    // Get check runs for the head SHA
+    let checks_url = format!(
+        "https://api.github.com/repos/{}/{}/commits/{}/check-runs",
+        owner, repo, head_sha
+    );
+
+    let checks_response = client
+        .get(&checks_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "delidev")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch check runs: {}", e))?;
+
+    if !checks_response.status().is_success() {
+        return Err(format!(
+            "GitHub API error fetching check runs: {}",
+            checks_response.status()
+        ));
+    }
+
+    let checks_data: serde_json::Value = checks_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse check runs response: {}", e))?;
+
+    let check_runs = checks_data["check_runs"]
+        .as_array()
+        .unwrap_or(&Vec::new())
+        .clone();
+
+    // Also check the commit status API (for status checks that aren't check runs)
+    let status_url = format!(
+        "https://api.github.com/repos/{}/{}/commits/{}/status",
+        owner, repo, head_sha
+    );
+
+    let status_response = client
+        .get(&status_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "delidev")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch commit status: {}", e))?;
+
+    let mut has_status_failure = false;
+    if status_response.status().is_success() {
+        let status_data: serde_json::Value = status_response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse commit status response: {}", e))?;
+
+        if let Some(statuses) = status_data["statuses"].as_array() {
+            has_status_failure = statuses.iter().any(|s| {
+                s["state"].as_str() == Some("failure") || s["state"].as_str() == Some("error")
+            });
+        }
+    }
+
+    // Check if any check run has failed
+    let has_check_failure = check_runs.iter().any(|run| {
+        let conclusion = run["conclusion"].as_str().unwrap_or("");
+        conclusion == "failure" || conclusion == "timed_out" || conclusion == "action_required"
+    });
+
+    Ok(has_check_failure || has_status_failure)
+}
+
+/// Checks whether a PR has any reviews by querying the GitHub API.
+///
+/// Returns `true` if there is at least one review on the PR.
+async fn check_pr_reviews(
+    client: &reqwest::Client,
+    token: &str,
+    owner: &str,
+    repo: &str,
+    pr_number: u64,
+) -> Result<bool, String> {
+    let reviews_url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}/reviews",
+        owner, repo, pr_number
+    );
+
+    let response = client
+        .get(&reviews_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "delidev")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch PR reviews: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub API error fetching reviews: {}",
+            response.status()
+        ));
+    }
+
+    let reviews: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse reviews response: {}", e))?;
+
+    let reviews_array = reviews
+        .as_array()
+        .ok_or_else(|| "Reviews response is not an array".to_string())?;
+
+    // Filter: only count reviews that aren't just "PENDING" state
+    // (pending reviews aren't visible to the PR author yet)
+    let has_reviews = reviews_array.iter().any(|review| {
+        let state = review["state"].as_str().unwrap_or("");
+        state != "PENDING"
+    });
+
+    Ok(has_reviews)
+}
+
 // Helper functions
 
 fn parse_agent_type(s: &str) -> AppResult<AiAgentType> {
@@ -2207,5 +2741,112 @@ mod tests {
         LAST_TASK_CREATION_TIME.store(past, Ordering::SeqCst);
 
         assert!(check_rate_limit().is_ok());
+    }
+
+    // =========================================================================
+    // sanitize_optional_input Tests
+    // =========================================================================
+
+    #[test]
+    fn test_sanitize_optional_input_none() {
+        let result = sanitize_optional_input(None, "Test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_sanitize_optional_input_valid() {
+        let result = sanitize_optional_input(Some("Hello world".to_string()), "Test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some("Hello world".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_optional_input_removes_control_chars() {
+        let result = sanitize_optional_input(Some("Hello\x00\x01World".to_string()), "Test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some("HelloWorld".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_optional_input_preserves_newlines_and_tabs() {
+        let result = sanitize_optional_input(Some("Line1\nLine2\tTabbed".to_string()), "Test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some("Line1\nLine2\tTabbed".to_string()));
+    }
+
+    #[test]
+    fn test_sanitize_optional_input_empty_after_sanitize() {
+        // A string of only control characters becomes empty after sanitization
+        let result = sanitize_optional_input(Some("\x00\x01\x02".to_string()), "Test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_sanitize_optional_input_too_long() {
+        let long_input = "a".repeat(entities::MAX_FEEDBACK_LENGTH + 1);
+        let result = sanitize_optional_input(Some(long_input), "CI logs");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("CI logs"));
+        assert!(err_msg.contains("maximum length"));
+    }
+
+    #[test]
+    fn test_sanitize_optional_input_at_max_length() {
+        let max_input = "a".repeat(entities::MAX_FEEDBACK_LENGTH);
+        let result = sanitize_optional_input(Some(max_input.clone()), "Test");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(max_input));
+    }
+
+    // =========================================================================
+    // GitHub PR URL Parsing Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_github_pr_url_valid() {
+        let (owner, repo, pr_number) =
+            parse_github_pr_url("https://github.com/delinoio/delidev/pull/232").unwrap();
+        assert_eq!(owner, "delinoio");
+        assert_eq!(repo, "delidev");
+        assert_eq!(pr_number, 232);
+    }
+
+    #[test]
+    fn test_parse_github_pr_url_with_trailing_slash() {
+        // URL with more path segments after PR number should still work
+        let (owner, repo, pr_number) =
+            parse_github_pr_url("https://github.com/owner/repo/pull/42").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+        assert_eq!(pr_number, 42);
+    }
+
+    #[test]
+    fn test_parse_github_pr_url_invalid_format() {
+        let result = parse_github_pr_url("https://github.com/owner/repo");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid GitHub PR URL"));
+    }
+
+    #[test]
+    fn test_parse_github_pr_url_not_a_pull() {
+        let result = parse_github_pr_url("https://github.com/owner/repo/issues/123");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_github_pr_url_invalid_pr_number() {
+        let result = parse_github_pr_url("https://github.com/owner/repo/pull/abc");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid PR number"));
     }
 }

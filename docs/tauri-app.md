@@ -425,7 +425,26 @@ async fn commit_to_local(task_id: String, local_path: String) -> Result<(), Erro
 
 #[tauri::command]
 async fn delete_task(task_id: String) -> Result<(), Error>;
+
+#[tauri::command]
+async fn fix_ci(task_id: String, ci_logs: Option<String>) -> Result<(), Error>;
+
+#[tauri::command]
+async fn reflect_reviews(task_id: String, review_comments: Option<String>) -> Result<(), Error>;
+
+#[tauri::command]
+async fn get_pr_status(task_id: String) -> Result<PrStatusResponse, Error>;
 ```
+
+### PR Status Polling
+
+The `get_pr_status` command queries the GitHub API to determine:
+- **CI failures**: Whether any check runs or commit statuses have failed on the PR head commit
+- **Reviews**: Whether the PR has any non-pending reviews
+
+The frontend polls this endpoint every 30 seconds for tasks in `PrOpen` status. The "Fix CI Failures" button only appears when CI has failed, and the "Reflect PR Reviews" button only appears when reviews exist.
+
+Requires a `GITHUB_TOKEN` in the keychain or environment to access the GitHub API.
 
 ### Repository Management
 

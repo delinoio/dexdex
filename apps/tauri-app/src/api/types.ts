@@ -506,6 +506,11 @@ export interface TaskLogsResponse {
   sessions: SessionLogsGroup[];
 }
 
+export interface PrStatusResponse {
+  hasCiFailure: boolean;
+  hasReviews: boolean;
+}
+
 export interface RespondTtyInputParams {
   requestId: string;
   response: string;

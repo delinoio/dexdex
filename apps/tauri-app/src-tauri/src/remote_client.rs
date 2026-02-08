@@ -185,6 +185,19 @@ impl RemoteClient {
         self.post("/api/task/commit-to-local", &request).await
     }
 
+    /// Fixes CI failures for a task with an open PR.
+    pub async fn fix_ci(&self, request: FixCiRequest) -> AppResult<FixCiResponse> {
+        self.post("/api/task/fix-ci", &request).await
+    }
+
+    /// Reflects PR review comments for a task with an open PR.
+    pub async fn reflect_reviews(
+        &self,
+        request: ReflectReviewsRequest,
+    ) -> AppResult<ReflectReviewsResponse> {
+        self.post("/api/task/reflect-reviews", &request).await
+    }
+
     // =========================================================================
     // Repository API
     // =========================================================================

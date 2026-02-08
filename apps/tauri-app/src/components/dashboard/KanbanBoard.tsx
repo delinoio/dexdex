@@ -6,6 +6,14 @@ interface KanbanBoardProps {
   unitTasks: UnitTask[];
   compositeTasks: CompositeTask[];
   onTaskClick?: (taskId: string, isUnit: boolean) => void;
+  /** Called when user clicks "Fix CI Failures" on a pr_open unit task */
+  onFixCi?: (taskId: string) => void;
+  /** Called when user clicks "Reflect PR Reviews" on a pr_open unit task */
+  onReflectReviews?: (taskId: string) => void;
+  /** Whether the fix CI mutation is currently pending */
+  isFixCiPending?: boolean;
+  /** Whether the reflect reviews mutation is currently pending */
+  isReflectReviewsPending?: boolean;
 }
 
 type TaskWithType =
@@ -54,6 +62,10 @@ export function KanbanBoard({
   unitTasks,
   compositeTasks,
   onTaskClick,
+  onFixCi,
+  onReflectReviews,
+  isFixCiPending,
+  isReflectReviewsPending,
 }: KanbanBoardProps) {
   const getTasksForColumn = (column: typeof columns[number]): TaskWithType[] => {
     const tasks: TaskWithType[] = [];
@@ -96,6 +108,10 @@ export function KanbanBoard({
                 key={task.id}
                 task={task}
                 onClick={() => onTaskClick?.(task.id, type === "unit")}
+                onFixCi={type === "unit" ? onFixCi : undefined}
+                onReflectReviews={type === "unit" ? onReflectReviews : undefined}
+                isFixCiPending={isFixCiPending}
+                isReflectReviewsPending={isReflectReviewsPending}
               />
             ))}
             {tasks.length === 0 && (
