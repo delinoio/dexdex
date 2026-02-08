@@ -1674,6 +1674,93 @@ pub async fn dismiss_approval(
     ))
 }
 
+/// Revives a cancelled or failed task that has a git patch, moving it to
+/// InReview.
+///
+/// This allows users to recover partial work from tasks that were cancelled
+/// (e.g., agent was stopped for PR creation) or failed. The task must have
+/// a `git_patch` to be revivable, since without changes there is nothing to
+/// review.
+#[tauri::command]
+pub async fn revive_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    app_handle: tauri::AppHandle,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        let client = state.get_remote_client()?;
+
+        let request = requests::ReviveTaskRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.revive_task(request).await?;
+        info!("Revived task via remote: {}", task_id);
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        if let Some(mut task) = runtime.task_store_arc().get_unit_task(id).await? {
+            if task.status != UnitTaskStatus::Cancelled && task.status != UnitTaskStatus::Failed {
+                return Err(AppError::InvalidRequest(format!(
+                    "Task {} is not in Cancelled or Failed status (current: {:?})",
+                    task_id, task.status
+                )));
+            }
+
+            if task.git_patch.is_none() {
+                return Err(AppError::InvalidRequest(format!(
+                    "Task {} has no git patch to revive",
+                    task_id
+                )));
+            }
+
+            let old_status = match task.status {
+                UnitTaskStatus::Cancelled => "cancelled".to_string(),
+                UnitTaskStatus::Failed => "failed".to_string(),
+                _ => unreachable!(),
+            };
+            task.status = UnitTaskStatus::InReview;
+            task.updated_at = chrono::Utc::now();
+            runtime.task_store_arc().update_unit_task(task).await?;
+            info!("Revived unit task: {}", id);
+
+            let _ = app_handle.emit(
+                event_names::TASK_STATUS_CHANGED,
+                &TaskStatusChangedEvent {
+                    task_id: task_id.clone(),
+                    task_type: TaskType::UnitTask,
+                    old_status,
+                    new_status: "in_review".to_string(),
+                },
+            );
+
+            return Ok(());
+        }
+
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    }
+
+    #[cfg(not(desktop))]
+    let _ = &app_handle;
+
+    #[allow(unreachable_code)]
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
 /// Creates a pull request for an approved task.
 #[tauri::command]
 pub async fn create_pr(

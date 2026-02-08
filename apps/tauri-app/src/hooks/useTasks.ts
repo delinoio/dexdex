@@ -14,6 +14,7 @@ import {
   listTasks,
   rejectTask,
   requestChanges,
+  reviveTask,
   updatePlanWithPrompt,
 } from "@/api/client";
 import type {
@@ -180,6 +181,18 @@ export function useCreatePr() {
 
   return useMutation({
     mutationFn: (taskId: string) => createPr(taskId),
+    onSuccess: (_data, taskId) => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useReviveTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: string) => reviveTask(taskId),
     onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });

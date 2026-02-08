@@ -155,6 +155,7 @@ pub fn run() {
             commands::task::cancel_task,
             commands::task::delete_task,
             commands::task::dismiss_approval,
+            commands::task::revive_task,
             commands::task::create_pr,
             commands::task::commit_to_local,
             commands::task::get_task_logs,

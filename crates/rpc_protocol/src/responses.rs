@@ -67,6 +67,9 @@ pub struct UpdatePlanResponse {
 pub struct DismissApprovalResponse {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviveTaskResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePrResponse {
     pub pr_url: String,
 }

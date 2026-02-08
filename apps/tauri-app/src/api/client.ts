@@ -94,6 +94,10 @@ export async function dismissApproval(taskId: string): Promise<void> {
   return invoke<void>("dismiss_approval", { taskId });
 }
 
+export async function reviveTask(taskId: string): Promise<void> {
+  return invoke<void>("revive_task", { taskId });
+}
+
 export async function createPr(taskId: string): Promise<string> {
   return invoke<string>("create_pr", { taskId });
 }

@@ -172,6 +172,12 @@ impl RemoteClient {
         self.post("/api/task/dismiss-approval", &request).await
     }
 
+    /// Revives a cancelled or failed task that has a git patch, moving it to
+    /// InReview.
+    pub async fn revive_task(&self, request: ReviveTaskRequest) -> AppResult<ReviveTaskResponse> {
+        self.post("/api/task/revive", &request).await
+    }
+
     /// Creates a pull request for an approved task.
     pub async fn create_pr(&self, request: CreatePrRequest) -> AppResult<CreatePrResponse> {
         self.post("/api/task/create-pr", &request).await

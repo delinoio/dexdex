@@ -87,6 +87,11 @@ pub struct DismissApprovalRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviveTaskRequest {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePrRequest {
     pub task_id: String,
 }

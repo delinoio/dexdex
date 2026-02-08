@@ -15,7 +15,7 @@ import {
 import { AgentLogViewer, StaticSessionLogViewer } from "@/components/task/AgentLogViewer";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
-import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDeleteTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDeleteTask, useDismissApproval, useCreatePr, useCommitToLocal, useReviveTask } from "@/hooks/useTasks";
 import { useMode } from "@/hooks/useMode";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
@@ -49,6 +49,7 @@ export function UnitTaskDetail() {
   const createPrMutation = useCreatePr();
   const commitToLocalMutation = useCommitToLocal();
   const { data: mode } = useMode();
+  const reviveMutation = useReviveTask();
 
   const task = data?.unitTask;
   const isLocalMode = mode === "local";
@@ -644,6 +645,44 @@ export function UnitTaskDetail() {
                     {dismissApprovalMutation.isPending ? "Dismissing..." : "Dismiss Approval"}
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {(task.status === UnitTaskStatus.Cancelled || task.status === UnitTaskStatus.Failed) && task.gitPatch && (
+            <Card className="border-[hsl(var(--warning))]">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[hsl(var(--warning))]"
+                  >
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                    <path d="M8 16H3v5" />
+                  </svg>
+                  <CardTitle>Revive Changes</CardTitle>
+                </div>
+                <CardDescription>
+                  This task was {task.status === UnitTaskStatus.Cancelled ? "cancelled" : "failed"} but has changes that can be reviewed. You can revive the task to review the partial work.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  onClick={() => reviveMutation.mutateAsync(task.id)}
+                  disabled={reviveMutation.isPending}
+                >
+                  {reviveMutation.isPending ? "Reviving..." : "Revive Task"}
+                </Button>
               </CardContent>
             </Card>
           )}

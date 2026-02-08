@@ -679,6 +679,14 @@ Note: While in `in_progress`, the user can cancel the task at any time,
 which transitions the status to `cancelled`. The agent execution is
 aborted and any partial work is preserved in the worktree.
 
+Note: If a `cancelled` or `failed` task has a `git_patch` (i.e., the
+AI agent produced changes before being stopped or failing), the user
+can "revive" the task. Reviving transitions the task to `in_review`
+so the user can review the partial work and then approve, request
+further changes, or reject it — just like a normally completed task.
+This is useful when the agent was stopped for PR creation or when
+a task failed after making progress.
+
 Note: The user can delete a task in any status. If the task is currently
 `in_progress`, the agent execution is cancelled first before deletion.
 Deletion permanently removes the task and all associated resources from
