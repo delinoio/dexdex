@@ -191,8 +191,9 @@ export function useCommitToLocal() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: string) => commitToLocal(taskId),
-    onSuccess: (_data, taskId) => {
+    mutationFn: ({ taskId, localPath }: { taskId: string; localPath: string }) =>
+      commitToLocal(taskId, localPath),
+    onSuccess: (_data, { taskId }) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },

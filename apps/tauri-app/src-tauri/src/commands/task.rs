@@ -1738,30 +1738,49 @@ pub async fn create_pr(
 }
 
 /// Commits approved task changes to the local git repository.
+///
+/// This command is only available in local mode. It directly applies the
+/// task's git patch to the target repository using `git apply` and commits
+/// the changes — no AI agent is involved.
+///
+/// The `local_path` parameter specifies the target local git repository path
+/// where changes should be committed.
 #[tauri::command]
 pub async fn commit_to_local(
     state: State<'_, Arc<RwLock<AppState>>>,
     app_handle: tauri::AppHandle,
     task_id: String,
+    local_path: String,
 ) -> AppResult<()> {
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        let client = state.get_remote_client()?;
-
-        let request = requests::CommitToLocalRequest {
-            task_id: task_id.clone(),
-        };
-
-        client.commit_to_local(request).await?;
-        info!("Committed to local via remote for task: {}", task_id);
-        return Ok(());
+        return Err(AppError::InvalidRequest(
+            "Commit to local is only available in local mode".to_string(),
+        ));
     }
+
+    // Validate the local path
+    let path = std::path::Path::new(&local_path);
+    if !path.is_absolute() {
+        return Err(AppError::InvalidRequest(
+            "Local path must be an absolute path".to_string(),
+        ));
+    }
+
+    // Canonicalize to resolve symlinks and prevent path traversal
+    let path = path
+        .canonicalize()
+        .map_err(|e| AppError::InvalidRequest(format!("Invalid path '{}': {}", local_path, e)))?;
+
+    info!(
+        "Committing to local path '{}' for task: {}",
+        path.display(),
+        task_id
+    );
 
     #[cfg(desktop)]
     {
-        let _ = &app_handle;
-
         let id = Uuid::parse_str(&task_id)
             .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
 
@@ -1770,29 +1789,83 @@ pub async fn commit_to_local(
             .as_ref()
             .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
-        let executor = runtime
-            .executor()
-            .await
-            .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
+        // Get the unit task to access its git_patch
+        let task = runtime
+            .task_store_arc()
+            .get_unit_task(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Task not found: {}", task_id)))?;
 
-        let prompt = "Commit the changes from this task to the local repository. Create a \
-                      well-structured commit with an appropriate commit message that summarizes \
-                      the changes made."
-            .to_string();
+        // Verify the task is in Approved status
+        if task.status != UnitTaskStatus::Approved {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} is not in Approved status (current: {:?})",
+                task_id, task.status
+            )));
+        }
 
-        executor
-            .execute_subtask(id, prompt, UnitTaskStatus::Done)
+        // Get the git patch
+        let git_patch = task.git_patch.as_deref().ok_or_else(|| {
+            AppError::InvalidRequest(format!("Task {} has no git patch to apply", task_id))
+        })?;
+
+        if git_patch.trim().is_empty() {
+            return Err(AppError::InvalidRequest(format!(
+                "Task {} has an empty git patch",
+                task_id
+            )));
+        }
+
+        // Build commit message from task title/prompt
+        let commit_message = task
+            .title
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .unwrap_or("Apply changes from DeliDev task");
+
+        // Apply the patch and commit directly (no AI involved)
+        git_ops::apply_patch_and_commit(&path, git_patch, commit_message)
             .await
             .map_err(|e| {
-                AppError::Internal(format!("Failed to start commit-to-local subtask: {}", e))
+                AppError::Internal(format!(
+                    "Failed to apply patch for task {} to path '{}': {}",
+                    task_id,
+                    path.display(),
+                    e
+                ))
             })?;
 
-        info!("Started commit-to-local subtask for unit task: {}", id);
+        // Update task status to Done
+        let mut updated_task = task;
+        let old_status = format!("{:?}", updated_task.status).to_lowercase();
+        updated_task.status = UnitTaskStatus::Done;
+        updated_task.updated_at = chrono::Utc::now();
+        runtime
+            .task_store_arc()
+            .update_unit_task(updated_task)
+            .await?;
+
+        // Emit task-status-changed so the frontend auto-updates
+        let _ = app_handle.emit(
+            event_names::TASK_STATUS_CHANGED,
+            &TaskStatusChangedEvent {
+                task_id: task_id.clone(),
+                task_type: TaskType::UnitTask,
+                old_status,
+                new_status: "done".to_string(),
+            },
+        );
+
+        info!(
+            "Successfully committed task {} changes to local path '{}'",
+            id,
+            path.display()
+        );
         return Ok(());
     }
 
     #[cfg(not(desktop))]
-    let _ = &app_handle;
+    let _ = (&app_handle, &local_path);
 
     #[allow(unreachable_code)]
     Err(AppError::InvalidRequest(

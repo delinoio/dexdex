@@ -17,6 +17,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.64.2",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-notification": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@xyflow/react": "^12.4.4",

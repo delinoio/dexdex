@@ -98,8 +98,8 @@ export async function createPr(taskId: string): Promise<string> {
   return invoke<string>("create_pr", { taskId });
 }
 
-export async function commitToLocal(taskId: string): Promise<void> {
-  return invoke<void>("commit_to_local", { taskId });
+export async function commitToLocal(taskId: string, localPath: string): Promise<void> {
+  return invoke<void>("commit_to_local", { taskId, localPath });
 }
 
 export async function updatePlanWithPrompt(

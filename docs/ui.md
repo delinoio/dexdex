@@ -359,7 +359,7 @@ Type `@` to reference files:
 │  ├─────────────────────────────────────────────────────────────────────┤   │
 │  │  This task has been approved. Choose how to apply the changes.      │   │
 │  │                                                                     │   │
-│  │  [Create PR]   [Commit to Local]   [Dismiss Approval]              │   │
+│  │  [Create PR]   [Commit to Local*]  [Dismiss Approval]              │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -543,7 +543,7 @@ The review interface is built from the following components:
 | Action | Description |
 |--------|-------------|
 | Create PR | Create PR on VCS provider (transitions to `pr_open`) |
-| Commit to Local | Commit changes to local git repository (transitions to `done`) |
+| Commit to Local | Directly applies the task's git patch to a local git repository and commits (transitions to `done`). Only displayed in local mode. Opens a native directory picker to select the target git repository path. No AI agent is involved. |
 | Dismiss Approval | Move task back to `in_review` status |
 
 ---

@@ -659,8 +659,14 @@ Human review ──┬──► Approve (approved)
                └──► Reject (rejected)
 
 Approved ──────┬──► Create PR (subtask → pr_open)
-               ├──► Commit to local repo (subtask → done)
+               ├──► Commit to local repo (local mode only, opens directory picker → applies git patch → done)
                └──► Dismiss approval (back to in_review)
+
+Note: "Commit to Local" is only available in local mode. When clicked, it
+opens a native directory picker for the user to select the target local git
+repository path. The backend directly applies the task's git patch to the
+selected repository using `git apply` and commits the changes. No AI agent
+is involved — it is a direct git operation.
 
 Note: In local mode, "Request Changes" creates a subtask (like "Create PR"
 and "Commit to Local") that applies the reviewer's feedback using the AI
@@ -701,8 +707,8 @@ events are emitted so the frontend updates automatically.
 ### Subtasks
 
 Subtasks are agent sessions that run within an existing unit task's
-worktree. They are used for post-approval operations like PR creation,
-committing to local, and applying requested changes. Key characteristics:
+worktree. They are used for post-approval operations like PR creation
+and applying requested changes. Key characteristics:
 
 - A subtask creates a new `AgentSession` under the same `AgentTask`
 - It runs in the existing worktree (no new worktree is created)
