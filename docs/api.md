@@ -358,6 +358,19 @@ Creates a pull request for an approved task on the VCS provider.
   }
   ```
 
+### Cancel Task
+
+Cancels a running task (must be in `in_progress` status).
+
+- **URL**: `POST /api/task/cancel`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "uuid"
+  }
+  ```
+- **Response**: `{}`
+
 ### Commit to Local
 
 Commits an approved task's changes to the local git repository.
@@ -370,6 +383,86 @@ Commits an approved task's changes to the local git repository.
   }
   ```
 - **Response**: `{}`
+
+### Get Composite Task Nodes
+
+Gets all nodes for a composite task with their dependency information.
+
+- **URL**: `POST /api/task/get-composite-nodes`
+- **Request Body**:
+  ```json
+  {
+    "composite_task_id": "uuid"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "nodes": [
+      {
+        "id": "uuid",
+        "composite_task_id": "uuid",
+        "unit_task_id": "uuid",
+        "depends_on_ids": ["uuid"],
+        "created_at": "2026-02-01T00:00:00Z"
+      }
+    ]
+  }
+  ```
+
+### Get Task Logs
+
+Gets task logs (agent sessions and their events) for an agent task.
+
+- **URL**: `POST /api/task/get-logs`
+- **Request Body**:
+  ```json
+  {
+    "agent_task_id": "uuid",
+    "after_event_id": null
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "sessions": [
+      {
+        "id": "uuid",
+        "agent_task_id": "uuid",
+        "ai_agent_type": "claude_code",
+        "started_at": "2026-02-01T00:00:00Z",
+        "completed_at": "2026-02-01T00:01:00Z",
+        "output_log": "...",
+        "created_at": "2026-02-01T00:00:00Z"
+      }
+    ],
+    "events": [
+      {
+        "timestamp": "2026-02-01T00:00:00Z",
+        "event": {
+          "type": "text_output",
+          "content": "Hello",
+          "stream": false
+        }
+      }
+    ],
+    "last_event_id": 42
+  }
+  ```
+
+### Update Plan
+
+Updates the plan for a composite task by appending feedback and resetting to Planning status.
+
+- **URL**: `POST /api/task/update-plan`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "uuid",
+    "prompt": "Please also include error handling"
+  }
+  ```
+- **Response**: Updated composite task object
 
 ---
 

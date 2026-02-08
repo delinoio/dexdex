@@ -1166,17 +1166,103 @@ pub async fn get_task_logs(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        // In remote mode, we currently return minimal data
-        // Full log streaming support requires additional server-side work
-        // For now, return an empty response indicating task is complete
-        // TODO: Implement proper remote log streaming (agent_task_id and after_event_id
-        // are unused here)
-        return Ok(TaskLogsResponse {
-            events: Vec::new(),
-            is_complete: true,
-            last_event_id: None,
-            sessions: Vec::new(),
-        });
+        // Remote mode: fetch logs from server
+        let client = state.get_remote_client()?;
+
+        let request = requests::GetTaskLogsRequest {
+            agent_task_id: agent_task_id.clone(),
+            after_event_id,
+        };
+
+        let response = client.get_task_logs(request).await?;
+
+        #[cfg(desktop)]
+        {
+            // Build session groups from the response
+            let mut session_groups: Vec<SessionLogsGroup> = Vec::new();
+            for (idx, rpc_session) in response.sessions.iter().enumerate() {
+                let mut session_events = Vec::new();
+
+                if let Some(output_log) = &rpc_session.output_log {
+                    for (event_idx, line) in output_log.lines().enumerate() {
+                        let event_id = event_idx as i64;
+                        if let Ok(timestamped) =
+                            serde_json::from_str::<TimestampedEvent>(line)
+                        {
+                            session_events.push(NormalizedEventEntry {
+                                id: event_id,
+                                timestamp: timestamped.timestamp.to_rfc3339(),
+                                event: timestamped.event,
+                            });
+                        } else if let Ok(event) =
+                            serde_json::from_str::<NormalizedEvent>(line)
+                        {
+                            session_events.push(NormalizedEventEntry {
+                                id: event_id,
+                                timestamp: rpc_session.created_at.to_rfc3339(),
+                                event,
+                            });
+                        }
+                    }
+                }
+
+                let label = if idx == 0 {
+                    "Main Execution".to_string()
+                } else {
+                    format!("Subtask {}", idx)
+                };
+
+                session_groups.push(SessionLogsGroup {
+                    session_id: rpc_session.id.clone(),
+                    label,
+                    events: session_events,
+                    is_complete: rpc_session.completed_at.is_some(),
+                    created_at: rpc_session.created_at.to_rfc3339(),
+                });
+            }
+
+            // Convert top-level events
+            let events: Vec<NormalizedEventEntry> = response
+                .events
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, te)| {
+                    let event_id = response
+                        .last_event_id
+                        .map(|last| last - (response.events.len() as i64 - 1 - idx as i64))
+                        .unwrap_or(idx as i64);
+                    Some(NormalizedEventEntry {
+                        id: event_id,
+                        timestamp: te.timestamp.to_rfc3339(),
+                        event: te.event.clone(),
+                    })
+                })
+                .collect();
+
+            let is_complete = response
+                .sessions
+                .last()
+                .map(|s| s.completed_at.is_some())
+                .unwrap_or(true);
+
+            return Ok(TaskLogsResponse {
+                events,
+                is_complete,
+                last_event_id: response.last_event_id,
+                sessions: session_groups,
+            });
+        }
+
+        #[cfg(not(desktop))]
+        {
+            let _ = (&response, &agent_task_id, &after_event_id);
+            return Ok(TaskLogsResponse {
+                events: Vec::new(),
+                is_complete: true,
+                last_event_id: None,
+                sessions: Vec::new(),
+            });
+        }
     }
 
     #[cfg(desktop)]
@@ -1323,9 +1409,16 @@ pub async fn cancel_task(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        return Err(AppError::InvalidRequest(
-            "Remote mode not yet implemented".to_string(),
-        ));
+        // Remote mode: make API call to main server
+        let client = state.get_remote_client()?;
+
+        let request = requests::CancelTaskRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.cancel_task(request).await?;
+        info!("Cancelled task via remote: {}", task_id);
+        return Ok(());
     }
 
     #[cfg(desktop)]
@@ -1548,13 +1641,63 @@ pub async fn get_composite_task_nodes(
 ) -> AppResult<CompositeTaskNodesResult> {
     let state = state.read().await;
 
-    // In remote mode, return empty result for now as the server doesn't yet
-    // have an endpoint for composite task nodes
     if state.mode == AppMode::Remote {
-        // TODO: Implement remote API call when server supports composite task nodes
-        // endpoint (composite_task_id is unused in remote mode until the API is
-        // implemented)
-        return Ok(CompositeTaskNodesResult { nodes: Vec::new() });
+        // Remote mode: fetch nodes from server and join with unit tasks
+        let client = state.get_remote_client()?;
+
+        let request = requests::GetCompositeTaskNodesRequest {
+            composite_task_id: composite_task_id.clone(),
+        };
+        let nodes_resp = client.get_composite_task_nodes(request).await?;
+
+        let mut result = Vec::new();
+        for rpc_node in nodes_resp.nodes {
+            let node_id = Uuid::parse_str(&rpc_node.id)
+                .map_err(|e| AppError::InvalidRequest(format!("Invalid node ID: {}", e)))?;
+            let ct_id = Uuid::parse_str(&rpc_node.composite_task_id)
+                .map_err(|e| {
+                    AppError::InvalidRequest(format!("Invalid composite task ID: {}", e))
+                })?;
+            let ut_id = Uuid::parse_str(&rpc_node.unit_task_id)
+                .map_err(|e| {
+                    AppError::InvalidRequest(format!("Invalid unit task ID: {}", e))
+                })?;
+            let depends_on_ids: Vec<Uuid> = rpc_node
+                .depends_on_ids
+                .iter()
+                .filter_map(|id| id.parse().ok())
+                .collect();
+
+            let node = CompositeTaskNode {
+                id: node_id,
+                composite_task_id: ct_id,
+                unit_task_id: ut_id,
+                depends_on_ids,
+                created_at: rpc_node.created_at,
+            };
+
+            // Fetch the associated unit task
+            let get_task_request = requests::GetTaskRequest {
+                task_id: rpc_node.unit_task_id.clone(),
+            };
+            if let Ok(rpc_protocol::responses::GetTaskResponse::UnitTask { unit_task }) =
+                client.get_task(get_task_request).await
+            {
+                if let Ok(entity_task) = rpc_to_entity_unit_task(unit_task) {
+                    result.push(CompositeTaskNodeWithUnitTask {
+                        node,
+                        unit_task: entity_task,
+                    });
+                }
+            }
+        }
+
+        info!(
+            "Fetched {} composite task nodes via remote for: {}",
+            result.len(),
+            composite_task_id
+        );
+        return Ok(CompositeTaskNodesResult { nodes: result });
     }
 
     #[cfg(desktop)]

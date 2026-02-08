@@ -96,6 +96,22 @@ pub struct CommitToLocalRequest {
     pub task_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelTaskRequest {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCompositeTaskNodesRequest {
+    pub composite_task_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetTaskLogsRequest {
+    pub agent_task_id: String,
+    pub after_event_id: Option<i64>,
+}
+
 // ============================================================================
 // Session Service Requests
 // ============================================================================

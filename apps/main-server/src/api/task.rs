@@ -612,6 +612,248 @@ fn validate_composite_task_plan(plan_yaml: &str) -> ServerResult<Plan> {
     Ok(plan)
 }
 
+/// Cancels a running task.
+pub async fn cancel_task<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<CancelTaskRequest>,
+) -> ServerResult<Json<CancelTaskResponse>> {
+    let task_id: Uuid = request
+        .task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    let mut task = state
+        .store
+        .get_unit_task(task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Task not found".to_string()))?;
+
+    if task.status != EntityUnitTaskStatus::InProgress {
+        return Err(ServerError::InvalidRequest(format!(
+            "Task {} is not in InProgress status (current: {:?})",
+            task_id, task.status
+        )));
+    }
+
+    task.status = EntityUnitTaskStatus::Cancelled;
+    task.updated_at = chrono::Utc::now();
+    state.store.update_unit_task(task).await?;
+
+    tracing::info!(task_id = %task_id, "Task cancelled");
+
+    Ok(Json(CancelTaskResponse {}))
+}
+
+/// Dismisses approval for a task, moving it back to InReview.
+pub async fn dismiss_approval<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<DismissApprovalRequest>,
+) -> ServerResult<Json<DismissApprovalResponse>> {
+    let task_id: Uuid = request
+        .task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    let mut task = state
+        .store
+        .get_unit_task(task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Task not found".to_string()))?;
+
+    if task.status != EntityUnitTaskStatus::Approved {
+        return Err(ServerError::InvalidRequest(format!(
+            "Task {} is not in Approved status (current: {:?})",
+            task_id, task.status
+        )));
+    }
+
+    task.status = EntityUnitTaskStatus::InReview;
+    task.updated_at = chrono::Utc::now();
+    state.store.update_unit_task(task).await?;
+
+    tracing::info!(task_id = %task_id, "Approval dismissed");
+
+    Ok(Json(DismissApprovalResponse {}))
+}
+
+/// Creates a pull request for an approved task.
+///
+/// In the server context, PR creation is delegated to the worker. The server
+/// transitions the task status to InProgress with a PR creation prompt so the
+/// worker picks it up.
+pub async fn create_pr<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<CreatePrRequest>,
+) -> ServerResult<Json<CreatePrResponse>> {
+    let task_id: Uuid = request
+        .task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+
+    let mut task = state
+        .store
+        .get_unit_task(task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Task not found".to_string()))?;
+
+    if task.status != EntityUnitTaskStatus::Approved
+        && task.status != EntityUnitTaskStatus::InReview
+    {
+        return Err(ServerError::InvalidRequest(format!(
+            "Task {} is not in Approved or InReview status (current: {:?})",
+            task_id, task.status
+        )));
+    }
+
+    // Reset to InProgress so the worker picks it up for PR creation
+    task.status = EntityUnitTaskStatus::InProgress;
+    task.prompt = format!(
+        "{}\n\n--- Create PR ---\nCreate a pull request with the changes from this task. Push \
+         the current branch to the remote and create a PR using the available tools (e.g. `gh \
+         pr create`). Output the PR URL.",
+        task.prompt
+    );
+    task.updated_at = chrono::Utc::now();
+    state.store.update_unit_task(task).await?;
+
+    tracing::info!(task_id = %task_id, "PR creation requested, task reset to InProgress for worker");
+
+    // The actual PR URL will be available after the worker completes
+    Ok(Json(CreatePrResponse {
+        pr_url: String::new(),
+    }))
+}
+
+/// Gets all composite task nodes.
+pub async fn get_composite_task_nodes<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<GetCompositeTaskNodesRequest>,
+) -> ServerResult<Json<GetCompositeTaskNodesResponse>> {
+    let composite_task_id: Uuid = request
+        .composite_task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid composite_task_id".to_string()))?;
+
+    // Verify composite task exists
+    state
+        .store
+        .get_composite_task(composite_task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Composite task not found".to_string()))?;
+
+    let nodes = state
+        .store
+        .list_composite_task_nodes(composite_task_id)
+        .await?;
+
+    let rpc_nodes = nodes
+        .iter()
+        .map(|node| rpc_protocol::CompositeTaskNode {
+            id: node.id.to_string(),
+            composite_task_id: node.composite_task_id.to_string(),
+            unit_task_id: node.unit_task_id.to_string(),
+            depends_on_ids: node.depends_on_ids.iter().map(|id| id.to_string()).collect(),
+            created_at: node.created_at,
+        })
+        .collect();
+
+    Ok(Json(GetCompositeTaskNodesResponse { nodes: rpc_nodes }))
+}
+
+/// Gets task logs (agent sessions and their events).
+pub async fn get_task_logs<S: TaskStore>(
+    State(state): State<Arc<AppState<S>>>,
+    Json(request): Json<GetTaskLogsRequest>,
+) -> ServerResult<Json<GetTaskLogsResponse>> {
+    let agent_task_id: Uuid = request
+        .agent_task_id
+        .parse()
+        .map_err(|_| ServerError::InvalidRequest("Invalid agent_task_id".to_string()))?;
+
+    // Verify agent task exists
+    state
+        .store
+        .get_agent_task(agent_task_id)
+        .await?
+        .ok_or_else(|| ServerError::NotFound("Agent task not found".to_string()))?;
+
+    // Get all sessions for this agent task
+    let mut sessions = state.store.list_agent_sessions(agent_task_id).await?;
+
+    // Sort by created_at for chronological order
+    sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    // Convert sessions to RPC format
+    let rpc_sessions: Vec<rpc_protocol::AgentSession> = sessions
+        .iter()
+        .map(|s| rpc_protocol::AgentSession {
+            id: s.id.to_string(),
+            agent_task_id: s.agent_task_id.to_string(),
+            ai_agent_type: match s.ai_agent_type {
+                entities::AiAgentType::ClaudeCode => rpc_protocol::AiAgentType::ClaudeCode,
+                entities::AiAgentType::OpenCode => rpc_protocol::AiAgentType::OpenCode,
+                entities::AiAgentType::GeminiCli => rpc_protocol::AiAgentType::GeminiCli,
+                entities::AiAgentType::CodexCli => rpc_protocol::AiAgentType::CodexCli,
+                entities::AiAgentType::Aider => rpc_protocol::AiAgentType::Aider,
+                entities::AiAgentType::Amp => rpc_protocol::AiAgentType::Amp,
+            },
+            ai_agent_model: s.ai_agent_model.clone(),
+            started_at: s.started_at,
+            completed_at: s.completed_at,
+            output_log: s.output_log.clone(),
+            token_usage: s.token_usage.as_ref().map(|tu| rpc_protocol::TokenUsage {
+                input_tokens: tu.input_tokens,
+                output_tokens: tu.output_tokens,
+                cache_read_input_tokens: tu.cache_read_input_tokens,
+                cache_creation_input_tokens: tu.cache_creation_input_tokens,
+                total_cost_usd: tu.total_cost_usd,
+                duration_ms: tu.duration_ms,
+                num_turns: tu.num_turns,
+            }),
+            created_at: s.created_at,
+        })
+        .collect();
+
+    // Parse events from the latest session's output log
+    let mut events = Vec::new();
+    let mut last_event_id: Option<i64> = None;
+
+    if let Some(latest_session) = sessions.last() {
+        if let Some(output_log) = &latest_session.output_log {
+            for (idx, line) in output_log.lines().enumerate() {
+                let event_id = idx as i64;
+
+                if let Some(after_id) = request.after_event_id {
+                    if event_id <= after_id {
+                        continue;
+                    }
+                }
+
+                if let Ok(timestamped) =
+                    serde_json::from_str::<rpc_protocol::TimestampedEvent>(line)
+                {
+                    events.push(timestamped);
+                    last_event_id = Some(event_id);
+                } else if let Ok(event) =
+                    serde_json::from_str::<rpc_protocol::NormalizedEvent>(line)
+                {
+                    events.push(rpc_protocol::TimestampedEvent {
+                        timestamp: latest_session.created_at,
+                        event,
+                    });
+                    last_event_id = Some(event_id);
+                }
+            }
+        }
+    }
+
+    Ok(Json(GetTaskLogsResponse {
+        sessions: rpc_sessions,
+        events,
+        last_event_id,
+    }))
+}
+
 /// Requests changes on a task.
 pub async fn request_changes<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,

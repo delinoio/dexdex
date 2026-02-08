@@ -185,6 +185,30 @@ impl RemoteClient {
         self.post("/api/task/commit-to-local", &request).await
     }
 
+    /// Cancels a running task.
+    pub async fn cancel_task(
+        &self,
+        request: CancelTaskRequest,
+    ) -> AppResult<CancelTaskResponse> {
+        self.post("/api/task/cancel", &request).await
+    }
+
+    /// Gets composite task nodes.
+    pub async fn get_composite_task_nodes(
+        &self,
+        request: GetCompositeTaskNodesRequest,
+    ) -> AppResult<GetCompositeTaskNodesResponse> {
+        self.post("/api/task/get-composite-nodes", &request).await
+    }
+
+    /// Gets task logs (agent sessions and events).
+    pub async fn get_task_logs(
+        &self,
+        request: GetTaskLogsRequest,
+    ) -> AppResult<GetTaskLogsResponse> {
+        self.post("/api/task/get-logs", &request).await
+    }
+
     // =========================================================================
     // Repository API
     // =========================================================================

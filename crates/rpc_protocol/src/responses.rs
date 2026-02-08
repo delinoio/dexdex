@@ -74,6 +74,21 @@ pub struct CreatePrResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitToLocalResponse {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelTaskResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCompositeTaskNodesResponse {
+    pub nodes: Vec<crate::types::CompositeTaskNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetTaskLogsResponse {
+    pub sessions: Vec<crate::types::AgentSession>,
+    pub events: Vec<crate::types::TimestampedEvent>,
+    pub last_event_id: Option<i64>,
+}
+
 // ============================================================================
 // Session Service Responses
 // ============================================================================
