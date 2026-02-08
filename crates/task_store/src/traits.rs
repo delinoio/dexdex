@@ -341,6 +341,12 @@ pub trait TaskStore: Send + Sync {
 
     // =========================================================================
     // Cascade delete operations
+    //
+    // NOTE: These cascade operations are NOT transactional. If the process
+    // crashes mid-deletion, orphaned child resources may remain. This is a
+    // known limitation acceptable for single-user desktop apps. For
+    // multi-user deployments, consider wrapping these in a database
+    // transaction or adding a periodic cleanup job.
     // =========================================================================
 
     /// Deletes an agent task and all its associated sessions.

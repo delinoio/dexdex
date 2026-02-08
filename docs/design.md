@@ -686,6 +686,12 @@ the database via cascade delete methods on the `TaskStore` trait:
 - For both local and server modes, in-progress child tasks are cancelled
   before deletion to avoid orphaned running processes.
 
+**Known limitation:** Cascade deletes are not wrapped in a database
+transaction. If the application crashes mid-deletion, orphaned child
+resources (e.g. agent tasks without a parent unit task) may remain. This
+is acceptable for the current single-user desktop use case; a cleanup job
+or transactional cascade should be considered for multi-user deployments.
+
 Both the unit task detail page and composite task detail page include a
 "Delete" button with a confirmation dialog.
 

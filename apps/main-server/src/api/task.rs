@@ -362,8 +362,8 @@ pub async fn delete_task<S: TaskStore>(
         return Ok(Json(DeleteTaskResponse {}));
     }
 
-    // Try composite task
-    if state.store.get_composite_task(task_id).await?.is_some() {
+    // Try composite task (fetch once and reuse to avoid TOCTOU race)
+    if let Some(_composite_task) = state.store.get_composite_task(task_id).await? {
         // Cancel any in-progress child unit tasks before deletion
         let nodes = state.store.list_composite_task_nodes(task_id).await?;
         for node in &nodes {

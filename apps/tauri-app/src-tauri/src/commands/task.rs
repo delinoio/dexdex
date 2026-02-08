@@ -1439,8 +1439,8 @@ pub async fn delete_task(
             return Ok(());
         }
 
-        // Try composite task
-        if store.get_composite_task(id).await?.is_some() {
+        // Try composite task (fetch once and reuse to avoid TOCTOU race)
+        if let Some(_composite_task) = store.get_composite_task(id).await? {
             // Cancel any in-progress child unit tasks before deletion
             let nodes = store.list_composite_task_nodes(id).await?;
             for node in &nodes {
