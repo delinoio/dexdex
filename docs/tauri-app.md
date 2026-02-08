@@ -421,7 +421,7 @@ async fn dismiss_approval(task_id: String) -> Result<(), Error>;
 async fn create_pr(task_id: String) -> Result<String, Error>;
 
 #[tauri::command]
-async fn commit_to_local(task_id: String) -> Result<(), Error>;
+async fn commit_to_local(task_id: String, local_path: String) -> Result<(), Error>;
 
 #[tauri::command]
 async fn delete_task(task_id: String) -> Result<(), Error>;

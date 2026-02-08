@@ -16,6 +16,7 @@ import { AgentLogViewer, StaticSessionLogViewer } from "@/components/task/AgentL
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { DiffViewer, DiffFileList, type DiffFile } from "@/components/review/DiffViewer";
 import { useTask, useApproveTask, useRejectTask, useRequestChanges, useCancelTask, useDeleteTask, useDismissApproval, useCreatePr, useCommitToLocal } from "@/hooks/useTasks";
+import { useMode } from "@/hooks/useMode";
 import { useTaskDetailShortcuts } from "@/hooks/useReviewShortcuts";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
@@ -23,6 +24,7 @@ import { useReviewComments } from "@/hooks/useReviewComments";
 import { parseUnifiedDiff } from "@/lib/parseDiff";
 import type { TokenUsage, SessionEndEvent } from "@/api/types";
 import { UnitTaskStatus } from "@/api/types";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 
 export function UnitTaskDetail() {
@@ -46,8 +48,10 @@ export function UnitTaskDetail() {
   const dismissApprovalMutation = useDismissApproval();
   const createPrMutation = useCreatePr();
   const commitToLocalMutation = useCommitToLocal();
+  const { data: mode } = useMode();
 
   const task = data?.unitTask;
+  const isLocalMode = mode === "local";
 
   // Manage inline review comments (local state)
   const {
@@ -273,7 +277,13 @@ export function UnitTaskDetail() {
   };
 
   const handleCommitToLocal = async () => {
-    await commitToLocalMutation.mutateAsync(task.id);
+    const selectedPath = await open({
+      directory: true,
+      multiple: false,
+      title: "Select local git repository",
+    });
+    if (!selectedPath) return;
+    await commitToLocalMutation.mutateAsync({ taskId: task.id, localPath: selectedPath });
   };
 
   const getStatusBadgeVariant = (status: UnitTaskStatus) => {
@@ -617,13 +627,15 @@ export function UnitTaskDetail() {
                   >
                     {createPrMutation.isPending ? "Creating PR..." : "Create PR"}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleCommitToLocal}
-                    disabled={commitToLocalMutation.isPending}
-                  >
-                    {commitToLocalMutation.isPending ? "Committing..." : "Commit to Local"}
-                  </Button>
+                  {isLocalMode && (
+                    <Button
+                      variant="outline"
+                      onClick={handleCommitToLocal}
+                      disabled={commitToLocalMutation.isPending}
+                    >
+                      {commitToLocalMutation.isPending ? "Committing..." : "Commit to Local"}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     onClick={handleDismissApproval}
