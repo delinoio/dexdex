@@ -15,11 +15,13 @@ import {
   requestChanges,
   updatePlanWithPrompt,
 } from "@/api/client";
-import type {
-  CreateCompositeTaskParams,
-  CreateUnitTaskParams,
-  ListTasksParams,
+import {
+  UnitTaskStatus,
+  type CreateCompositeTaskParams,
+  type CreateUnitTaskParams,
+  type ListTasksParams,
 } from "@/api/types";
+import { setUnitTaskStatusInCache, rollbackUnitTaskStatusInCache } from "@/lib/queryCache";
 
 // Query keys
 export const taskKeys = {
@@ -115,7 +117,19 @@ export function useRequestChanges() {
   return useMutation({
     mutationFn: ({ taskId, feedback }: { taskId: string; feedback: string }) =>
       requestChanges(taskId, feedback),
-    onSuccess: (_data, { taskId }) => {
+    onMutate: async ({ taskId }) => {
+      // Optimistically mark the unit task as InProgress so the UI updates
+      // immediately when a subtask (applying review feedback) starts.
+      await queryClient.cancelQueries({ queryKey: taskKeys.detail(taskId) });
+      await queryClient.cancelQueries({ queryKey: taskKeys.lists() });
+      return setUnitTaskStatusInCache(queryClient, taskId, UnitTaskStatus.InProgress);
+    },
+    onError: (_err, { taskId }, context) => {
+      if (context) {
+        rollbackUnitTaskStatusInCache(queryClient, taskId, context);
+      }
+    },
+    onSettled: (_data, _err, { taskId }) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
@@ -164,7 +178,19 @@ export function useCreatePr() {
 
   return useMutation({
     mutationFn: (taskId: string) => createPr(taskId),
-    onSuccess: (_data, taskId) => {
+    onMutate: async (taskId) => {
+      // Optimistically mark the unit task as InProgress so the UI updates
+      // immediately when the PR creation subtask starts.
+      await queryClient.cancelQueries({ queryKey: taskKeys.detail(taskId) });
+      await queryClient.cancelQueries({ queryKey: taskKeys.lists() });
+      return setUnitTaskStatusInCache(queryClient, taskId, UnitTaskStatus.InProgress);
+    },
+    onError: (_err, taskId, context) => {
+      if (context) {
+        rollbackUnitTaskStatusInCache(queryClient, taskId, context);
+      }
+    },
+    onSettled: (_data, _err, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
@@ -176,7 +202,19 @@ export function useCommitToLocal() {
 
   return useMutation({
     mutationFn: (taskId: string) => commitToLocal(taskId),
-    onSuccess: (_data, taskId) => {
+    onMutate: async (taskId) => {
+      // Optimistically mark the unit task as InProgress so the UI updates
+      // immediately when the commit-to-local subtask starts.
+      await queryClient.cancelQueries({ queryKey: taskKeys.detail(taskId) });
+      await queryClient.cancelQueries({ queryKey: taskKeys.lists() });
+      return setUnitTaskStatusInCache(queryClient, taskId, UnitTaskStatus.InProgress);
+    },
+    onError: (_err, taskId, context) => {
+      if (context) {
+        rollbackUnitTaskStatusInCache(queryClient, taskId, context);
+      }
+    },
+    onSettled: (_data, _err, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
