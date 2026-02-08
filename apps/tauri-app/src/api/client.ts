@@ -86,6 +86,10 @@ export async function cancelTask(taskId: string): Promise<void> {
   return invoke<void>("cancel_task", { taskId });
 }
 
+export async function deleteTask(taskId: string): Promise<void> {
+  return invoke<void>("delete_task", { taskId });
+}
+
 export async function dismissApproval(taskId: string): Promise<void> {
   return invoke<void>("dismiss_approval", { taskId });
 }

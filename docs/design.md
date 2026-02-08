@@ -673,6 +673,28 @@ Note: While in `in_progress`, the user can cancel the task at any time,
 which transitions the status to `cancelled`. The agent execution is
 aborted and any partial work is preserved in the worktree.
 
+Note: The user can delete a task in any status. If the task is currently
+`in_progress`, the agent execution is cancelled first before deletion.
+Deletion permanently removes the task and all associated resources from
+the database via cascade delete methods on the `TaskStore` trait:
+- **Unit task**: deletes the unit task, its associated `AgentTask`, all
+  `AgentSession` records for that agent task, and any auto-fix `AgentTask`
+  records (with their sessions).
+- **Composite task**: deletes all child `CompositeTaskNode` records, each
+  node's `UnitTask` (with cascade as above), the planning `AgentTask`
+  (with its sessions), and finally the composite task itself.
+- For both local and server modes, in-progress child tasks are cancelled
+  before deletion to avoid orphaned running processes.
+
+**Known limitation:** Cascade deletes are not wrapped in a database
+transaction. If the application crashes mid-deletion, orphaned child
+resources (e.g. agent tasks without a parent unit task) may remain. This
+is acceptable for the current single-user desktop use case; a cleanup job
+or transactional cascade should be considered for multi-user deployments.
+
+Both the unit task detail page and composite task detail page include a
+"Delete" button with a confirmation dialog.
+
 On each status transition, `task-status-changed` and `task-completed`
 events are emitted so the frontend updates automatically.
 

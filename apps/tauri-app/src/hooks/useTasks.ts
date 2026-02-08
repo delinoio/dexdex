@@ -7,6 +7,7 @@ import {
   createCompositeTask,
   createPr,
   createUnitTask,
+  deleteTask,
   dismissApproval,
   getCompositeTaskNodes,
   getTask,
@@ -129,6 +130,21 @@ export function useCancelTask() {
     mutationFn: (taskId: string) => cancelTask(taskId),
     onSuccess: (_data, taskId) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: string) => deleteTask(taskId),
+    onSuccess: (_data, taskId) => {
+      // Remove the detail query from cache instead of invalidating it.
+      // Invalidation would trigger a refetch of the now-deleted task,
+      // causing a 404 error if the detail page is still mounted.
+      queryClient.removeQueries({ queryKey: taskKeys.detail(taskId) });
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
     },
   });

@@ -1386,6 +1386,97 @@ pub async fn cancel_task(
     ))
 }
 
+/// Deletes a task (unit or composite).
+///
+/// For unit tasks that are currently in progress, the execution is cancelled
+/// first before deletion. Cascade delete removes all associated resources
+/// (agent tasks, sessions, auto-fix tasks, child nodes).
+#[tauri::command]
+pub async fn delete_task(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    task_id: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    if state.mode == AppMode::Remote {
+        // Remote mode: make API call to main server
+        let client = state.get_remote_client()?;
+
+        let request = requests::DeleteTaskRequest {
+            task_id: task_id.clone(),
+        };
+
+        client.delete_task(request).await?;
+        info!("Deleted task via remote: {}", task_id);
+        return Ok(());
+    }
+
+    #[cfg(desktop)]
+    {
+        let id = Uuid::parse_str(&task_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid task ID: {}", e)))?;
+
+        let runtime = state
+            .local_runtime
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
+
+        let store = runtime.task_store_arc();
+
+        // Try unit task first (fetch once and reuse to avoid TOCTOU race)
+        if let Some(unit_task) = store.get_unit_task(id).await? {
+            // If the task is currently running, cancel the execution first
+            if unit_task.status == UnitTaskStatus::InProgress {
+                if let Some(executor) = runtime.executor().await {
+                    executor.cancel_execution(id).await;
+                    info!("Cancelled running execution before deleting task: {}", id);
+                }
+            }
+
+            // Cascade delete: unit task + agent task + sessions + auto-fix tasks
+            store.delete_unit_task_cascade(id).await?;
+            info!("Deleted unit task with cascade: {}", id);
+            return Ok(());
+        }
+
+        // Try composite task (fetch once and reuse to avoid TOCTOU race)
+        if let Some(_composite_task) = store.get_composite_task(id).await? {
+            // Cancel any in-progress child unit tasks before deletion
+            let nodes = store.list_composite_task_nodes(id).await?;
+            for node in &nodes {
+                if let Some(child_unit_task) = store.get_unit_task(node.unit_task_id).await? {
+                    if child_unit_task.status == UnitTaskStatus::InProgress {
+                        if let Some(executor) = runtime.executor().await {
+                            executor.cancel_execution(node.unit_task_id).await;
+                            info!(
+                                "Cancelled running child task {} before deleting composite task: \
+                                 {}",
+                                node.unit_task_id, id
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Cascade delete: composite task + all nodes + unit tasks + agent tasks +
+            // sessions
+            store.delete_composite_task_cascade(id).await?;
+            info!("Deleted composite task with cascade: {}", id);
+            return Ok(());
+        }
+
+        return Err(AppError::NotFound(format!("Task not found: {}", task_id)));
+    }
+
+    #[cfg(not(desktop))]
+    let _ = &task_id;
+
+    #[allow(unreachable_code)]
+    Err(AppError::InvalidRequest(
+        ERR_LOCAL_MODE_NOT_SUPPORTED.to_string(),
+    ))
+}
+
 /// Responds to a TTY input request from an agent.
 #[tauri::command]
 pub async fn respond_tty_input(

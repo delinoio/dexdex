@@ -6,13 +6,13 @@ import { FormattedDateTime } from "@/components/ui/FormattedDateTime";
 import { TaskGraph } from "@/components/task/TaskGraph";
 import { TokenUsageCard, aggregateTokenUsage } from "@/components/task/TokenUsageCard";
 import { AgentLogViewer } from "@/components/task/AgentLogViewer";
-import { useTask, useApproveTask, useRejectTask, useCompositeTaskNodes, useUpdatePlan } from "@/hooks/useTasks";
+import { useTask, useApproveTask, useRejectTask, useDeleteTask, useCompositeTaskNodes, useUpdatePlan } from "@/hooks/useTasks";
 import { useTaskLogs } from "@/hooks/useTaskLogs";
 import type { CompositeTaskNodeWithUnitTask, TokenUsage, SessionEndEvent } from "@/api/types";
 import { CompositeTaskStatus, UnitTaskStatus } from "@/api/types";
 import { useTabTitle } from "@/hooks/useTabNavigation";
 import { parsePlanYamlToNodes } from "@/lib/planYaml";
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { Textarea } from "@/components/ui/Textarea";
 import {
   Dialog,
@@ -60,7 +60,9 @@ export function CompositeTaskDetail() {
   const approveMutation = useApproveTask();
   const rejectMutation = useRejectTask();
   const updatePlanMutation = useUpdatePlan();
+  const deleteMutation = useDeleteTask();
   const [updatePlanOpen, setUpdatePlanOpen] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [updatePlanPrompt, setUpdatePlanPrompt] = useState("");
 
   const task = data?.compositeTask;
@@ -104,6 +106,17 @@ export function CompositeTaskDetail() {
   // Must be called before any early returns to follow React's Rules of Hooks
   const tabTitle = task?.title ? `Composite Task: ${task.title}` : "Composite Task";
   useTabTitle(tabTitle);
+
+  const handleDelete = useCallback(async () => {
+    if (task?.id && !deleteMutation.isPending) {
+      try {
+        await deleteMutation.mutateAsync(task.id);
+        navigate("/");
+      } catch (error) {
+        console.error("Failed to delete task:", error);
+      }
+    }
+  }, [task?.id, deleteMutation, navigate]);
 
   if (isLoading) {
     return (
@@ -242,9 +255,18 @@ export function CompositeTaskDetail() {
               <span>{effectiveNodes.length || task.nodeIds.length} sub-tasks</span>
             </div>
           </div>
-          <Button variant="outline" onClick={() => navigate("/")}>
-            ← Back
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              className="text-[hsl(var(--destructive))]"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              Delete
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/")}>
+              ← Back
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -443,6 +465,33 @@ export function CompositeTaskDetail() {
           />
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Task</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

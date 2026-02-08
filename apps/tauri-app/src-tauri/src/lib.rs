@@ -152,6 +152,7 @@ pub fn run() {
             commands::task::request_changes,
             commands::task::update_plan_with_prompt,
             commands::task::cancel_task,
+            commands::task::delete_task,
             commands::task::dismiss_approval,
             commands::task::create_pr,
             commands::task::commit_to_local,

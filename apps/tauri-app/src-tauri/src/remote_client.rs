@@ -146,6 +146,11 @@ impl RemoteClient {
         self.post("/api/task/reject", &request).await
     }
 
+    /// Deletes a task.
+    pub async fn delete_task(&self, request: DeleteTaskRequest) -> AppResult<DeleteTaskResponse> {
+        self.post("/api/task/delete", &request).await
+    }
+
     /// Requests changes on a task.
     pub async fn request_changes(
         &self,

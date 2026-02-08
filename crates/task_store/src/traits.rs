@@ -8,7 +8,7 @@ use entities::{
 };
 use uuid::Uuid;
 
-use crate::TaskStoreResult;
+use crate::{TaskStoreError, TaskStoreResult};
 
 /// Filter options for listing tasks.
 #[derive(Debug, Clone, Default)]
@@ -338,4 +338,127 @@ pub trait TaskStore: Send + Sync {
 
     /// Deletes a TTY input request.
     async fn delete_tty_input_request(&self, id: Uuid) -> TaskStoreResult<()>;
+
+    // =========================================================================
+    // Cascade delete operations
+    //
+    // NOTE: These cascade operations are NOT transactional. If the process
+    // crashes mid-deletion, orphaned child resources may remain. This is a
+    // known limitation acceptable for single-user desktop apps. For
+    // multi-user deployments, consider wrapping these in a database
+    // transaction or adding a periodic cleanup job.
+    // =========================================================================
+
+    /// Deletes an agent task and all its associated sessions.
+    ///
+    /// This is a best-effort cascade: session deletion failures are logged
+    /// but do not prevent the agent task from being deleted.
+    async fn delete_agent_task_cascade(&self, id: Uuid) -> TaskStoreResult<()> {
+        // Delete all sessions belonging to this agent task
+        let sessions = self.list_agent_sessions(id).await.unwrap_or_default();
+        for session in &sessions {
+            if let Err(e) = self.delete_agent_session(session.id).await {
+                tracing::warn!(
+                    agent_task_id = %id,
+                    session_id = %session.id,
+                    error = %e,
+                    "Failed to delete agent session during cascade delete"
+                );
+            }
+        }
+
+        self.delete_agent_task(id).await
+    }
+
+    /// Deletes a unit task and all associated resources (agent task, sessions,
+    /// auto-fix agent tasks).
+    ///
+    /// This is a best-effort cascade: child resource deletion failures are
+    /// logged but do not prevent the unit task itself from being deleted.
+    async fn delete_unit_task_cascade(&self, id: Uuid) -> TaskStoreResult<()> {
+        let unit_task = self
+            .get_unit_task(id)
+            .await?
+            .ok_or_else(|| TaskStoreError::not_found("UnitTask", id.to_string()))?;
+
+        // Delete the associated agent task and its sessions
+        if let Err(e) = self
+            .delete_agent_task_cascade(unit_task.agent_task_id)
+            .await
+        {
+            tracing::warn!(
+                task_id = %id,
+                agent_task_id = %unit_task.agent_task_id,
+                error = %e,
+                "Failed to delete agent task during unit task cascade delete"
+            );
+        }
+
+        // Delete auto-fix agent tasks and their sessions
+        for auto_fix_id in &unit_task.auto_fix_task_ids {
+            if let Err(e) = self.delete_agent_task_cascade(*auto_fix_id).await {
+                tracing::warn!(
+                    task_id = %id,
+                    auto_fix_agent_task_id = %auto_fix_id,
+                    error = %e,
+                    "Failed to delete auto-fix agent task during unit task cascade delete"
+                );
+            }
+        }
+
+        self.delete_unit_task(id).await
+    }
+
+    /// Deletes a composite task and all associated resources (child nodes,
+    /// their unit tasks, all agent tasks and sessions, and the planning task).
+    ///
+    /// This is a best-effort cascade: child resource deletion failures are
+    /// logged but do not prevent the composite task itself from being deleted.
+    async fn delete_composite_task_cascade(&self, id: Uuid) -> TaskStoreResult<()> {
+        let composite_task = self
+            .get_composite_task(id)
+            .await?
+            .ok_or_else(|| TaskStoreError::not_found("CompositeTask", id.to_string()))?;
+
+        // Delete all child nodes and their associated unit tasks + agent tasks
+        let nodes = self.list_composite_task_nodes(id).await.unwrap_or_default();
+        for node in &nodes {
+            // Delete the unit task associated with this node (cascades to agent
+            // tasks and sessions)
+            if let Err(e) = self.delete_unit_task_cascade(node.unit_task_id).await {
+                tracing::warn!(
+                    composite_task_id = %id,
+                    unit_task_id = %node.unit_task_id,
+                    error = %e,
+                    "Failed to delete unit task during composite task cascade delete"
+                );
+            }
+
+            // Delete the node itself
+            if let Err(e) = self.delete_composite_task_node(node.id).await {
+                tracing::warn!(
+                    composite_task_id = %id,
+                    node_id = %node.id,
+                    error = %e,
+                    "Failed to delete composite task node during cascade delete"
+                );
+            }
+        }
+
+        // Delete the planning agent task and its sessions
+        if let Err(e) = self
+            .delete_agent_task_cascade(composite_task.planning_task_id)
+            .await
+        {
+            tracing::warn!(
+                composite_task_id = %id,
+                planning_task_id = %composite_task.planning_task_id,
+                error = %e,
+                "Failed to delete planning agent task during composite task cascade delete"
+            );
+        }
+
+        // Delete the composite task itself
+        self.delete_composite_task(id).await
+    }
 }

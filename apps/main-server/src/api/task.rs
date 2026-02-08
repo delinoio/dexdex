@@ -319,6 +319,15 @@ pub async fn update_task_status<S: TaskStore>(
 }
 
 /// Deletes a task.
+///
+/// For unit tasks, the associated agent task, its sessions, and auto-fix agent
+/// tasks are also deleted. For composite tasks, all child nodes, their unit
+/// tasks, all associated agent tasks and sessions, and the planning task are
+/// deleted before the composite task itself.
+///
+/// If a unit task is currently in progress, its status is set to Cancelled
+/// before deletion so that any worker processing the task can detect the
+/// cancellation.
 pub async fn delete_task<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<DeleteTaskRequest>,
@@ -328,17 +337,57 @@ pub async fn delete_task<S: TaskStore>(
         .parse()
         .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
 
-    // Try to delete unit task first
-    if state.store.get_unit_task(task_id).await?.is_some() {
-        state.store.delete_unit_task(task_id).await?;
-        tracing::info!(task_id = %task_id, "UnitTask deleted");
+    // Try unit task first
+    if let Some(unit_task) = state.store.get_unit_task(task_id).await? {
+        // If the task is currently running, cancel it first so any worker
+        // processing the task can detect the cancellation.
+        if unit_task.status == EntityUnitTaskStatus::InProgress {
+            let mut cancelled_task = unit_task;
+            cancelled_task.status = EntityUnitTaskStatus::Cancelled;
+            cancelled_task.updated_at = chrono::Utc::now();
+            if let Err(e) = state.store.update_unit_task(cancelled_task).await {
+                tracing::warn!(
+                    task_id = %task_id,
+                    error = %e,
+                    "Failed to set task status to Cancelled before deletion"
+                );
+            } else {
+                tracing::info!(task_id = %task_id, "Set running task to Cancelled before deletion");
+            }
+        }
+
+        // Cascade delete: unit task + agent task + sessions + auto-fix tasks
+        state.store.delete_unit_task_cascade(task_id).await?;
+        tracing::info!(task_id = %task_id, "UnitTask deleted with cascade");
         return Ok(Json(DeleteTaskResponse {}));
     }
 
-    // Try composite task
-    if state.store.get_composite_task(task_id).await?.is_some() {
-        state.store.delete_composite_task(task_id).await?;
-        tracing::info!(task_id = %task_id, "CompositeTask deleted");
+    // Try composite task (fetch once and reuse to avoid TOCTOU race)
+    if let Some(_composite_task) = state.store.get_composite_task(task_id).await? {
+        // Cancel any in-progress child unit tasks before deletion
+        let nodes = state.store.list_composite_task_nodes(task_id).await?;
+        for node in &nodes {
+            if let Some(child_unit_task) = state.store.get_unit_task(node.unit_task_id).await?
+                && child_unit_task.status == EntityUnitTaskStatus::InProgress
+            {
+                let mut cancelled = child_unit_task;
+                cancelled.status = EntityUnitTaskStatus::Cancelled;
+                cancelled.updated_at = chrono::Utc::now();
+                if let Err(e) = state.store.update_unit_task(cancelled).await {
+                    tracing::warn!(
+                        composite_task_id = %task_id,
+                        unit_task_id = %node.unit_task_id,
+                        error = %e,
+                        "Failed to cancel child unit task before composite deletion"
+                    );
+                }
+            }
+        }
+
+        // Cascade delete: composite task + all nodes + unit tasks + agent tasks +
+        // sessions
+        state.store.delete_composite_task_cascade(task_id).await?;
+        tracing::info!(task_id = %task_id, "CompositeTask deleted with cascade");
         return Ok(Json(DeleteTaskResponse {}));
     }
 
@@ -1040,5 +1089,406 @@ tasks:
             "Server approval should not create nodes; expected 0, got {}",
             nodes.len()
         );
+    }
+
+    /// Helper to create test state with a repository group ready for creating
+    /// tasks.
+    async fn create_test_state_with_repo_group()
+    -> (Arc<AppState<task_store::MemoryTaskStore>>, Uuid) {
+        use task_store::MemoryTaskStore;
+
+        let store = MemoryTaskStore::new();
+        let config = crate::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 54871,
+            database_url: "sqlite::memory:".to_string(),
+            single_user_mode: true,
+            jwt_secret: None,
+            jwt_expiration_hours: 24,
+            oidc_issuer_url: None,
+            oidc_client_id: None,
+            oidc_client_secret: None,
+            oidc_redirect_url: None,
+            log_level: "info".to_string(),
+            webhook_secret: None,
+        };
+        let state = Arc::new(AppState::new(config, store, None));
+
+        let workspace = entities::Workspace::new("Test Workspace");
+        let workspace = state.store.create_workspace(workspace).await.unwrap();
+        let repo = entities::Repository::new(
+            workspace.id,
+            "test-repo",
+            "https://github.com/test/repo.git",
+            entities::VcsProviderType::Github,
+        );
+        let repo = state.store.create_repository(repo).await.unwrap();
+        let mut repo_group = entities::RepositoryGroup::new(workspace.id);
+        repo_group.repository_ids.push(repo.id);
+        let repo_group = state
+            .store
+            .create_repository_group(repo_group)
+            .await
+            .unwrap();
+
+        (state, repo_group.id)
+    }
+
+    #[tokio::test]
+    async fn test_delete_standalone_unit_task() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        // Create agent task and unit task
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let unit_task = UnitTask::new(repo_group_id, agent_task.id, "Test task");
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        // Verify task exists
+        assert!(
+            state
+                .store
+                .get_unit_task(unit_task.id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(agent_task.id)
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        // Delete the task
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify both the unit task and agent task are deleted
+        assert!(
+            state
+                .store
+                .get_unit_task(unit_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(agent_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_unit_task_with_auto_fix_tasks() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        // Create main agent task
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        // Create auto-fix agent tasks
+        let auto_fix_1 = AgentTask::new();
+        let auto_fix_1 = state.store.create_agent_task(auto_fix_1).await.unwrap();
+        let auto_fix_2 = AgentTask::new();
+        let auto_fix_2 = state.store.create_agent_task(auto_fix_2).await.unwrap();
+
+        // Create unit task with auto-fix task ids
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "Test task");
+        unit_task.auto_fix_task_ids = vec![auto_fix_1.id, auto_fix_2.id];
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        // Delete the task
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify all resources are cleaned up
+        assert!(
+            state
+                .store
+                .get_unit_task(unit_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(agent_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(auto_fix_1.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(auto_fix_2.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_unit_task_with_sessions() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        // Create agent task
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        // Create agent sessions
+        let session1 =
+            entities::AgentSession::new(agent_task.id, entities::AiAgentType::ClaudeCode);
+        let session1 = state.store.create_agent_session(session1).await.unwrap();
+        let session2 =
+            entities::AgentSession::new(agent_task.id, entities::AiAgentType::ClaudeCode);
+        let session2 = state.store.create_agent_session(session2).await.unwrap();
+
+        // Create unit task
+        let unit_task = UnitTask::new(repo_group_id, agent_task.id, "Test task");
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        // Delete the task
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify all resources including sessions are cleaned up
+        assert!(
+            state
+                .store
+                .get_unit_task(unit_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(agent_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_session(session1.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_session(session2.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_in_progress_unit_task_cancels_first() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        // Create agent task and in-progress unit task
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "Running task");
+        unit_task.status = EntityUnitTaskStatus::InProgress;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        // Delete the task (should cancel first, then delete)
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify task is deleted
+        assert!(
+            state
+                .store
+                .get_unit_task(unit_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(agent_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_composite_task_with_child_nodes() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        // Create planning agent task
+        let planning_task = AgentTask::new();
+        let planning_task = state.store.create_agent_task(planning_task).await.unwrap();
+
+        // Create composite task
+        let composite_task = CompositeTask::new(repo_group_id, planning_task.id, "Multi task");
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
+
+        // Create child unit tasks and nodes
+        let child_agent_1 = AgentTask::new();
+        let child_agent_1 = state.store.create_agent_task(child_agent_1).await.unwrap();
+        let child_unit_1 = UnitTask::new(repo_group_id, child_agent_1.id, "Child 1");
+        let child_unit_1 = state.store.create_unit_task(child_unit_1).await.unwrap();
+        let node_1 = entities::CompositeTaskNode::new(composite_task.id, child_unit_1.id);
+        let node_1 = state
+            .store
+            .create_composite_task_node(node_1)
+            .await
+            .unwrap();
+
+        let child_agent_2 = AgentTask::new();
+        let child_agent_2 = state.store.create_agent_task(child_agent_2).await.unwrap();
+        let child_unit_2 = UnitTask::new(repo_group_id, child_agent_2.id, "Child 2");
+        let child_unit_2 = state.store.create_unit_task(child_unit_2).await.unwrap();
+        let mut node_2 = entities::CompositeTaskNode::new(composite_task.id, child_unit_2.id);
+        node_2.depends_on(node_1.id);
+        let node_2 = state
+            .store
+            .create_composite_task_node(node_2)
+            .await
+            .unwrap();
+
+        // Delete the composite task
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: composite_task.id.to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify all resources are cleaned up
+        assert!(
+            state
+                .store
+                .get_composite_task(composite_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(planning_task.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_unit_task(child_unit_1.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_unit_task(child_unit_2.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(child_agent_1.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_agent_task(child_agent_2.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_composite_task_node(node_1.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            state
+                .store
+                .get_composite_task_node(node_2.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let remaining_nodes = state
+            .store
+            .list_composite_task_nodes(composite_task.id)
+            .await
+            .unwrap();
+        assert!(remaining_nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_task() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: Uuid::new_v4().to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_task_invalid_id() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let request = rpc_protocol::requests::DeleteTaskRequest {
+            task_id: "not-a-valid-uuid".to_string(),
+        };
+        let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
     }
 }
