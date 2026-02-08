@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ChangeEvent } from "react";
+import { type KeyboardEvent, type ChangeEvent, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { useChatStore, MessageRole } from "@/stores/chatStore";
@@ -10,7 +10,15 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ className }: ChatInputProps) {
-  const { inputValue, setInputValue, addMessage, isLoading } = useChatStore();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { inputValue, setInputValue, addMessage, isLoading, isOpen } = useChatStore();
+
+  // Auto-focus the textarea when the chat opens
+  useEffect(() => {
+    if (isOpen) {
+      textareaRef.current?.focus();
+    }
+  }, [isOpen]);
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value);
@@ -39,7 +47,7 @@ export function ChatInput({ className }: ChatInputProps) {
   return (
     <div className={cn("flex items-end gap-2 p-3 border-t border-[hsl(var(--border))]", className)}>
       <Textarea
-        autoFocus
+        ref={textareaRef}
         value={inputValue}
         onChange={handleChange}
         onKeyDown={handleKeyDown}

@@ -1,5 +1,5 @@
 // Swipeable card component for mobile task lists
-import { useState, type ReactNode } from "react";
+import { useState, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface SwipeAction {
@@ -31,13 +31,13 @@ export function SwipeableCard({
 }: SwipeableCardProps) {
   const [offset, setOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
+  const startXRef = useRef(0);
 
   const threshold = 80; // Minimum swipe distance to trigger action
   const maxSwipe = 100; // Maximum swipe distance
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setStartX(e.touches[0].clientX);
+    startXRef.current = e.touches[0].clientX;
     setIsDragging(true);
   };
 
@@ -45,7 +45,7 @@ export function SwipeableCard({
     if (!isDragging) return;
 
     const currentX = e.touches[0].clientX;
-    const diff = currentX - startX;
+    const diff = currentX - startXRef.current;
 
     // Limit swipe distance
     const limitedDiff = Math.max(-maxSwipe, Math.min(maxSwipe, diff));
