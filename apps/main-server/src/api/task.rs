@@ -367,19 +367,19 @@ pub async fn delete_task<S: TaskStore>(
         // Cancel any in-progress child unit tasks before deletion
         let nodes = state.store.list_composite_task_nodes(task_id).await?;
         for node in &nodes {
-            if let Some(child_unit_task) = state.store.get_unit_task(node.unit_task_id).await? {
-                if child_unit_task.status == EntityUnitTaskStatus::InProgress {
-                    let mut cancelled = child_unit_task;
-                    cancelled.status = EntityUnitTaskStatus::Cancelled;
-                    cancelled.updated_at = chrono::Utc::now();
-                    if let Err(e) = state.store.update_unit_task(cancelled).await {
-                        tracing::warn!(
-                            composite_task_id = %task_id,
-                            unit_task_id = %node.unit_task_id,
-                            error = %e,
-                            "Failed to cancel child unit task before composite deletion"
-                        );
-                    }
+            if let Some(child_unit_task) = state.store.get_unit_task(node.unit_task_id).await?
+                && child_unit_task.status == EntityUnitTaskStatus::InProgress
+            {
+                let mut cancelled = child_unit_task;
+                cancelled.status = EntityUnitTaskStatus::Cancelled;
+                cancelled.updated_at = chrono::Utc::now();
+                if let Err(e) = state.store.update_unit_task(cancelled).await {
+                    tracing::warn!(
+                        composite_task_id = %task_id,
+                        unit_task_id = %node.unit_task_id,
+                        error = %e,
+                        "Failed to cancel child unit task before composite deletion"
+                    );
                 }
             }
         }
