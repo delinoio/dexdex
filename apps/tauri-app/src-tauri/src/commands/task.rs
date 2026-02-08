@@ -1389,7 +1389,8 @@ pub async fn cancel_task(
 /// Deletes a task (unit or composite).
 ///
 /// For unit tasks that are currently in progress, the execution is cancelled
-/// first before deletion.
+/// first before deletion. Cascade delete removes all associated resources
+/// (agent tasks, sessions, auto-fix tasks, child nodes).
 #[tauri::command]
 pub async fn delete_task(
     state: State<'_, Arc<RwLock<AppState>>>,
@@ -1426,108 +1427,41 @@ pub async fn delete_task(
         if let Some(unit_task) = store.get_unit_task(id).await? {
             // If the task is currently running, cancel the execution first
             if unit_task.status == UnitTaskStatus::InProgress {
-                let executor = runtime
-                    .executor()
-                    .await
-                    .ok_or_else(|| AppError::Internal("Executor not initialized".to_string()))?;
-
-                executor.cancel_execution(id).await;
-                info!("Cancelled running execution before deleting task: {}", id);
-            }
-
-            // Delete the associated agent task
-            if let Err(e) = store.delete_agent_task(unit_task.agent_task_id).await {
-                tracing::warn!(
-                    "Failed to delete agent task {} for unit task {}: {}",
-                    unit_task.agent_task_id,
-                    id,
-                    e
-                );
-            }
-
-            // Delete auto-fix agent tasks
-            for auto_fix_id in &unit_task.auto_fix_task_ids {
-                if let Err(e) = store.delete_agent_task(*auto_fix_id).await {
-                    tracing::warn!(
-                        "Failed to delete auto-fix agent task {} for unit task {}: {}",
-                        auto_fix_id,
-                        id,
-                        e
-                    );
+                if let Some(executor) = runtime.executor().await {
+                    executor.cancel_execution(id).await;
+                    info!("Cancelled running execution before deleting task: {}", id);
                 }
             }
 
-            store.delete_unit_task(id).await?;
-            info!("Deleted unit task: {}", id);
+            // Cascade delete: unit task + agent task + sessions + auto-fix tasks
+            store.delete_unit_task_cascade(id).await?;
+            info!("Deleted unit task with cascade: {}", id);
             return Ok(());
         }
 
-        // Try composite task (fetch once and reuse)
-        if let Some(composite_task) = store.get_composite_task(id).await? {
-            // Delete all child nodes and their associated unit tasks + agent tasks
+        // Try composite task
+        if store.get_composite_task(id).await?.is_some() {
+            // Cancel any in-progress child unit tasks before deletion
             let nodes = store.list_composite_task_nodes(id).await?;
             for node in &nodes {
-                // Delete the unit task associated with this node (and its agent task)
-                if let Some(unit_task) = store.get_unit_task(node.unit_task_id).await? {
-                    if let Err(e) = store.delete_agent_task(unit_task.agent_task_id).await {
-                        tracing::warn!(
-                            "Failed to delete agent task {} for unit task {} in composite {}: {}",
-                            unit_task.agent_task_id,
-                            unit_task.id,
-                            id,
-                            e
-                        );
-                    }
-
-                    // Delete auto-fix agent tasks
-                    for auto_fix_id in &unit_task.auto_fix_task_ids {
-                        if let Err(e) = store.delete_agent_task(*auto_fix_id).await {
-                            tracing::warn!(
-                                "Failed to delete auto-fix agent task {} for unit task {}: {}",
-                                auto_fix_id,
-                                unit_task.id,
-                                e
+                if let Some(child_unit_task) = store.get_unit_task(node.unit_task_id).await? {
+                    if child_unit_task.status == UnitTaskStatus::InProgress {
+                        if let Some(executor) = runtime.executor().await {
+                            executor.cancel_execution(node.unit_task_id).await;
+                            info!(
+                                "Cancelled running child task {} before deleting composite task: \
+                                 {}",
+                                node.unit_task_id, id
                             );
                         }
                     }
-
-                    if let Err(e) = store.delete_unit_task(node.unit_task_id).await {
-                        tracing::warn!(
-                            "Failed to delete unit task {} in composite {}: {}",
-                            node.unit_task_id,
-                            id,
-                            e
-                        );
-                    }
-                }
-
-                // Delete the node itself
-                if let Err(e) = store.delete_composite_task_node(node.id).await {
-                    tracing::warn!(
-                        "Failed to delete composite task node {} in composite {}: {}",
-                        node.id,
-                        id,
-                        e
-                    );
                 }
             }
 
-            // Delete the planning agent task
-            if let Err(e) = store
-                .delete_agent_task(composite_task.planning_task_id)
-                .await
-            {
-                tracing::warn!(
-                    "Failed to delete planning agent task {} for composite task {}: {}",
-                    composite_task.planning_task_id,
-                    id,
-                    e
-                );
-            }
-
-            // Delete the composite task itself
-            store.delete_composite_task(id).await?;
-            info!("Deleted composite task: {}", id);
+            // Cascade delete: composite task + all nodes + unit tasks + agent tasks +
+            // sessions
+            store.delete_composite_task_cascade(id).await?;
+            info!("Deleted composite task with cascade: {}", id);
             return Ok(());
         }
 

@@ -676,12 +676,15 @@ aborted and any partial work is preserved in the worktree.
 Note: The user can delete a task in any status. If the task is currently
 `in_progress`, the agent execution is cancelled first before deletion.
 Deletion permanently removes the task and all associated resources from
-the database:
-- **Unit task**: deletes the unit task, its associated `AgentTask`, and
-  any auto-fix `AgentTask` records.
+the database via cascade delete methods on the `TaskStore` trait:
+- **Unit task**: deletes the unit task, its associated `AgentTask`, all
+  `AgentSession` records for that agent task, and any auto-fix `AgentTask`
+  records (with their sessions).
 - **Composite task**: deletes all child `CompositeTaskNode` records, each
-  node's `UnitTask` and `AgentTask` records, the planning `AgentTask`,
-  and finally the composite task itself.
+  node's `UnitTask` (with cascade as above), the planning `AgentTask`
+  (with its sessions), and finally the composite task itself.
+- For both local and server modes, in-progress child tasks are cancelled
+  before deletion to avoid orphaned running processes.
 
 Both the unit task detail page and composite task detail page include a
 "Delete" button with a confirmation dialog.
