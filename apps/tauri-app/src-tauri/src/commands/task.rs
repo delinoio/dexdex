@@ -1816,11 +1816,13 @@ pub async fn commit_to_local(
             )));
         }
 
-        // Build commit message from task title/prompt
+        // Build commit message: prefer the preserved commit message from the
+        // AI agent's worktree, fall back to task title, then a generic default.
         let commit_message = task
-            .title
+            .git_commit_message
             .as_deref()
-            .filter(|t| !t.is_empty())
+            .filter(|m| !m.is_empty())
+            .or_else(|| task.title.as_deref().filter(|t| !t.is_empty()))
             .unwrap_or("Apply changes from DeliDev task");
 
         // Apply the patch and commit directly (no AI involved)

@@ -55,6 +55,10 @@ pub struct UnitTask {
     /// Stored in the database so changes can be persisted without needing
     /// write access to the repository.
     pub git_patch: Option<String>,
+    /// Commit message(s) extracted from the AI agent's worktree git history.
+    /// Preserved so that "Commit to Local" and the diff viewer can show
+    /// the original commit message instead of a generic fallback.
+    pub git_commit_message: Option<String>,
     /// Auto-fix AgentTask IDs.
     pub auto_fix_task_ids: Vec<Uuid>,
     /// Current status.
@@ -80,6 +84,7 @@ impl UnitTask {
             base_commit: None,
             end_commit: None,
             git_patch: None,
+            git_commit_message: None,
             auto_fix_task_ids: Vec::new(),
             status: UnitTaskStatus::InProgress,
             created_at: now,

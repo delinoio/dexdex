@@ -186,6 +186,172 @@ pub async fn generate_patch_async(worktree_path: &Path) -> GitResult<Option<Stri
     }
 }
 
+/// Extracts commit messages from a worktree's git log, capturing the messages
+/// for all commits made since the branch diverged from its parent (i.e. commits
+/// not in origin/HEAD or the first commit's parent).
+///
+/// This is used to preserve the original commit messages made by AI agents so
+/// they can be shown in the diff viewer and used when committing locally.
+///
+/// Returns `None` if there are no commits beyond the initial branch point.
+pub fn extract_commit_messages(worktree_path: &Path) -> GitResult<Option<String>> {
+    use std::process::Command;
+
+    debug!(
+        "Extracting commit messages from worktree at {:?}",
+        worktree_path
+    );
+
+    // Get the commit messages for commits made in this worktree.
+    // We use `git log` with format to get only commit messages.
+    // First, find the merge-base with HEAD~N or origin/HEAD to determine
+    // which commits are "new" in this branch.
+    //
+    // Strategy: Get the log of commits that are on HEAD but not in the
+    // initial commit that the worktree was created from. The worktree is
+    // typically created from a branch point, so all commits after the
+    // first one are from the AI agent.
+    //
+    // We use `git log --format=%B HEAD --not --remotes` to get commits
+    // not in any remote tracking branch. If that doesn't work (e.g., no
+    // remotes), we fall back to getting the most recent commit message.
+
+    // Try to get commits not in any remote branch
+    let log_output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("log")
+        .arg("--format=%B---END_COMMIT---")
+        .arg("HEAD")
+        .arg("--not")
+        .arg("--remotes")
+        .output()
+        .map_err(|e| GitError::Other(format!("Failed to run git log: {}", e)))?;
+
+    if log_output.status.success() {
+        let raw = String::from_utf8_lossy(&log_output.stdout).to_string();
+        let messages = parse_commit_messages(&raw);
+        if !messages.is_empty() {
+            let combined = messages.join("\n\n");
+            debug!(
+                "Extracted {} commit message(s) from worktree at {:?}",
+                messages.len(),
+                worktree_path
+            );
+            return Ok(Some(combined));
+        }
+    }
+
+    // Fallback: just get the HEAD commit message
+    let head_output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("log")
+        .arg("-1")
+        .arg("--format=%B")
+        .output()
+        .map_err(|e| GitError::Other(format!("Failed to run git log: {}", e)))?;
+
+    if head_output.status.success() {
+        let msg = String::from_utf8_lossy(&head_output.stdout)
+            .trim()
+            .to_string();
+        if !msg.is_empty() {
+            debug!(
+                "Extracted HEAD commit message from worktree at {:?}",
+                worktree_path
+            );
+            return Ok(Some(msg));
+        }
+    }
+
+    debug!(
+        "No commit messages found in worktree at {:?}",
+        worktree_path
+    );
+    Ok(None)
+}
+
+/// Extracts commit messages from a worktree's git log (async version).
+///
+/// See [`extract_commit_messages`] for details.
+pub async fn extract_commit_messages_async(worktree_path: &Path) -> GitResult<Option<String>> {
+    use tokio::process::Command;
+
+    debug!(
+        "Extracting commit messages (async) from worktree at {:?}",
+        worktree_path
+    );
+
+    // Try to get commits not in any remote branch
+    let log_output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("log")
+        .arg("--format=%B---END_COMMIT---")
+        .arg("HEAD")
+        .arg("--not")
+        .arg("--remotes")
+        .output()
+        .await
+        .map_err(|e| GitError::Other(format!("Failed to run git log: {}", e)))?;
+
+    if log_output.status.success() {
+        let raw = String::from_utf8_lossy(&log_output.stdout).to_string();
+        let messages = parse_commit_messages(&raw);
+        if !messages.is_empty() {
+            let combined = messages.join("\n\n");
+            debug!(
+                "Extracted {} commit message(s) from worktree at {:?}",
+                messages.len(),
+                worktree_path
+            );
+            return Ok(Some(combined));
+        }
+    }
+
+    // Fallback: just get the HEAD commit message
+    let head_output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("log")
+        .arg("-1")
+        .arg("--format=%B")
+        .output()
+        .await
+        .map_err(|e| GitError::Other(format!("Failed to run git log: {}", e)))?;
+
+    if head_output.status.success() {
+        let msg = String::from_utf8_lossy(&head_output.stdout)
+            .trim()
+            .to_string();
+        if !msg.is_empty() {
+            debug!(
+                "Extracted HEAD commit message from worktree at {:?}",
+                worktree_path
+            );
+            return Ok(Some(msg));
+        }
+    }
+
+    debug!(
+        "No commit messages found in worktree at {:?}",
+        worktree_path
+    );
+    Ok(None)
+}
+
+/// Parses commit messages from `git log --format=%B---END_COMMIT---` output.
+///
+/// Each commit message is separated by `---END_COMMIT---`. Trims whitespace
+/// and filters out empty messages.
+fn parse_commit_messages(raw: &str) -> Vec<String> {
+    raw.split("---END_COMMIT---")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 /// Applies a git patch to a target repository directory and commits the
 /// changes.
 ///

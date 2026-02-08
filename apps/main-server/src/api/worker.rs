@@ -142,6 +142,7 @@ pub async fn get_next_task<S: TaskStore>(
                     base_commit: task.base_commit.clone(),
                     end_commit: task.end_commit.clone(),
                     git_patch: task.git_patch.clone(),
+                    git_commit_message: task.git_commit_message.clone(),
                     auto_fix_task_ids: task
                         .auto_fix_task_ids
                         .iter()
@@ -228,6 +229,10 @@ pub async fn report_task_status<S: TaskStore>(
     // Persist git patch if provided by the worker
     if let Some(git_patch) = request.git_patch {
         task.git_patch = Some(git_patch);
+    }
+    // Persist git commit message if provided by the worker
+    if let Some(git_commit_message) = request.git_commit_message {
+        task.git_commit_message = Some(git_commit_message);
     }
 
     state.store.update_unit_task(task).await?;

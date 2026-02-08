@@ -666,6 +666,16 @@ export function UnitTaskDetail() {
                       <CardDescription>
                         {diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""} changed
                       </CardDescription>
+                      {task.gitCommitMessage && (
+                        <div className="mt-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))] px-3 py-2">
+                          <p className="text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                            Commit message
+                          </p>
+                          <pre className="mt-1 whitespace-pre-wrap text-sm text-[hsl(var(--foreground))]">
+                            {task.gitCommitMessage}
+                          </pre>
+                        </div>
+                      )}
                     </CardHeader>
                     <CardContent>
                       <div className="flex gap-4">

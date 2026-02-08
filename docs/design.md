@@ -314,6 +314,7 @@ A single task unit visible to users.
 | baseCommit | string | N | Base commit hash |
 | endCommit | string | N | End commit hash |
 | gitPatch | string | N | Git patch (unified diff) of changes made by AI agent |
+| gitCommitMessage | string | N | Original commit message(s) from the AI agent's worktree |
 | autoFixTasks | AgentTask[] | Y | Auto-fix attempts |
 | status | UnitTaskStatus | Y | Current status |
 
@@ -747,6 +748,8 @@ Changes made by AI agents are persisted as git patches in the database:
 - On subtask completion (e.g. Request Changes), the git patch is
   regenerated so the diff viewer reflects the latest changes
 - The patch is stored in the `git_patch` field of `UnitTask`
+- Original commit messages from the AI agent's worktree are extracted
+  and stored in the `git_commit_message` field of `UnitTask`
 - This allows changes to be persisted without needing write access
   to the repository (the worker server may not have push permission)
 - In local mode, the worktree is preserved while the task is in review
@@ -754,6 +757,10 @@ Changes made by AI agents are persisted as git patches in the database:
 - Worktrees for failed/cancelled tasks are cleaned up immediately
 - The frontend parses `git_patch` using `parseUnifiedDiff()` and displays
   it via the `DiffViewer` component when the user clicks "View Diff"
+- The diff viewer also displays the preserved `git_commit_message` above
+  the file changes
+- "Commit to Local" uses the preserved commit message (falling back to
+  task title, then a generic default) so the original message is kept
 ```
 
 ### Repository Caching

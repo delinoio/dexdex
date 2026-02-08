@@ -168,6 +168,7 @@ impl TaskExecutor {
                 error: None,
                 end_commit: None,
                 git_patch: None,
+                git_commit_message: None,
             })
             .await?;
 
@@ -184,9 +185,15 @@ impl TaskExecutor {
         let final_output = output.read().await.clone();
 
         // Report final status
-        let (status, error, end_commit, git_patch) = match &result {
-            Ok((commit, patch)) => ("completed".to_string(), None, commit.clone(), patch.clone()),
-            Err(e) => ("failed".to_string(), Some(e.to_string()), None, None),
+        let (status, error, end_commit, git_patch, git_commit_message) = match &result {
+            Ok((commit, patch, commit_msg)) => (
+                "completed".to_string(),
+                None,
+                commit.clone(),
+                patch.clone(),
+                commit_msg.clone(),
+            ),
+            Err(e) => ("failed".to_string(), Some(e.to_string()), None, None, None),
         };
 
         self.client
@@ -198,6 +205,7 @@ impl TaskExecutor {
                 error,
                 end_commit,
                 git_patch,
+                git_commit_message,
             })
             .await?;
 
@@ -213,12 +221,12 @@ impl TaskExecutor {
 
     /// Inner task execution logic.
     ///
-    /// Returns `(end_commit, git_patch)` on success.
+    /// Returns `(end_commit, git_patch, git_commit_message)` on success.
     async fn execute_task_inner(
         &self,
         task: &TaskAssignment,
         output: Arc<RwLock<String>>,
-    ) -> WorkerResult<(Option<String>, Option<String>)> {
+    ) -> WorkerResult<(Option<String>, Option<String>, Option<String>)> {
         // 1. Validate repository URL and branch name (security: prevent command
         //    injection)
         Self::validate_repository_url(&task.repository_url)?;
@@ -299,12 +307,12 @@ impl TaskExecutor {
             None
         };
 
-        // 9. Generate git patch from the worktree (if successful).
-        // This captures all changes made by the AI agent so they can be
-        // persisted in the database without needing write access to the
-        // repository.
-        let git_patch = if agent_result.is_ok() {
-            match git_ops::generate_patch_async(&worktree_path).await {
+        // 9. Generate git patch and extract commit messages from the worktree
+        // (if successful). This captures all changes made by the AI agent so
+        // they can be persisted in the database without needing write access
+        // to the repository.
+        let (git_patch, git_commit_message) = if agent_result.is_ok() {
+            let patch = match git_ops::generate_patch_async(&worktree_path).await {
                 Ok(patch) => {
                     if patch.is_some() {
                         info!(
@@ -322,9 +330,20 @@ impl TaskExecutor {
                     );
                     None
                 }
-            }
+            };
+            let commit_msg = match git_ops::extract_commit_messages_async(&worktree_path).await {
+                Ok(msg) => msg,
+                Err(e) => {
+                    warn!(
+                        "Failed to extract commit messages for task {}: {}",
+                        task.task_id, e
+                    );
+                    None
+                }
+            };
+            (patch, commit_msg)
         } else {
-            None
+            (None, None)
         };
 
         // 10. Clean up container with retry logic
@@ -338,7 +357,7 @@ impl TaskExecutor {
         }
 
         agent_result?;
-        Ok((end_commit, git_patch))
+        Ok((end_commit, git_patch, git_commit_message))
     }
 
     /// Validates a repository URL to prevent command injection.

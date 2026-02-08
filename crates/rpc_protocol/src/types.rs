@@ -431,6 +431,8 @@ pub struct UnitTask {
     /// Stored in the database so changes can be persisted without needing
     /// write access to the repository.
     pub git_patch: Option<String>,
+    /// Commit message(s) extracted from the AI agent's worktree git history.
+    pub git_commit_message: Option<String>,
     pub auto_fix_task_ids: Vec<String>,
     pub status: UnitTaskStatus,
     pub created_at: DateTime<Utc>,

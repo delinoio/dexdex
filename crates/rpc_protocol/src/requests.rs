@@ -314,6 +314,8 @@ pub struct ReportTaskStatusRequest {
     pub error: Option<String>,
     /// Git patch (unified diff) representing the changes made by the AI agent.
     pub git_patch: Option<String>,
+    /// Commit message(s) extracted from the AI agent's worktree git history.
+    pub git_commit_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

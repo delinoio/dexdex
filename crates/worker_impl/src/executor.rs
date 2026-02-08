@@ -352,13 +352,12 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
             // PersistingEventEmitter has already been handling incremental persistence.
             persisting_emitter.persist_logs().await;
 
-            // Generate git patch from the worktree if the task succeeded.
-            // This captures all changes made by the AI agent so they can be
-            // persisted in the database without needing write access to the
-            // repository.
-            let git_patch = if result.is_success() {
+            // Generate git patch and extract commit messages from the worktree
+            // if the task succeeded. This captures all changes made by the AI
+            // agent so they can be persisted in the database.
+            let (git_patch, git_commit_message) = if result.is_success() {
                 if let Some(ref wt_path) = worktree_path {
-                    match git_ops::generate_patch_async(wt_path).await {
+                    let patch = match git_ops::generate_patch_async(wt_path).await {
                         Ok(patch) => {
                             if patch.is_some() {
                                 info!(
@@ -375,16 +374,27 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                             warn!("Failed to generate git patch for task {}: {}", task_id, e);
                             None
                         }
-                    }
+                    };
+                    let commit_msg = match git_ops::extract_commit_messages_async(wt_path).await {
+                        Ok(msg) => msg,
+                        Err(e) => {
+                            warn!(
+                                "Failed to extract commit messages for task {}: {}",
+                                task_id, e
+                            );
+                            None
+                        }
+                    };
+                    (patch, commit_msg)
                 } else {
                     debug!(
                         "No worktree path available for task {}, skipping patch generation",
                         task_id
                     );
-                    None
+                    (None, None)
                 }
             } else {
-                None
+                (None, None)
             };
 
             // Update task status based on result and emit events so the
@@ -429,6 +439,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 session_id,
                 new_status,
                 git_patch,
+                git_commit_message,
             )
             .await
             {
@@ -503,13 +514,15 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         Ok(())
     }
 
-    /// Updates a task's status and optionally stores a git patch.
+    /// Updates a task's status and optionally stores a git patch and commit
+    /// message.
     async fn update_task_status_with_patch(
         task_store: &Arc<SqliteTaskStore>,
         task_id: Uuid,
         session_id: Uuid,
         new_status: UnitTaskStatus,
         git_patch: Option<String>,
+        git_commit_message: Option<String>,
     ) -> Result<(), WorkerError> {
         let mut task = task_store
             .get_unit_task(task_id)
@@ -521,6 +534,9 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
 
         if git_patch.is_some() {
             task.git_patch = git_patch;
+        }
+        if git_commit_message.is_some() {
+            task.git_commit_message = git_commit_message;
         }
 
         task_store.update_unit_task(task).await?;
@@ -2095,10 +2111,10 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 }
             };
 
-            // Regenerate git patch after successful subtask so the diff
-            // viewer reflects the latest changes made by the AI agent.
-            let git_patch = if success {
-                match git_ops::generate_patch_async(&worktree_path_for_patch).await {
+            // Regenerate git patch and commit messages after successful
+            // subtask so the diff viewer reflects the latest changes.
+            let (git_patch, git_commit_message) = if success {
+                let patch = match git_ops::generate_patch_async(&worktree_path_for_patch).await {
                     Ok(patch) => {
                         if patch.is_some() {
                             info!(
@@ -2119,9 +2135,21 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                         );
                         None
                     }
-                }
+                };
+                let commit_msg =
+                    match git_ops::extract_commit_messages_async(&worktree_path_for_patch).await {
+                        Ok(msg) => msg,
+                        Err(e) => {
+                            warn!(
+                                "Failed to extract commit messages after subtask for task {}: {}",
+                                task_id, e
+                            );
+                            None
+                        }
+                    };
+                (patch, commit_msg)
             } else {
-                None
+                (None, None)
             };
 
             // Update task status, git patch, and extract PR URL if applicable
@@ -2132,6 +2160,11 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
                 // Update the git patch so diffs reflect the latest changes
                 if let Some(patch) = git_patch {
                     task.git_patch = Some(patch);
+                }
+
+                // Update commit message so "Commit to Local" uses it
+                if let Some(ref commit_msg) = git_commit_message {
+                    task.git_commit_message = Some(commit_msg.clone());
                 }
 
                 // For PR creation subtasks, extract the PR URL from agent output

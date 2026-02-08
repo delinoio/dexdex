@@ -486,6 +486,7 @@ pub fn rpc_to_entity_unit_task(rpc: rpc_protocol::UnitTask) -> AppResult<entitie
         base_commit: rpc.base_commit,
         end_commit: rpc.end_commit,
         git_patch: rpc.git_patch,
+        git_commit_message: rpc.git_commit_message,
         auto_fix_task_ids: parse_uuid_list(&rpc.auto_fix_task_ids, "auto fix task id"),
         status: rpc_to_entity_unit_status(rpc.status),
         created_at: rpc.created_at,

@@ -54,6 +54,8 @@ pub struct TaskStatusUpdate {
     pub end_commit: Option<String>,
     /// Git patch (unified diff) representing changes made by the AI agent.
     pub git_patch: Option<String>,
+    /// Commit message(s) extracted from the AI agent's worktree git history.
+    pub git_commit_message: Option<String>,
 }
 
 /// Secrets response from main server.
@@ -248,6 +250,7 @@ impl MainServerClient {
             "error": update.error,
             "end_commit": update.end_commit,
             "git_patch": update.git_patch,
+            "git_commit_message": update.git_commit_message,
         });
 
         let response = self.state.http_client.post(&url).json(&body).send().await?;

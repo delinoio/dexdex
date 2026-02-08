@@ -126,6 +126,8 @@ export interface UnitTask {
   endCommit?: string;
   /** Git patch (unified diff) representing the changes made by the AI agent. */
   gitPatch?: string;
+  /** Commit message(s) extracted from the AI agent's worktree git history. */
+  gitCommitMessage?: string;
   autoFixTaskIds: string[];
   status: UnitTaskStatus;
   createdAt: string;
