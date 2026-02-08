@@ -32,7 +32,6 @@ export function SwipeableCard({
   const [offset, setOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const startXRef = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const threshold = 80; // Minimum swipe distance to trigger action
   const maxSwipe = 100; // Maximum swipe distance
@@ -105,7 +104,6 @@ export function SwipeableCard({
 
       {/* Swipeable content */}
       <div
-        ref={containerRef}
         className={cn(
           "relative bg-[hsl(var(--card))] touch-manipulation",
           !isDragging && "transition-transform duration-200 ease-out"

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, type KeyboardEvent } from "react";
+import { useState, useCallback, useEffect, type KeyboardEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -39,7 +39,6 @@ export function TaskCreation() {
   const [executionAgentType, setExecutionAgentType] = useState<AiAgentType>(lastExecutionAgentType);
   const [isComposite, setIsComposite] = useState(lastIsComposite);
   const navigate = useNavigate();
-  const promptRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: groupsData } = useRepositoryGroups({});
   const { data: repositoriesData } = useRepositories({});
@@ -69,11 +68,6 @@ export function TaskCreation() {
       }
     }
   }, [lastSelection, selection, repositories, groups]);
-
-  // Auto-focus prompt textarea when dialog opens
-  useEffect(() => {
-    promptRef.current?.focus();
-  }, []);
 
   // Helper function to get display name for a group (name or list of repo names)
   const getGroupDisplayName = useCallback(
@@ -336,7 +330,7 @@ export function TaskCreation() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Prompt</label>
                 <Textarea
-                  ref={promptRef}
+                  autoFocus
                   placeholder="Add user authentication to the app..."
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}

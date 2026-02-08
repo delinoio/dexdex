@@ -3,7 +3,7 @@
 // This replaces any need for polling task status: the backend emits
 // `task-status-changed` and `task-completed` events in real-time, and this
 // hook ensures the UI queries are refreshed accordingly.
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { taskKeys } from "@/hooks/useTasks";
@@ -17,16 +17,15 @@ import type { TaskStatusChangedEvent, TaskCompletedEvent } from "@/api/types";
  */
 export function useTaskStatusEvents(): void {
   const queryClient = useQueryClient();
-  // Store unlisteners in a ref so the cleanup function can access them
-  // even when setup() resolves after the effect cleanup runs (e.g. in
-  // React 18 StrictMode).
-  const unlistenersRef = useRef<UnlistenFn[]>([]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const unlisteners: UnlistenFn[] = [];
 
     async function setup() {
       try {
+        if (controller.signal.aborted) return;
+
         // When a task's status changes, invalidate its detail, list views,
         // and composite task nodes (for task graph updates on plan completion)
         const unlistenStatus = await listen<TaskStatusChangedEvent>(
@@ -39,11 +38,11 @@ export function useTaskStatusEvents(): void {
           },
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenStatus();
           return;
         }
-        unlistenersRef.current.push(unlistenStatus);
+        unlisteners.push(unlistenStatus);
 
         // When a task completes, invalidate its detail and the list views
         const unlistenCompleted = await listen<TaskCompletedEvent>(
@@ -55,11 +54,11 @@ export function useTaskStatusEvents(): void {
           },
         );
 
-        if (cancelled) {
+        if (controller.signal.aborted) {
           unlistenCompleted();
           return;
         }
-        unlistenersRef.current.push(unlistenCompleted);
+        unlisteners.push(unlistenCompleted);
       } catch {
         // Not in Tauri context (browser dev mode)
       }
@@ -68,11 +67,10 @@ export function useTaskStatusEvents(): void {
     setup();
 
     return () => {
-      cancelled = true;
-      for (const unlisten of unlistenersRef.current) {
+      controller.abort();
+      for (const unlisten of unlisteners) {
         unlisten();
       }
-      unlistenersRef.current = [];
     };
   }, [queryClient]);
 }

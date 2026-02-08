@@ -1,6 +1,6 @@
 // Hook that listens to Tauri backend events and populates the notification center.
 // Also sends desktop notifications when the window is not focused.
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   isPermissionGranted,
@@ -17,14 +17,8 @@ import type {
 } from "@/api/types";
 
 export function useNotificationEvents(): void {
-  const initialized = useRef(false);
-
   useEffect(() => {
-    // Guard against double-invocation in React 18 strict mode.
-    // All store interactions use getState() so they don't need to be in the dependency array.
-    if (initialized.current) return;
-    initialized.current = true;
-
+    const controller = new AbortController();
     const unlisteners: UnlistenFn[] = [];
     const { addNotification } = useNotificationCenterStore.getState();
 
@@ -43,6 +37,8 @@ export function useNotificationEvents(): void {
 
     async function setup() {
       try {
+        if (controller.signal.aborted) return;
+
         // Listen for task status changes
         const unlistenStatus = await listen<TaskStatusChangedEvent>(
           "task-status-changed",
@@ -89,6 +85,11 @@ export function useNotificationEvents(): void {
             }
           }
         );
+
+        if (controller.signal.aborted) {
+          unlistenStatus();
+          return;
+        }
         unlisteners.push(unlistenStatus);
 
         // Listen for task completed events
@@ -122,6 +123,11 @@ export function useNotificationEvents(): void {
             }
           }
         );
+
+        if (controller.signal.aborted) {
+          unlistenCompleted();
+          return;
+        }
         unlisteners.push(unlistenCompleted);
 
         // Listen for TTY input request events
@@ -144,6 +150,11 @@ export function useNotificationEvents(): void {
             sendDesktopNotification(title, message);
           }
         );
+
+        if (controller.signal.aborted) {
+          unlistenTty();
+          return;
+        }
         unlisteners.push(unlistenTty);
       } catch {
         // Not in Tauri context (browser dev mode)
@@ -153,10 +164,10 @@ export function useNotificationEvents(): void {
     setup();
 
     return () => {
+      controller.abort();
       for (const unlisten of unlisteners) {
         unlisten();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally runs once on mount; see initialized ref guard above.
   }, []);
 }

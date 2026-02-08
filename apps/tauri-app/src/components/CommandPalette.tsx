@@ -87,7 +87,6 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
   const filteredCommands = useMemo(() => {
@@ -211,7 +210,6 @@ export function CommandPalette() {
       onKeyDown={handleKeyDown}
     >
       <div
-        ref={dialogRef}
         className="fixed left-[50%] top-[20%] w-full max-w-lg translate-x-[-50%] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-lg"
         onClick={handleContentClick}
         role="dialog"

@@ -15,13 +15,13 @@ import {
  * granted or denied permission, no prompt will be shown.
  */
 export function useNotificationPermission(): void {
+  // Guard against double-invocation in React 18 Strict Mode.
+  // A cancelled flag would NOT work here because each mount/unmount/remount cycle
+  // creates a new closure, so the flag resets. useRef persists across re-renders.
   const hasRequested = useRef(false);
 
   useEffect(() => {
-    // Only request once per session
-    if (hasRequested.current) {
-      return;
-    }
+    if (hasRequested.current) return;
     hasRequested.current = true;
 
     async function checkAndRequestPermission() {
