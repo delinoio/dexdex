@@ -658,9 +658,8 @@ pub async fn cancel_task<S: TaskStore>(
         let cancel_url = format!("{}/cancel", endpoint_url.trim_end_matches('/'));
         tracing::info!(task_id = %task_id, cancel_url = %cancel_url, "Signaling worker to cancel task");
 
-        let http_client = reqwest::Client::new();
         let payload = serde_json::json!({ "task_id": task_id });
-        match http_client.post(&cancel_url).json(&payload).send().await {
+        match state.http_client.post(&cancel_url).json(&payload).send().await {
             Ok(resp) if resp.status().is_success() => {
                 tracing::info!(task_id = %task_id, "Worker acknowledged cancellation");
             }
@@ -749,14 +748,19 @@ pub async fn create_pr<S: TaskStore>(
         )));
     }
 
-    // Reset to InProgress so the worker picks it up for PR creation
+    // Reset to InProgress so the worker picks it up for PR creation.
+    // Guard against duplicate appends: if the user retries after a failure,
+    // the PR creation instructions may already be present in the prompt.
+    const PR_CREATION_MARKER: &str = "--- Create PR ---";
     task.status = EntityUnitTaskStatus::InProgress;
-    task.prompt = format!(
-        "{}\n\n--- Create PR ---\nCreate a pull request with the changes from this task. Push the \
-         current branch to the remote and create a PR using the available tools (e.g. `gh pr \
-         create`). Output the PR URL.",
-        task.prompt
-    );
+    if !task.prompt.contains(PR_CREATION_MARKER) {
+        task.prompt = format!(
+            "{}\n\n{}\nCreate a pull request with the changes from this task. Push the \
+             current branch to the remote and create a PR using the available tools (e.g. `gh pr \
+             create`). Output the PR URL.",
+            task.prompt, PR_CREATION_MARKER
+        );
+    }
     task.updated_at = chrono::Utc::now();
     state.store.update_unit_task(task).await?;
 
@@ -817,6 +821,15 @@ pub async fn get_task_logs<S: TaskStore>(
         .agent_task_id
         .parse()
         .map_err(|_| ServerError::InvalidRequest("Invalid agent_task_id".to_string()))?;
+
+    // Validate after_event_id if provided
+    if let Some(after_id) = request.after_event_id {
+        if after_id < 0 {
+            return Err(ServerError::InvalidRequest(
+                "after_event_id must be non-negative".to_string(),
+            ));
+        }
+    }
 
     // Verify agent task exists
     state

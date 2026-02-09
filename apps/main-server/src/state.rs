@@ -100,6 +100,9 @@ impl TtyResponseRelay {
     }
 }
 
+/// Timeout for HTTP requests to workers (e.g., cancellation signals).
+const WORKER_HTTP_TIMEOUT_SECS: u64 = 10;
+
 /// Shared application state.
 pub struct AppState<S: TaskStore> {
     /// Server configuration.
@@ -114,11 +117,18 @@ pub struct AppState<S: TaskStore> {
     pub secrets_cache: RwLock<SecretsCache>,
     /// TTY response relay.
     pub tty_response_relay: RwLock<TtyResponseRelay>,
+    /// Shared HTTP client for worker communication (reused across requests).
+    pub http_client: reqwest::Client,
 }
 
 impl<S: TaskStore> AppState<S> {
     /// Creates new application state.
     pub fn new(config: Config, store: S, jwt_manager: Option<JwtManager>) -> Self {
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(WORKER_HTTP_TIMEOUT_SECS))
+            .build()
+            .expect("Failed to build HTTP client");
+
         Self {
             config,
             store,
@@ -126,6 +136,7 @@ impl<S: TaskStore> AppState<S> {
             worker_registry: RwLock::new(WorkerRegistry::new()),
             secrets_cache: RwLock::new(SecretsCache::new()),
             tty_response_relay: RwLock::new(TtyResponseRelay::new()),
+            http_client,
         }
     }
 

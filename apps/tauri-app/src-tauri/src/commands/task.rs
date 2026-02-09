@@ -1648,8 +1648,12 @@ pub async fn get_composite_task_nodes(
             let depends_on_ids: Vec<Uuid> = rpc_node
                 .depends_on_ids
                 .iter()
-                .filter_map(|id| id.parse().ok())
-                .collect();
+                .map(|id| {
+                    id.parse().map_err(|e| {
+                        AppError::InvalidRequest(format!("Invalid dependency ID '{}': {}", id, e))
+                    })
+                })
+                .collect::<AppResult<Vec<Uuid>>>()?;
 
             let node = CompositeTaskNode {
                 id: node_id,
