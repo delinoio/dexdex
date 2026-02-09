@@ -27,6 +27,11 @@ const MAX_TASKS_PER_PLAN: usize = 100;
 /// log size.
 const MAX_AFTER_EVENT_ID: i64 = 10_000_000;
 
+/// Maximum number of log lines to return per session in a single response.
+/// This prevents memory exhaustion from very large logs. Clients can use
+/// `after_event_id` for incremental polling to get additional lines.
+const MAX_LOG_LINES_PER_SESSION: usize = 5_000;
+
 /// Converts RPC UnitTaskStatus to entity UnitTaskStatus.
 fn to_entity_unit_status(status: UnitTaskStatus) -> EntityUnitTaskStatus {
     match status {
@@ -658,6 +663,22 @@ pub async fn cancel_task<S: TaskStore>(
     };
 
     if let Some(endpoint_url) = worker_endpoint {
+        // SECURITY: Defense-in-depth URL validation. The URL was validated at
+        // registration time, but we re-validate before making outbound HTTP
+        // requests to guard against any data corruption or bypass.
+        if let Err(e) = crate::services::worker_registry::validate_worker_endpoint_url(&endpoint_url) {
+            tracing::error!(
+                task_id = %task_id,
+                endpoint_url = %endpoint_url,
+                error = %e,
+                "Refusing to send cancel request to invalid worker endpoint URL"
+            );
+            return Err(ServerError::Internal(format!(
+                "Worker has invalid endpoint URL: {}",
+                e
+            )));
+        }
+
         let cancel_url = format!("{}/cancel", endpoint_url.trim_end_matches('/'));
         tracing::info!(task_id = %task_id, cancel_url = %cancel_url, "Signaling worker to cancel task");
 
@@ -667,17 +688,30 @@ pub async fn cancel_task<S: TaskStore>(
                 tracing::info!(task_id = %task_id, "Worker acknowledged cancellation");
             }
             Ok(resp) => {
-                tracing::warn!(
+                // Worker actively rejected the cancellation request. Do NOT
+                // mark the task as cancelled in the DB because the worker may
+                // still be running. Return an error so the client can retry.
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                tracing::error!(
                     task_id = %task_id,
-                    status = %resp.status(),
-                    "Worker returned non-success status for cancellation"
+                    status = %status,
+                    body = %body,
+                    "Worker rejected cancellation request"
                 );
+                return Err(ServerError::Internal(format!(
+                    "Worker rejected cancellation (HTTP {}): {}",
+                    status, body
+                )));
             }
             Err(e) => {
+                // Worker is unreachable (may have crashed or lost network).
+                // Proceed with cancellation in the DB since the worker won't
+                // be able to continue the task anyway.
                 tracing::warn!(
                     task_id = %task_id,
                     error = %e,
-                    "Failed to signal worker for cancellation, proceeding with DB update"
+                    "Failed to reach worker for cancellation, proceeding with DB update"
                 );
             }
         }
@@ -802,7 +836,7 @@ pub async fn get_composite_task_nodes<S: TaskStore>(
         .list_composite_task_nodes(composite_task_id)
         .await?;
 
-    let rpc_nodes = nodes
+    let rpc_nodes: Vec<rpc_protocol::CompositeTaskNode> = nodes
         .iter()
         .map(|node| rpc_protocol::CompositeTaskNode {
             id: node.id.to_string(),
@@ -817,7 +851,25 @@ pub async fn get_composite_task_nodes<S: TaskStore>(
         })
         .collect();
 
-    Ok(Json(GetCompositeTaskNodesResponse { nodes: rpc_nodes }))
+    // Fetch all unit tasks associated with the nodes to avoid N+1 queries
+    // on the client side.
+    let mut rpc_unit_tasks = Vec::with_capacity(nodes.len());
+    for node in &nodes {
+        if let Some(unit_task) = state.store.get_unit_task(node.unit_task_id).await? {
+            rpc_unit_tasks.push(entity_to_rpc_unit_task(&unit_task));
+        } else {
+            tracing::warn!(
+                node_id = %node.id,
+                unit_task_id = %node.unit_task_id,
+                "CompositeTaskNode references missing UnitTask"
+            );
+        }
+    }
+
+    Ok(Json(GetCompositeTaskNodesResponse {
+        nodes: rpc_nodes,
+        unit_tasks: rpc_unit_tasks,
+    }))
 }
 
 /// Gets task logs (agent sessions and their events).
@@ -858,34 +910,58 @@ pub async fn get_task_logs<S: TaskStore>(
     // Sort by created_at for chronological order
     sessions.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-    // Convert sessions to RPC format
+    // Convert sessions to RPC format.
+    // When after_event_id is provided, only include lines after that ID in the
+    // output_log to avoid sending the entire log on every poll. Additionally,
+    // truncate output_log to MAX_LOG_LINES_PER_SESSION lines to prevent memory
+    // exhaustion from very large logs.
+    let after_id = request.after_event_id;
     let rpc_sessions: Vec<rpc_protocol::AgentSession> = sessions
         .iter()
-        .map(|s| rpc_protocol::AgentSession {
-            id: s.id.to_string(),
-            agent_task_id: s.agent_task_id.to_string(),
-            ai_agent_type: match s.ai_agent_type {
-                entities::AiAgentType::ClaudeCode => rpc_protocol::AiAgentType::ClaudeCode,
-                entities::AiAgentType::OpenCode => rpc_protocol::AiAgentType::OpenCode,
-                entities::AiAgentType::GeminiCli => rpc_protocol::AiAgentType::GeminiCli,
-                entities::AiAgentType::CodexCli => rpc_protocol::AiAgentType::CodexCli,
-                entities::AiAgentType::Aider => rpc_protocol::AiAgentType::Aider,
-                entities::AiAgentType::Amp => rpc_protocol::AiAgentType::Amp,
-            },
-            ai_agent_model: s.ai_agent_model.clone(),
-            started_at: s.started_at,
-            completed_at: s.completed_at,
-            output_log: s.output_log.clone(),
-            token_usage: s.token_usage.as_ref().map(|tu| rpc_protocol::TokenUsage {
-                input_tokens: tu.input_tokens,
-                output_tokens: tu.output_tokens,
-                cache_read_input_tokens: tu.cache_read_input_tokens,
-                cache_creation_input_tokens: tu.cache_creation_input_tokens,
-                total_cost_usd: tu.total_cost_usd,
-                duration_ms: tu.duration_ms,
-                num_turns: tu.num_turns,
-            }),
-            created_at: s.created_at,
+        .map(|s| {
+            let truncated_log = s.output_log.as_ref().map(|log| {
+                let lines: Vec<&str> = log.lines().collect();
+                let total = lines.len();
+
+                // If after_event_id is provided, skip lines up to and including
+                // that ID (line index).
+                let start = if let Some(aid) = after_id {
+                    (aid as usize + 1).min(total)
+                } else {
+                    // No after_event_id: return the last MAX_LOG_LINES_PER_SESSION lines
+                    total.saturating_sub(MAX_LOG_LINES_PER_SESSION)
+                };
+
+                let end = total.min(start + MAX_LOG_LINES_PER_SESSION);
+                lines[start..end].join("\n")
+            });
+
+            rpc_protocol::AgentSession {
+                id: s.id.to_string(),
+                agent_task_id: s.agent_task_id.to_string(),
+                ai_agent_type: match s.ai_agent_type {
+                    entities::AiAgentType::ClaudeCode => rpc_protocol::AiAgentType::ClaudeCode,
+                    entities::AiAgentType::OpenCode => rpc_protocol::AiAgentType::OpenCode,
+                    entities::AiAgentType::GeminiCli => rpc_protocol::AiAgentType::GeminiCli,
+                    entities::AiAgentType::CodexCli => rpc_protocol::AiAgentType::CodexCli,
+                    entities::AiAgentType::Aider => rpc_protocol::AiAgentType::Aider,
+                    entities::AiAgentType::Amp => rpc_protocol::AiAgentType::Amp,
+                },
+                ai_agent_model: s.ai_agent_model.clone(),
+                started_at: s.started_at,
+                completed_at: s.completed_at,
+                output_log: truncated_log,
+                token_usage: s.token_usage.as_ref().map(|tu| rpc_protocol::TokenUsage {
+                    input_tokens: tu.input_tokens,
+                    output_tokens: tu.output_tokens,
+                    cache_read_input_tokens: tu.cache_read_input_tokens,
+                    cache_creation_input_tokens: tu.cache_creation_input_tokens,
+                    total_cost_usd: tu.total_cost_usd,
+                    duration_ms: tu.duration_ms,
+                    num_turns: tu.num_turns,
+                }),
+                created_at: s.created_at,
+            }
         })
         .collect();
 
@@ -1784,6 +1860,305 @@ tasks:
             task_id: "not-a-valid-uuid".to_string(),
         };
         let result = delete_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Cancel Task Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_cancel_in_progress_task() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "Running task");
+        unit_task.status = EntityUnitTaskStatus::InProgress;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        // Cancel the task (no worker registered, so it should proceed directly)
+        let request = CancelTaskRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = cancel_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify the task status was updated to Cancelled
+        let updated = state
+            .store
+            .get_unit_task(unit_task.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.status, EntityUnitTaskStatus::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_non_in_progress_task_fails() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "Done task");
+        unit_task.status = EntityUnitTaskStatus::Done;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        let request = CancelTaskRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = cancel_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_nonexistent_task_fails() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let request = CancelTaskRequest {
+            task_id: Uuid::new_v4().to_string(),
+        };
+        let result = cancel_task(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Dismiss Approval Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_dismiss_approval_approved_task() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "Approved task");
+        unit_task.status = EntityUnitTaskStatus::Approved;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        let request = DismissApprovalRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = dismiss_approval(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        let updated = state
+            .store
+            .get_unit_task(unit_task.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.status, EntityUnitTaskStatus::InReview);
+    }
+
+    #[tokio::test]
+    async fn test_dismiss_approval_non_approved_task_fails() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "In progress task");
+        unit_task.status = EntityUnitTaskStatus::InProgress;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        let request = DismissApprovalRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = dismiss_approval(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Create PR Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_create_pr_approved_task() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "Approved task");
+        unit_task.status = EntityUnitTaskStatus::Approved;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        let request = CreatePrRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = create_pr(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        // Verify the task was reset to InProgress for worker pickup
+        let updated = state
+            .store
+            .get_unit_task(unit_task.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.status, EntityUnitTaskStatus::InProgress);
+        assert!(updated.prompt.contains("Create a pull request"));
+    }
+
+    #[tokio::test]
+    async fn test_create_pr_wrong_status_fails() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let mut unit_task = UnitTask::new(repo_group_id, agent_task.id, "In progress task");
+        unit_task.status = EntityUnitTaskStatus::InProgress;
+        let unit_task = state.store.create_unit_task(unit_task).await.unwrap();
+
+        let request = CreatePrRequest {
+            task_id: unit_task.id.to_string(),
+        };
+        let result = create_pr(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Get Composite Task Nodes Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_get_composite_task_nodes() {
+        let (state, repo_group_id) = create_test_state_with_repo_group().await;
+
+        // Create planning agent task and composite task
+        let planning_task = AgentTask::new();
+        let planning_task = state.store.create_agent_task(planning_task).await.unwrap();
+        let composite_task = CompositeTask::new(repo_group_id, planning_task.id, "Multi task");
+        let composite_task = state
+            .store
+            .create_composite_task(composite_task)
+            .await
+            .unwrap();
+
+        // Create child unit tasks and nodes
+        let child_agent = AgentTask::new();
+        let child_agent = state.store.create_agent_task(child_agent).await.unwrap();
+        let child_unit = UnitTask::new(repo_group_id, child_agent.id, "Child task");
+        let child_unit = state.store.create_unit_task(child_unit).await.unwrap();
+        let node = entities::CompositeTaskNode::new(composite_task.id, child_unit.id);
+        let _node = state
+            .store
+            .create_composite_task_node(node)
+            .await
+            .unwrap();
+
+        // Fetch nodes
+        let request = GetCompositeTaskNodesRequest {
+            composite_task_id: composite_task.id.to_string(),
+        };
+        let result = get_composite_task_nodes(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        let response = result.unwrap().0;
+        assert_eq!(response.nodes.len(), 1);
+        assert_eq!(response.unit_tasks.len(), 1);
+        assert_eq!(response.nodes[0].unit_task_id, child_unit.id.to_string());
+        assert_eq!(response.unit_tasks[0].id, child_unit.id.to_string());
+    }
+
+    #[tokio::test]
+    async fn test_get_composite_task_nodes_nonexistent_fails() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let request = GetCompositeTaskNodesRequest {
+            composite_task_id: Uuid::new_v4().to_string(),
+        };
+        let result = get_composite_task_nodes(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Get Task Logs Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_get_task_logs_empty_sessions() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        let request = GetTaskLogsRequest {
+            agent_task_id: agent_task.id.to_string(),
+            after_event_id: None,
+        };
+        let result = get_task_logs(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        let response = result.unwrap().0;
+        assert!(response.sessions.is_empty());
+        assert!(response.events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_task_logs_with_sessions() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        // Create a session with some output
+        let mut session =
+            entities::AgentSession::new(agent_task.id, entities::AiAgentType::ClaudeCode);
+        session.output_log = Some("line1\nline2\nline3".to_string());
+        session.completed_at = Some(chrono::Utc::now());
+        let _session = state.store.create_agent_session(session).await.unwrap();
+
+        let request = GetTaskLogsRequest {
+            agent_task_id: agent_task.id.to_string(),
+            after_event_id: None,
+        };
+        let result = get_task_logs(State(state.clone()), Json(request)).await;
+        assert!(result.is_ok());
+
+        let response = result.unwrap().0;
+        assert_eq!(response.sessions.len(), 1);
+        assert!(response.last_event_id.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_get_task_logs_nonexistent_agent_task_fails() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let request = GetTaskLogsRequest {
+            agent_task_id: Uuid::new_v4().to_string(),
+            after_event_id: None,
+        };
+        let result = get_task_logs(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_task_logs_invalid_after_event_id() {
+        let (state, _) = create_test_state_with_repo_group().await;
+
+        let agent_task = AgentTask::new();
+        let agent_task = state.store.create_agent_task(agent_task).await.unwrap();
+
+        // Negative after_event_id
+        let request = GetTaskLogsRequest {
+            agent_task_id: agent_task.id.to_string(),
+            after_event_id: Some(-1),
+        };
+        let result = get_task_logs(State(state.clone()), Json(request)).await;
+        assert!(result.is_err());
+
+        // Exceeds max
+        let request = GetTaskLogsRequest {
+            agent_task_id: agent_task.id.to_string(),
+            after_event_id: Some(MAX_AFTER_EVENT_ID + 1),
+        };
+        let result = get_task_logs(State(state.clone()), Json(request)).await;
         assert!(result.is_err());
     }
 }

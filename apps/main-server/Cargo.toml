@@ -43,7 +43,8 @@ dotenvy = "0.15"
 # HTTP client (for worker communication)
 reqwest = { version = "0.12", features = ["json"] }
 
-# URL encoding
+# URL parsing and encoding
+url = "2"
 urlencoding = "2"
 
 # HMAC for webhook signature verification

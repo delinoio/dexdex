@@ -27,6 +27,20 @@ pub async fn register_worker<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<RegisterWorkerRequest>,
 ) -> ServerResult<Json<RegisterWorkerResponse>> {
+    // SECURITY: Validate the worker endpoint URL to prevent SSRF attacks.
+    // A malicious worker could register with an internal IP/localhost URL,
+    // causing the server to make requests to internal services when cancelling
+    // tasks or communicating with workers.
+    crate::services::worker_registry::validate_worker_endpoint_url(&request.endpoint_url)
+        .map_err(|e| {
+            tracing::warn!(
+                endpoint_url = %request.endpoint_url,
+                error = %e,
+                "Rejected worker registration with invalid endpoint URL"
+            );
+            ServerError::InvalidRequest(e)
+        })?;
+
     let mut registry = state.worker_registry.write().await;
     let worker_id = registry.register(&request.name, &request.endpoint_url);
 

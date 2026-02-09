@@ -1628,13 +1628,24 @@ pub async fn get_composite_task_nodes(
     let state = state.read().await;
 
     if state.mode == AppMode::Remote {
-        // Remote mode: fetch nodes from server and join with unit tasks
+        // Remote mode: fetch nodes and unit tasks from server in a single call.
+        // The server includes unit tasks in the response to avoid N+1 API calls.
         let client = state.get_remote_client()?;
 
         let request = requests::GetCompositeTaskNodesRequest {
             composite_task_id: composite_task_id.clone(),
         };
         let nodes_resp = client.get_composite_task_nodes(request).await?;
+
+        // Build a lookup map of unit tasks by ID for O(1) access
+        let unit_tasks_map: std::collections::HashMap<String, entities::UnitTask> = nodes_resp
+            .unit_tasks
+            .into_iter()
+            .filter_map(|rpc_ut| {
+                let id = rpc_ut.id.clone();
+                rpc_to_entity_unit_task(rpc_ut).ok().map(|ut| (id, ut))
+            })
+            .collect();
 
         let mut result = Vec::new();
         for rpc_node in nodes_resp.nodes {
@@ -1663,19 +1674,18 @@ pub async fn get_composite_task_nodes(
                 created_at: rpc_node.created_at,
             };
 
-            // Fetch the associated unit task
-            let get_task_request = requests::GetTaskRequest {
-                task_id: rpc_node.unit_task_id.clone(),
-            };
-            if let Ok(rpc_protocol::responses::GetTaskResponse::UnitTask { unit_task }) =
-                client.get_task(get_task_request).await
-            {
-                if let Ok(entity_task) = rpc_to_entity_unit_task(unit_task) {
-                    result.push(CompositeTaskNodeWithUnitTask {
-                        node,
-                        unit_task: entity_task,
-                    });
-                }
+            // Look up the unit task from the pre-fetched map (no extra API call)
+            if let Some(entity_task) = unit_tasks_map.get(&rpc_node.unit_task_id) {
+                result.push(CompositeTaskNodeWithUnitTask {
+                    node,
+                    unit_task: entity_task.clone(),
+                });
+            } else {
+                tracing::warn!(
+                    node_id = %node_id,
+                    unit_task_id = %rpc_node.unit_task_id,
+                    "CompositeTaskNode references missing UnitTask in server response"
+                );
             }
         }
 

@@ -103,6 +103,15 @@ impl TtyResponseRelay {
 /// Timeout for HTTP requests to workers (e.g., cancellation signals).
 const WORKER_HTTP_TIMEOUT_SECS: u64 = 10;
 
+/// Maximum idle connections per host for the HTTP client pool.
+/// This prevents resource exhaustion from malicious or misconfigured workers
+/// that could cause the server to open many connections.
+const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 5;
+
+/// Idle connection timeout in seconds.
+/// Connections idle longer than this are closed to free resources.
+const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 30;
+
 /// Shared application state.
 pub struct AppState<S: TaskStore> {
     /// Server configuration.
@@ -126,6 +135,8 @@ impl<S: TaskStore> AppState<S> {
     pub fn new(config: Config, store: S, jwt_manager: Option<JwtManager>) -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(WORKER_HTTP_TIMEOUT_SECS))
+            .pool_max_idle_per_host(HTTP_POOL_MAX_IDLE_PER_HOST)
+            .pool_idle_timeout(std::time::Duration::from_secs(HTTP_POOL_IDLE_TIMEOUT_SECS))
             .build()
             .expect("Failed to build HTTP client");
 

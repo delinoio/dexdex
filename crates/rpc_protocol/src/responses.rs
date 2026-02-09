@@ -80,6 +80,11 @@ pub struct CancelTaskResponse {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetCompositeTaskNodesResponse {
     pub nodes: Vec<crate::types::CompositeTaskNode>,
+    /// Unit tasks associated with the nodes, keyed by unit_task_id.
+    /// Included to avoid N+1 API calls when the client needs both nodes and
+    /// their unit tasks.
+    #[serde(default)]
+    pub unit_tasks: Vec<crate::types::UnitTask>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

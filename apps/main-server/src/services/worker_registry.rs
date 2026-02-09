@@ -1,9 +1,88 @@
 //! Worker registry for managing worker servers.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
+
+/// Validates that a worker endpoint URL is safe to make requests to.
+///
+/// This prevents SSRF attacks by:
+/// - Only allowing http/https schemes
+/// - Blocking private/loopback IP addresses
+/// - Blocking link-local and reserved IP ranges
+/// - Blocking localhost hostnames
+///
+/// Returns Ok(()) if the URL is safe, or an error message if it's not.
+pub fn validate_worker_endpoint_url(endpoint_url: &str) -> Result<(), String> {
+    let url = url::Url::parse(endpoint_url)
+        .map_err(|e| format!("Invalid URL '{}': {}", endpoint_url, e))?;
+
+    // Only allow http/https schemes
+    match url.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            return Err(format!(
+                "Invalid URL scheme '{}': only http and https are allowed",
+                scheme
+            ));
+        }
+    }
+
+    // Block localhost hostnames
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL must have a host".to_string())?;
+
+    if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]" {
+        return Err(format!(
+            "Worker endpoint URL cannot target localhost: {}",
+            endpoint_url
+        ));
+    }
+
+    // Block private/reserved IP addresses
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_private_ip(&ip) {
+            return Err(format!(
+                "Worker endpoint URL cannot target private IP address: {}",
+                endpoint_url
+            ));
+        }
+    }
+
+    // Also check IPs without brackets for IPv6
+    let stripped = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = stripped.parse::<IpAddr>() {
+        if is_private_ip(&ip) {
+            return Err(format!(
+                "Worker endpoint URL cannot target private IP address: {}",
+                endpoint_url
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Checks if an IP address is private, loopback, link-local, or otherwise
+/// reserved.
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ipv4) => {
+            ipv4.is_loopback()          // 127.0.0.0/8
+                || ipv4.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                || ipv4.is_link_local() // 169.254.0.0/16
+                || ipv4.is_unspecified() // 0.0.0.0
+                || ipv4.is_broadcast()  // 255.255.255.255
+        }
+        IpAddr::V6(ipv6) => {
+            ipv6.is_loopback()      // ::1
+                || ipv6.is_unspecified() // ::
+        }
+    }
+}
 
 /// Worker status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -261,5 +340,48 @@ mod tests {
         // Second worker should still be available
         let available = registry.find_available().unwrap();
         assert_ne!(available.id, id1);
+    }
+
+    // =========================================================================
+    // SSRF Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_valid_worker_url() {
+        assert!(validate_worker_endpoint_url("http://worker-1.internal:54872").is_ok());
+        assert!(validate_worker_endpoint_url("https://worker.example.com:8080").is_ok());
+        assert!(validate_worker_endpoint_url("http://my-worker:54872").is_ok());
+    }
+
+    #[test]
+    fn test_validate_blocks_localhost() {
+        assert!(validate_worker_endpoint_url("http://localhost:54872").is_err());
+        assert!(validate_worker_endpoint_url("http://127.0.0.1:54872").is_err());
+        assert!(validate_worker_endpoint_url("http://[::1]:54872").is_err());
+    }
+
+    #[test]
+    fn test_validate_blocks_private_ips() {
+        // 10.0.0.0/8
+        assert!(validate_worker_endpoint_url("http://10.0.0.1:54872").is_err());
+        // 172.16.0.0/12
+        assert!(validate_worker_endpoint_url("http://172.16.0.1:54872").is_err());
+        // 192.168.0.0/16
+        assert!(validate_worker_endpoint_url("http://192.168.1.1:54872").is_err());
+        // Link-local
+        assert!(validate_worker_endpoint_url("http://169.254.0.1:54872").is_err());
+    }
+
+    #[test]
+    fn test_validate_blocks_invalid_schemes() {
+        assert!(validate_worker_endpoint_url("ftp://worker:54872").is_err());
+        assert!(validate_worker_endpoint_url("file:///etc/passwd").is_err());
+        assert!(validate_worker_endpoint_url("gopher://worker:54872").is_err());
+    }
+
+    #[test]
+    fn test_validate_blocks_invalid_urls() {
+        assert!(validate_worker_endpoint_url("not-a-url").is_err());
+        assert!(validate_worker_endpoint_url("").is_err());
     }
 }
