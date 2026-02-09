@@ -21,6 +21,12 @@ use crate::{
 /// This prevents resource exhaustion from excessively large plans.
 const MAX_TASKS_PER_PLAN: usize = 100;
 
+/// Maximum value for `after_event_id` in log requests.
+/// This prevents clients from sending unreasonably large values that could
+/// cause unexpected behavior. 10 million lines is well beyond any realistic
+/// log size.
+const MAX_AFTER_EVENT_ID: i64 = 10_000_000;
+
 /// Converts RPC UnitTaskStatus to entity UnitTaskStatus.
 fn to_entity_unit_status(status: UnitTaskStatus) -> EntityUnitTaskStatus {
     match status {
@@ -614,9 +620,11 @@ fn validate_composite_task_plan(plan_yaml: &str) -> ServerResult<Plan> {
 
 /// Cancels a running task.
 ///
-/// This updates the task status to Cancelled in the database and also
-/// signals the worker executing this task (if any) to stop via the
-/// worker's `/cancel` endpoint.
+/// This signals the worker executing the task (if any) to stop via the
+/// worker's `/cancel` endpoint, and then updates the task status to
+/// Cancelled in the database. By signaling the worker first, we avoid a
+/// race window where the DB says "Cancelled" but the worker is still
+/// running unaware.
 pub async fn cancel_task<S: TaskStore>(
     State(state): State<Arc<AppState<S>>>,
     Json(request): Json<CancelTaskRequest>,
@@ -639,14 +647,9 @@ pub async fn cancel_task<S: TaskStore>(
         )));
     }
 
-    task.status = EntityUnitTaskStatus::Cancelled;
-    task.updated_at = chrono::Utc::now();
-    state.store.update_unit_task(task).await?;
-
-    // Signal the worker to stop execution. This is best-effort: the task
-    // status has already been updated in the database, so even if the worker
-    // signal fails, the worker will eventually detect the cancellation when
-    // it reports back.
+    // Signal the worker to stop execution BEFORE updating the database.
+    // This avoids a race window where the DB says "Cancelled" but the
+    // worker hasn't been notified yet and continues executing.
     let worker_endpoint = {
         let registry = state.worker_registry.read().await;
         registry
@@ -674,13 +677,18 @@ pub async fn cancel_task<S: TaskStore>(
                 tracing::warn!(
                     task_id = %task_id,
                     error = %e,
-                    "Failed to signal worker for cancellation (task status already updated)"
+                    "Failed to signal worker for cancellation, proceeding with DB update"
                 );
             }
         }
     } else {
         tracing::debug!(task_id = %task_id, "No worker found for task, skipping worker signal");
     }
+
+    // Update DB status to Cancelled after signaling the worker.
+    task.status = EntityUnitTaskStatus::Cancelled;
+    task.updated_at = chrono::Utc::now();
+    state.store.update_unit_task(task).await?;
 
     tracing::info!(task_id = %task_id, "Task cancelled");
 
@@ -828,6 +836,12 @@ pub async fn get_task_logs<S: TaskStore>(
             return Err(ServerError::InvalidRequest(
                 "after_event_id must be non-negative".to_string(),
             ));
+        }
+        if after_id > MAX_AFTER_EVENT_ID {
+            return Err(ServerError::InvalidRequest(format!(
+                "after_event_id exceeds maximum value of {}",
+                MAX_AFTER_EVENT_ID
+            )));
         }
     }
 
