@@ -22,7 +22,7 @@ Tauri-specific APIs are only for platform integration.
 │  React UI Layer                                            │
 │   ├── Workspace shell                                      │
 │   ├── UnitTask and SubTask views                           │
-│   ├── PR management and review assist                      │
+│   ├── PR management, review assist, and inline comments    │
 │   └── Settings and notifications                           │
 │                                                            │
 │  Data Layer                                                │
@@ -67,6 +67,7 @@ The app maintains a stream subscription per active workspace:
 2. keep last applied sequence
 3. reconnect with `from_sequence`
 4. apply idempotent event reducers
+5. merge `INLINE_COMMENT_UPDATED` events into review diff state
 
 ## Notifications
 
@@ -87,13 +88,23 @@ When a session enters plan wait state:
 3. submit decision through Task API
 4. continue streaming results in the same SubTask timeline
 
+## Inline Comment UX Responsibilities
+
+The client handles inline comments in UnitTask and PR review diff views.
+
+1. render line-level comment anchors from `ListInlineComments`
+2. create comments with `ReviewCommentService.CreateInlineComment`
+3. allow edit, resolve, reopen, and delete actions through review comment APIs
+4. apply `INLINE_COMMENT_UPDATED` stream events to keep threads synchronized
+5. keep inline comment drafts stable while switching tabs
+
 ## Multiline Submit Handling
 
 The client implements unified multiline keyboard handling in the web layer:
 
 1. `Enter` inserts newline in multiline input controls
 2. `Cmd+Enter` submits the associated form
-3. behavior is consistent across UnitTask, SubTask feedback, plan revise, and review inputs
+3. behavior is consistent across UnitTask, SubTask feedback, plan revise, review inputs, and inline comment composer
 4. `Cmd+Enter` handling is stable regardless of current IME language mode
 
 ## Shortcut Registry and Scope

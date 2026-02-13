@@ -105,7 +105,16 @@ Open Review Assist to:
 3. resolve or dismiss items
 4. trigger remediation subtasks
 
-## 12. Notifications
+## 12. Add Inline Comments in Code Review
+
+In UnitTask detail or PR review diff:
+
+1. move to a changed line
+2. add inline comment on that line
+3. submit with `Cmd+Enter`
+4. resolve or reopen comments as review progresses
+
+## 13. Notifications
 
 DeliDev sends:
 
@@ -114,7 +123,7 @@ DeliDev sends:
 
 Manage notification behavior in Settings.
 
-## 13. Product Rules
+## 14. Product Rules
 
 1. DeliDev uses workspace connectivity
 2. all business communication is Connect RPC-based
@@ -122,7 +131,7 @@ Manage notification behavior in Settings.
 4. work is executed through task-specific worktrees
 5. PR creation and Commit to Local use real generated commit chains
 
-## 14. Keyboard Shortcuts
+## 15. Keyboard Shortcuts
 
 All screens provide shortcuts for key items and actions.
 

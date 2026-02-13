@@ -125,6 +125,25 @@ enum ReviewAssistStatus {
 }
 ```
 
+### ReviewInlineCommentStatus
+
+```text
+enum ReviewInlineCommentStatus {
+  OPEN
+  RESOLVED
+  DELETED
+}
+```
+
+### DiffSide
+
+```text
+enum DiffSide {
+  OLD
+  NEW
+}
+```
+
 ### NotificationType
 
 ```text
@@ -147,6 +166,7 @@ enum StreamEventType {
   SESSION_STATE_CHANGED
   PR_UPDATED
   REVIEW_ASSIST_UPDATED
+  INLINE_COMMENT_UPDATED
   NOTIFICATION_CREATED
 }
 ```
@@ -318,6 +338,22 @@ SubTask cancellation semantics:
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
 
+### ReviewInlineComment
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| id | UUID | Y | Comment ID |
+| unitTaskId | UUID | Y | Parent UnitTask |
+| subTaskId | UUID | N | Optional SubTask scope |
+| filePath | string | Y | Relative file path in diff |
+| side | DiffSide | Y | `OLD` or `NEW` diff side |
+| lineNumber | int | Y | Line number in selected diff side |
+| body | string | Y | Comment text |
+| status | ReviewInlineCommentStatus | Y | Comment status |
+| authorUserId | UUID | Y | Author user ID |
+| createdAt | timestamp | Y | Created time |
+| updatedAt | timestamp | Y | Updated time |
+
 ### BadgeTheme
 
 | Field | Type | Required | Description |
@@ -351,6 +387,7 @@ SubTask cancellation semantics:
 5. `SubTask 1:N AgentSession`
 6. `UnitTask 1:N PullRequestTracking`
 7. `PullRequestTracking 1:N ReviewAssistItem`
+8. `UnitTask 1:N ReviewInlineComment`
 
 ## Plan Mode Data Attachment
 

@@ -97,8 +97,9 @@ Core entities:
 6. AgentSession (child of SubTask)
 7. PullRequestTracking
 8. ReviewAssistItem
-9. BadgeTheme and ActionBadge mapping
-10. Notification
+9. ReviewInlineComment
+10. BadgeTheme and ActionBadge mapping
+11. Notification
 
 ## Task Execution Model
 
@@ -181,6 +182,16 @@ Review assist features include:
 2. AI summaries and risk markers
 3. review checklist and suggested questions
 4. unresolved thread and CI signal aggregation
+5. line-level inline comments in code review diff
+
+## Inline Comment Requirement
+
+Code review UI provides inline comments anchored to diff lines.
+
+1. users can add inline comments on specific file and line positions
+2. inline comments can be resolved and reopened through review workflow
+3. inline comment updates are streamed in real time
+4. inline comments are used as input context for `Request Changes` and related SubTasks
 
 ## Stop Running Work
 
@@ -214,7 +225,8 @@ Event families:
 3. session output and state
 4. PR tracking state
 5. review assist updates
-6. notification triggers
+6. inline comment updates
+7. notification triggers
 
 See `docs/event-streaming.md`.
 

@@ -133,6 +133,7 @@ Contains:
 7. `Create PR` action shown after AI diff approval
 8. commit chain viewer for generated commits
 9. stop controls for in-progress UnitTask and SubTask
+10. inline comment threads anchored to diff lines
 
 ### Stop Controls
 
@@ -153,6 +154,7 @@ Applies to:
 2. SubTask feedback and retry prompt input
 3. Plan-mode revise feedback input
 4. PR review assist note and comment input
+5. inline comment composer in code review diff
 
 Behavior:
 
@@ -262,6 +264,27 @@ PR Review Assist shortcuts:
 4. `F`: create remediation subtask
 5. `X`: resolve selected item
 6. `Shift+X`: dismiss selected item
+
+## Code Review Inline Comments
+
+Code review diff view includes line-level inline comment UX.
+
+Requirements:
+
+1. each changed line provides an inline comment entry action
+2. inline comments are anchored by `filePath`, `side`, and `lineNumber`
+3. thread state shows `OPEN` and `RESOLVED` status clearly
+4. users can add, edit, resolve, reopen, and delete inline comments
+5. unresolved inline comment count is visible in diff file list and task summary
+6. inline comment updates are reflected through streaming events without manual refresh
+
+Inline comment shortcuts:
+
+1. `I`: open inline comment composer on focused diff line
+2. `Cmd+Enter`: submit inline comment composer
+3. `R`: reply to selected inline comment thread
+4. `X`: resolve selected inline comment thread
+5. `Shift+X`: reopen selected inline comment thread
 
 ## Plan Mode UX
 

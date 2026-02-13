@@ -25,9 +25,10 @@ All business communication is Connect RPC-based.
 4. `SessionService`
 5. `PrManagementService`
 6. `ReviewAssistService`
-7. `BadgeThemeService`
-8. `NotificationService`
-9. `EventStreamService`
+7. `ReviewCommentService`
+8. `BadgeThemeService`
+9. `NotificationService`
+10. `EventStreamService`
 
 ## WorkspaceService
 
@@ -387,6 +388,68 @@ Request:
 Response:
 - `item: ReviewAssistItem`
 
+## ReviewCommentService
+
+### CreateInlineComment
+
+Request:
+- `unit_task_id: string`
+- `sub_task_id?: string`
+- `file_path: string`
+- `side: DiffSide`
+- `line_number: int32`
+- `body: string`
+
+Response:
+- `comment: ReviewInlineComment`
+
+Rules:
+
+1. comment anchor (`file_path`, `side`, `line_number`) must reference a visible diff line in the current UnitTask context.
+2. successful create emits `INLINE_COMMENT_UPDATED` stream event.
+
+### ListInlineComments
+
+Request:
+- `unit_task_id: string`
+- `sub_task_id?: string`
+- `include_deleted?: bool`
+
+Response:
+- `comments: ReviewInlineComment[]`
+
+Rules:
+
+1. default sort order is `created_at ASC`.
+2. comments are scoped to the requested UnitTask.
+
+### UpdateInlineComment
+
+Request:
+- `comment_id: string`
+- `body: string`
+
+Response:
+- `comment: ReviewInlineComment`
+
+Rule:
+
+1. successful update emits `INLINE_COMMENT_UPDATED` stream event.
+
+### SetInlineCommentStatus
+
+Request:
+- `comment_id: string`
+- `status: ReviewInlineCommentStatus`
+
+Response:
+- `comment: ReviewInlineComment`
+
+Rules:
+
+1. allowed status transitions: `OPEN <-> RESOLVED`, `OPEN -> DELETED`, `RESOLVED -> DELETED`.
+2. successful status change emits `INLINE_COMMENT_UPDATED` stream event.
+
 ## BadgeThemeService
 
 ### ListBadgeThemes
@@ -451,7 +514,8 @@ Payload variants:
 4. `SessionStateChangedEvent`
 5. `PrUpdatedEvent`
 6. `ReviewAssistUpdatedEvent`
-7. `NotificationCreatedEvent`
+7. `InlineCommentUpdatedEvent`
+8. `NotificationCreatedEvent`
 
 ## Errors
 

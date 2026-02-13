@@ -40,7 +40,13 @@ Event propagation uses Redis as the required transport backbone.
 4. `SESSION_STATE_CHANGED`
 5. `PR_UPDATED`
 6. `REVIEW_ASSIST_UPDATED`
-7. `NOTIFICATION_CREATED`
+7. `INLINE_COMMENT_UPDATED`
+8. `NOTIFICATION_CREATED`
+
+Inline comment event rules:
+
+1. create, edit, resolve/reopen, and delete operations emit `INLINE_COMMENT_UPDATED`
+2. payload includes anchor (`filePath`, `side`, `lineNumber`) and status
 
 ## Replay and Resume
 

@@ -14,7 +14,8 @@ DeliDev includes polling-based PR management for PRs created by DeliDev tasks.
 
 1. `PullRequestTracking`
 2. `ReviewAssistItem`
-3. `SubTask` with type `PR_CREATE`, `PR_REVIEW_FIX`, or `PR_CI_FIX`
+3. `ReviewInlineComment`
+4. `SubTask` with type `PR_CREATE`, `PR_REVIEW_FIX`, or `PR_CI_FIX`
 
 See `docs/entities.md`.
 
@@ -74,6 +75,8 @@ See `docs/entities.md`.
 2. quick action buttons for manual fix and policy toggle
 3. clear display of attempt budget and recent outcomes
 4. deep links to task, subtask, and PR
+5. code review diff view supports line-level inline comments
+6. unresolved inline comment count is surfaced in task/PR review context
 
 ## Logging Requirements
 

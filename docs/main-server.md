@@ -10,8 +10,9 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 3. UnitTask and SubTask orchestration state
 4. PR tracking and polling scheduler
 5. review-assist generation and updates
-6. event stream fan-out to clients
-7. worker coordination, job dispatch, and cancellation propagation
+6. inline comment lifecycle for code review diff
+7. event stream fan-out to clients
+8. worker coordination, job dispatch, and cancellation propagation
 
 ## Architecture
 
@@ -26,6 +27,7 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 │   ├── SessionService                                         │
 │   ├── PrManagementService                                    │
 │   ├── ReviewAssistService                                    │
+│   ├── ReviewCommentService                                   │
 │   ├── BadgeThemeService                                      │
 │   ├── NotificationService                                    │
 │   └── EventStreamService                                     │
@@ -61,9 +63,10 @@ Main server stores and owns:
 6. AgentSession metadata and log pointers
 7. PR tracking state and auto-fix counters
 8. review assist items
-9. badge theme settings
-10. notification records
-11. event sequence offsets
+9. review inline comments and status
+10. badge theme settings
+11. notification records
+12. event sequence offsets
 
 ## Task Orchestration Flow
 
