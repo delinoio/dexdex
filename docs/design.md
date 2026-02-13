@@ -58,6 +58,7 @@ Main server supports PostgreSQL and SQLite.
 ## Connect RPC First Rule
 
 All business data and control flows use Connect RPC.
+Web client data access uses `@connectrpc/connect-query` with React Query patterns.
 
 Tauri-native bindings are used only for platform integration:
 
@@ -67,6 +68,12 @@ Tauri-native bindings are used only for platform integration:
 4. deep links
 
 Business operations (task, repository, workspace, PR, review, streaming, settings) are not Tauri-only contracts.
+
+Web client rule:
+
+1. unary RPCs are consumed through `@connectrpc/connect-query` query and mutation hooks
+2. caching, refetch, and invalidation follow React Query (`@tanstack/react-query`) patterns
+3. ad-hoc `fetch` or component-local RPC calls are not used for business data flows
 
 ## Workspace Model
 

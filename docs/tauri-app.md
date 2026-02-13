@@ -26,9 +26,9 @@ Tauri-specific APIs are only for platform integration.
 │   └── Settings and notifications                           │
 │                                                            │
 │  Data Layer                                                │
-│   ├── Connect RPC clients                                  │
+│   ├── `@connectrpc/connect-query` RPC hooks                │
 │   ├── Stream subscriber                                    │
-│   └── Query and cache store                                │
+│   └── React Query cache store (`@tanstack/react-query`)    │
 │                                                            │
 │  Tauri Bridge                                              │
 │   ├── keychain wrappers                                    │
@@ -68,6 +68,16 @@ The app maintains a stream subscription per active workspace:
 3. reconnect with `from_sequence`
 4. apply idempotent event reducers
 5. merge `INLINE_COMMENT_UPDATED` events into review diff state
+
+## Web Data Access Pattern
+
+The web client uses `@connectrpc/connect-query` with React Query patterns.
+
+1. all unary business RPCs are consumed via generated connect-query hooks
+2. query keys are workspace-scoped to avoid cross-workspace cache leaks
+3. mutations use React Query invalidation/update patterns for consistency
+4. components do not call ad-hoc `fetch` for business APIs
+5. stream events update or invalidate React Query caches for near-real-time views
 
 ## Notifications
 

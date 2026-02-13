@@ -16,6 +16,9 @@ This guide describes the development setup for DeliDev.
 3. Rust toolchain for Tauri host
 4. Docker or Podman for worker execution
 5. Redis server for event propagation
+6. frontend RPC/query dependencies:
+- `@connectrpc/connect-query`
+- `@tanstack/react-query`
 
 ## Bootstrap
 
@@ -76,3 +79,4 @@ Database URL options:
 
 1. validate business flows via Connect RPC, not Tauri-only shortcuts
 2. direct local-folder execution is unsupported; use worktree-based execution only
+3. frontend business data calls should use `@connectrpc/connect-query` hooks with React Query patterns
