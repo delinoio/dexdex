@@ -48,12 +48,19 @@ This document is the primary architecture reference.
 - `apps/tauri-app/` (Tauri + React)
 - single root `go.mod` for server apps
 
-## Database Strategy
+## Deployment Profiles
 
-Main server supports PostgreSQL and SQLite.
+Main server supports two deployment profiles.
 
-1. PostgreSQL is the recommended default database.
-2. SQLite is supported for local endpoint deployments.
+1. Single-instance mode:
+- database: SQLite
+- event propagation: in-memory event broker in main-server process
+- target: local/simple deployments
+
+2. Scale mode:
+- database: PostgreSQL
+- event propagation: Redis streams and pub/sub
+- target: shared/multi-instance deployments
 
 ## Connect RPC First Rule
 
@@ -233,7 +240,10 @@ See `docs/plan-yaml.md`.
 ## Event Streaming
 
 DeliDev uses event streaming for low-latency UI updates and automation triggers.
-Main server uses Redis to propagate and replay events.
+Main server supports two event propagation backends by deployment mode.
+
+1. single-instance mode: in-memory event propagation
+2. scale mode: Redis-based propagation and replay
 
 Event families:
 

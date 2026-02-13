@@ -6,7 +6,7 @@ DeliDev uses server-streamed workspace events for near-real-time synchronization
 
 1. minimize polling in client UI for task and PR state
 2. provide consistent event payloads across desktop and mobile
-3. support replay and reconnection without data loss
+3. support replay and reconnection within the selected backbone retention boundaries
 
 ## Stream Endpoint
 
@@ -14,14 +14,20 @@ DeliDev uses server-streamed workspace events for near-real-time synchronization
 - Request: `workspace_id`, optional `from_sequence`
 - Response: stream of `WorkspaceEventEnvelope`
 
-## Redis Backbone
+## Event Backbone Modes
 
-Event propagation uses Redis as the required transport backbone.
+Event propagation backend depends on main-server deployment mode.
 
-1. Redis Streams store ordered workspace event envelopes
-2. Redis pub/sub propagates fresh events to active stream handlers
-3. stream resume uses Redis stream offsets and workspace sequence mapping
-4. replay and reconnect behavior is defined against Redis retention policy
+1. `SINGLE_INSTANCE` mode:
+- in-memory broker propagates events within one main-server process
+- no Redis dependency
+- replay window is limited to in-process retained envelopes
+
+2. `SCALE` mode:
+- Redis Streams store ordered workspace event envelopes
+- Redis pub/sub propagates fresh events to active stream handlers
+- stream resume uses Redis stream offsets and workspace sequence mapping
+- replay and reconnect behavior is defined against Redis retention policy
 
 ## Envelope Contract
 
@@ -59,7 +65,7 @@ Inline comment event rules:
 1. client stores last applied sequence
 2. on reconnect, client sends `from_sequence = last + 1`
 3. server replays retained events from that point
-4. if sequence is too old for retention, server returns resync-required error
+4. if the sequence is unavailable (retention exceeded or process restart in single-instance mode), server returns resync-required error
 
 ## Ordering and Idempotency
 

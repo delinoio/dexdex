@@ -41,9 +41,10 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 │   └── WorkerRouter                                           │
 │                                                              │
 │  Storage                                                     │
-│   ├── PostgreSQL (recommended)                               │
-│   ├── SQLite (supported for local deployments)               │
-│   └── Redis (required: event propagation and replay)          │
+│   ├── SQLite (single-instance mode)                          │
+│   ├── PostgreSQL (scale mode)                                │
+│   ├── In-memory event broker (single-instance mode)          │
+│   └── Redis (scale mode; optional otherwise)                 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -102,16 +103,36 @@ Event broker requirements:
 1. monotonic sequence per workspace
 2. replay from sequence cursor
 3. best-effort fan-out to connected clients
-4. durable enqueue before publish
+4. durable enqueue before publish in `SCALE` mode
 
-## Redis Event Propagation
+## Deployment Modes
 
-Main server uses Redis as the required event backbone.
+Main server supports two deployment modes.
 
-1. publish every domain event to Redis stream channels
-2. use Redis pub/sub fan-out for connected stream workers
-3. persist ordered event envelopes with sequence metadata
-4. replay from Redis stream offsets on reconnect
+1. `SINGLE_INSTANCE`:
+- use SQLite as primary database
+- use in-memory event propagation inside the main-server process
+- no Redis dependency required
+
+2. `SCALE`:
+- use PostgreSQL as primary database
+- use Redis as event propagation and replay backbone
+- designed for multi-instance/shared deployments
+
+## Event Propagation Backends
+
+Event broker backend depends on deployment mode.
+
+1. in-memory backend (`SINGLE_INSTANCE`):
+- publish and subscribe in process memory
+- supports single-process fan-out
+- replay is limited to process lifetime
+
+2. Redis backend (`SCALE`):
+- publish domain events to Redis streams
+- use Redis pub/sub fan-out for connected stream workers
+- persist ordered event envelopes with sequence metadata
+- replay from Redis stream offsets on reconnect
 
 ## Worker Coordination
 
@@ -133,10 +154,10 @@ Main server consumes only normalized agent message contracts from worker.
 
 ## Database Support
 
-Main server supports both PostgreSQL and SQLite.
+Main server supports both PostgreSQL and SQLite by deployment mode.
 
-1. PostgreSQL is the recommended database for shared and production deployments.
-2. SQLite is supported for local and single-node deployments.
+1. `SINGLE_INSTANCE`: SQLite recommended.
+2. `SCALE`: PostgreSQL required and recommended.
 3. Both backends use the same logical schema and migration policy.
 
 ## Authentication and Authorization
@@ -149,19 +170,26 @@ Main server supports both PostgreSQL and SQLite.
 
 | Key | Required | Description |
 |---|---|---|
+| `DELIDEV_DEPLOYMENT_MODE` | Y | `SINGLE_INSTANCE` or `SCALE` |
 | `DELIDEV_HTTP_ADDR` | Y | Connect RPC bind address |
-| `DELIDEV_DATABASE_URL` | Y | PostgreSQL or SQLite DSN (PostgreSQL recommended) |
-| `DELIDEV_REDIS_URL` | Y | Redis connection URL for event propagation |
-| `DELIDEV_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace event streams |
+| `DELIDEV_DATABASE_URL` | Y | SQLite DSN (`SINGLE_INSTANCE`) or PostgreSQL DSN (`SCALE`) |
+| `DELIDEV_REDIS_URL` | N | Redis connection URL (required only in `SCALE`) |
+| `DELIDEV_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace streams (`SCALE` only) |
 | `DELIDEV_WORKER_RPC_TIMEOUT` | N | Worker call timeout |
 | `DELIDEV_PR_POLL_INTERVAL_SEC` | N | PR polling interval |
 | `DELIDEV_AUTH_ISSUER_URL` | N | OIDC issuer |
 | `DELIDEV_AUTH_AUDIENCE` | N | expected token audience |
 
-Database URL examples:
+Deployment examples:
 
-1. PostgreSQL (recommended): `postgres://localhost:5432/delidev`
-2. SQLite (local): `sqlite:///Users/<user>/.delidev/main-server.db`
+1. `SINGLE_INSTANCE`:
+- `DELIDEV_DEPLOYMENT_MODE=SINGLE_INSTANCE`
+- `DELIDEV_DATABASE_URL=sqlite:///Users/<user>/.delidev/main-server.db`
+
+2. `SCALE`:
+- `DELIDEV_DEPLOYMENT_MODE=SCALE`
+- `DELIDEV_DATABASE_URL=postgres://localhost:5432/delidev`
+- `DELIDEV_REDIS_URL=redis://localhost:6379/0`
 
 ## Logging and Metrics
 

@@ -15,8 +15,9 @@ This guide describes the development setup for DeliDev.
 2. Node.js + pnpm
 3. Rust toolchain for Tauri host
 4. Docker or Podman for worker execution
-5. Redis server for event propagation
-6. frontend RPC/query dependencies:
+5. SQLite for single-instance mode
+6. PostgreSQL + Redis for scale mode
+7. frontend RPC/query dependencies:
 - `@connectrpc/connect-query`
 - `@tanstack/react-query`
 
@@ -56,22 +57,30 @@ This guide describes the development setup for DeliDev.
 
 | Key | Example |
 |---|---|
+| `DELIDEV_DEPLOYMENT_MODE` | `SINGLE_INSTANCE` |
 | `DELIDEV_HTTP_ADDR` | `127.0.0.1:4621` |
-| `DELIDEV_DATABASE_URL` | `postgres://localhost:5432/delidev` |
-| `DELIDEV_REDIS_URL` | `redis://localhost:6379/0` |
+| `DELIDEV_DATABASE_URL` | `sqlite:///Users/<user>/.delidev/main-server.db` |
+| `DELIDEV_REDIS_URL` | `(unset for SINGLE_INSTANCE)` |
 | `DELIDEV_PR_POLL_INTERVAL_SEC` | `30` |
 | `DELIDEV_WORKTREE_ROOT` | `~/.delidev/worktrees` |
 
-Database URL options:
+Deployment mode options:
 
-1. Recommended (PostgreSQL): `postgres://localhost:5432/delidev`
-2. Local alternative (SQLite): `sqlite:///Users/<user>/.delidev/main-server.db`
+1. Single-instance mode:
+- `DELIDEV_DEPLOYMENT_MODE=SINGLE_INSTANCE`
+- `DELIDEV_DATABASE_URL=sqlite:///Users/<user>/.delidev/main-server.db`
+- Redis is not required
+
+2. Scale mode:
+- `DELIDEV_DEPLOYMENT_MODE=SCALE`
+- `DELIDEV_DATABASE_URL=postgres://localhost:5432/delidev`
+- `DELIDEV_REDIS_URL=redis://localhost:6379/0`
 
 ## Validation Checklist
 
 1. client can create and switch workspaces
 2. UnitTask can start and produce session logs
-3. event stream reconnect works after server restart
+3. event stream reconnect/resync works after server restart
 4. PR polling updates appear in PR Management
 5. Web Notification permission flow works
 
