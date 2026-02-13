@@ -86,6 +86,16 @@ The client implements unified multiline keyboard handling in the web layer:
 2. `Cmd+Enter` submits the associated form
 3. behavior is consistent across UnitTask, SubTask feedback, plan revise, and review inputs
 
+## Shortcut Registry and Scope
+
+The client maintains a centralized shortcut registry.
+
+1. global shortcuts are active across the app shell
+2. screen-scoped shortcuts activate only when that screen is focused
+3. shortcut collisions are resolved by scope priority (modal > screen > global)
+4. every primary item action exposed in UI has an associated shortcut entry
+5. each primary screen (Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications) registers its own shortcut set
+
 ## Approved Diff Create PR Action
 
 When a user approves AI diff in UnitTask detail:

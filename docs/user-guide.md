@@ -103,3 +103,18 @@ Manage notification behavior in Settings.
 3. direct local folder execution is not supported
 4. work is executed through task-specific worktrees
 5. PR creation and Commit to Local use real generated commit chains
+
+## 12. Keyboard Shortcuts
+
+All screens provide shortcuts for key items and actions.
+
+Common shortcuts:
+
+1. `Cmd+K`: command palette
+2. `Cmd+N`: new UnitTask
+3. `J` / `K`: move selection in lists
+4. `Enter`: open selected item
+5. `Cmd+Enter`: submit multiline forms
+6. `?`: open shortcut cheat sheet
+
+Each primary screen also has dedicated item/action shortcuts shown in the UI hints.

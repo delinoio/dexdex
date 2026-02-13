@@ -224,6 +224,15 @@ Design implications:
 All multiline form inputs must support `Cmd+Enter` submit behavior.
 This is a product-wide interaction rule and applies across task, plan, review, and PR workflows.
 
+## Screen Shortcut Invariant
+
+Every screen includes appropriate keyboard shortcuts for its primary items and actions.
+
+1. list navigation and item-open shortcuts are required on list/detail screens
+2. primary action buttons require direct keyboard shortcuts
+3. shortcuts must be discoverable in UI labels, tooltips, or a shortcut cheat sheet
+4. all primary screens are covered: Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications Center
+
 ## Observability and Logging
 
 Server-side structured logging is required for:

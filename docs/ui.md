@@ -41,6 +41,34 @@ Mobile layout:
 5. Settings
 6. Notifications Center
 
+## Keyboard Shortcut System
+
+Every screen provides appropriate shortcuts for its primary items and actions.
+
+Notation rule:
+
+1. shortcut notation uses macOS style (`Cmd`, `Option`, `Shift`)
+2. non-mac platforms map `Cmd` to `Ctrl`
+
+Global shortcuts:
+
+1. `Cmd+K`: open command palette
+2. `Cmd+1`: go to Workspace Home
+3. `Cmd+2`: go to PR Management
+4. `Cmd+3`: go to PR Review Assist
+5. `Cmd+,`: open Settings
+6. `Cmd+N`: create UnitTask
+7. `Cmd+B`: toggle sidebar
+8. `?`: open shortcut cheat sheet
+9. `Esc`: close modal, drawer, or inline editor
+
+Screen shortcut coverage rule:
+
+1. each list screen supports next and previous item navigation (`J` / `K`)
+2. each selected item supports open action (`Enter`)
+3. each primary button action has a dedicated shortcut
+4. shortcut hints are shown in tooltip, menu, or action label
+
 ## Workspace Home
 
 Shows actionable work first.
@@ -59,6 +87,14 @@ Each card includes:
 3. status
 4. action badges
 5. latest subtask or session timestamp
+
+Workspace Home shortcuts:
+
+1. `J` / `K`: move selected card
+2. `Enter`: open selected task or PR item
+3. `A`: focus Action Required queue
+4. `I`: focus In Progress queue
+5. `P`: focus PR Attention queue
 
 ## UnitTask Detail
 
@@ -100,6 +136,16 @@ When a user approves the AI diff in UnitTask detail:
 4. stream the SubTask and AgentSession progress in the same timeline
 5. render generated real commit list in order
 6. update PR tracking state after creation
+
+UnitTask Detail shortcuts:
+
+1. `A`: approve current diff
+2. `R`: request changes
+3. `Shift+P`: create PR (when approval condition is met)
+4. `C`: commit to local (when available)
+5. `L`: toggle session log panel
+6. `D`: toggle diff panel
+7. `[` / `]`: move to previous or next changed file
 
 ### Commit Chain Panel
 
@@ -150,6 +196,15 @@ Primary actions:
 3. `Disable Auto-Fix`
 4. `Open PR`
 
+PR Management shortcuts:
+
+1. `J` / `K`: move selected PR row
+2. `Enter`: open selected PR detail
+3. `F`: run `Fix with Agent`
+4. `E`: toggle auto-fix policy for selected PR
+5. `O`: open selected PR in provider page
+6. `R`: refresh selected PR state
+
 ## PR Review Assist Screen
 
 Displays review guidance items grouped by urgency and type.
@@ -161,6 +216,14 @@ Each item includes:
 3. links to code and PR context
 4. quick action to create remediation subtask
 
+PR Review Assist shortcuts:
+
+1. `J` / `K`: move selected review assist item
+2. `Enter`: open selected item detail
+3. `F`: create remediation subtask
+4. `X`: resolve selected item
+5. `Shift+X`: dismiss selected item
+
 ## Plan Mode UX
 
 When plan mode is active for a subtask:
@@ -170,12 +233,31 @@ When plan mode is active for a subtask:
 3. require explicit decision before execution continues
 4. preserve the full plan conversation in session timeline
 
+Plan Mode shortcuts:
+
+1. `A`: approve plan
+2. `V`: open revise input
+3. `Shift+X`: reject plan
+
 ## Notifications UX
 
 1. bell icon with unread count
 2. notification center list with deep links
 3. Web Notification API permission prompt flow
 4. duplicate prevention by event sequence
+
+Notifications Center shortcuts:
+
+1. `J` / `K`: move selected notification
+2. `Enter`: open deep link for selected notification
+3. `M`: mark selected notification as read
+4. `Shift+M`: mark all visible notifications as read
+
+Settings shortcuts:
+
+1. `/`: focus settings search input
+2. `Cmd+S`: save settings form
+3. `R`: reset current settings section
 
 ## Accessibility Baseline
 
