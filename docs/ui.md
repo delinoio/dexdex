@@ -23,14 +23,16 @@ Inspired by Codex Desktop style:
 Desktop layout:
 
 1. Left rail: workspace and navigation
-2. Center pane: task and PR list with filters
-3. Right pane: details, timeline, and actions
+2. Top tab bar: opened items and tab actions
+3. Center pane: task and PR list with filters
+4. Right pane: details, timeline, and actions
 
 Mobile layout:
 
 1. top segmented tabs (Tasks, PRs, Review Assist, Notifications)
 2. stacked detail drawers and sheets
 3. persistent action bar for primary actions
+4. tab switcher sheet for opened item tabs
 
 ## Primary Screens
 
@@ -40,6 +42,18 @@ Mobile layout:
 4. PR Review Assist
 5. Settings
 6. Notifications Center
+
+## Multi-Tab Workspace
+
+DeliDev provides multi-tab UI for working with multiple items in parallel.
+
+Tab rules:
+
+1. any opened item (UnitTask, SubTask context, PR item, review assist item, settings page) opens in a tab
+2. users can switch, reorder, and close tabs without losing unsaved input state
+3. each tab shows state indicators (running, action required, unread update)
+4. tab state is scoped per workspace and restored on relaunch
+5. overflow tabs are accessible from a tab list menu
 
 ## Keyboard Shortcut System
 
@@ -51,6 +65,7 @@ Notation rule:
 2. non-mac platforms map `Cmd` to `Ctrl`
 3. shortcut matching uses physical key codes, not localized character output
 4. shortcuts work regardless of current language input mode (Korean/English IME)
+5. context-sensitive shortcuts (for example `Cmd+Enter`) resolve by focused control type
 
 Global shortcuts:
 
@@ -61,16 +76,21 @@ Global shortcuts:
 5. `Cmd+,`: open Settings
 6. `Cmd+N`: create UnitTask
 7. `Cmd+B`: toggle sidebar
-8. `?`: open shortcut cheat sheet
-9. `Esc`: close modal, drawer, or inline editor
+8. `Cmd+T`: open new tab
+9. `Cmd+W`: close current tab
+10. `Cmd+Shift+[`: switch to previous tab
+11. `Cmd+Shift+]`: switch to next tab
+12. `?`: open shortcut cheat sheet
+13. `Esc`: close modal, drawer, or inline editor
 
 Screen shortcut coverage rule:
 
 1. each list screen supports next and previous item navigation (`J` / `K`)
 2. each selected item supports open action (`Enter`)
-3. each primary button action has a dedicated shortcut
-4. shortcut hints are shown in tooltip, menu, or action label
-5. active shortcuts must still trigger under IME language switching
+3. each selected item supports open in new tab (`Cmd+Enter`)
+4. each primary button action has a dedicated shortcut
+5. shortcut hints are shown in tooltip, menu, or action label
+6. active shortcuts must still trigger under IME language switching
 
 ## Workspace Home
 
@@ -95,9 +115,10 @@ Workspace Home shortcuts:
 
 1. `J` / `K`: move selected card
 2. `Enter`: open selected task or PR item
-3. `A`: focus Action Required queue
-4. `I`: focus In Progress queue
-5. `P`: focus PR Attention queue
+3. `Cmd+Enter`: open selected task or PR item in new tab
+4. `A`: focus Action Required queue
+5. `I`: focus In Progress queue
+6. `P`: focus PR Attention queue
 
 ## UnitTask Detail
 
@@ -216,10 +237,11 @@ PR Management shortcuts:
 
 1. `J` / `K`: move selected PR row
 2. `Enter`: open selected PR detail
-3. `F`: run `Fix with Agent`
-4. `E`: toggle auto-fix policy for selected PR
-5. `O`: open selected PR in provider page
-6. `R`: refresh selected PR state
+3. `Cmd+Enter`: open selected PR detail in new tab
+4. `F`: run `Fix with Agent`
+5. `E`: toggle auto-fix policy for selected PR
+6. `O`: open selected PR in provider page
+7. `R`: refresh selected PR state
 
 ## PR Review Assist Screen
 
@@ -236,9 +258,10 @@ PR Review Assist shortcuts:
 
 1. `J` / `K`: move selected review assist item
 2. `Enter`: open selected item detail
-3. `F`: create remediation subtask
-4. `X`: resolve selected item
-5. `Shift+X`: dismiss selected item
+3. `Cmd+Enter`: open selected item detail in new tab
+4. `F`: create remediation subtask
+5. `X`: resolve selected item
+6. `Shift+X`: dismiss selected item
 
 ## Plan Mode UX
 

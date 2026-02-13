@@ -42,7 +42,16 @@ Multiline input tip:
 1. use `Cmd+Enter` to submit any multiline form
 2. use `Enter` for a new line
 
-## 5. Stop Running Work
+## 5. Work with Multiple Tabs
+
+You can open and manage multiple item tabs in parallel:
+
+1. open an item with `Enter` or open in a new tab with `Cmd+Enter`
+2. create an empty tab with `Cmd+T`
+3. move between tabs with `Cmd+Shift+[` and `Cmd+Shift+]`
+4. close current tab with `Cmd+W`
+
+## 6. Stop Running Work
 
 You can stop running work immediately:
 
@@ -50,7 +59,7 @@ You can stop running work immediately:
 2. in SubTask timeline, click `Stop SubTask` on a running subtask
 3. wait for status to change to `CANCELLED` from stream updates
 
-## 6. Handle Action Badges
+## 7. Handle Action Badges
 
 When user action is needed, UnitTask shows badges such as:
 
@@ -60,7 +69,7 @@ When user action is needed, UnitTask shows badges such as:
 
 Badge colors depend on workspace badge settings.
 
-## 7. Use Plan Mode
+## 8. Use Plan Mode
 
 If the session enters plan wait:
 
@@ -68,7 +77,7 @@ If the session enters plan wait:
 2. choose `Approve`, `Revise`, or `Reject`
 3. optionally add revise feedback
 
-## 8. Create PR After Diff Approval
+## 9. Create PR After Diff Approval
 
 After you approve the AI diff in UnitTask detail:
 
@@ -78,7 +87,7 @@ After you approve the AI diff in UnitTask detail:
 4. worker creates real git commits for the result
 5. PR appears in PR Management when completed
 
-## 9. Manage PRs
+## 10. Manage PRs
 
 Open PR Management to:
 
@@ -87,7 +96,7 @@ Open PR Management to:
 3. run `Fix with Agent`
 4. enable or disable auto-fix policy
 
-## 10. Use Review Assist
+## 11. Use Review Assist
 
 Open Review Assist to:
 
@@ -96,7 +105,7 @@ Open Review Assist to:
 3. resolve or dismiss items
 4. trigger remediation subtasks
 
-## 11. Notifications
+## 12. Notifications
 
 DeliDev sends:
 
@@ -105,7 +114,7 @@ DeliDev sends:
 
 Manage notification behavior in Settings.
 
-## 12. Product Rules
+## 13. Product Rules
 
 1. DeliDev uses workspace connectivity
 2. all business communication is Connect RPC-based
@@ -113,7 +122,7 @@ Manage notification behavior in Settings.
 4. work is executed through task-specific worktrees
 5. PR creation and Commit to Local use real generated commit chains
 
-## 13. Keyboard Shortcuts
+## 14. Keyboard Shortcuts
 
 All screens provide shortcuts for key items and actions.
 
@@ -124,7 +133,11 @@ Common shortcuts:
 3. `J` / `K`: move selection in lists
 4. `Enter`: open selected item
 5. `Cmd+Enter`: submit multiline forms
-6. `?`: open shortcut cheat sheet
+6. `Cmd+T`: new tab
+7. `Cmd+W`: close current tab
+8. `Cmd+Shift+[` / `Cmd+Shift+]`: previous and next tab
+9. `?`: open shortcut cheat sheet
 
 Each primary screen also has dedicated item/action shortcuts shown in the UI hints.
 All shortcuts work regardless of Korean/English input mode.
+Some shortcuts are context-sensitive based on focused control (for example `Cmd+Enter`).

@@ -238,6 +238,15 @@ Design implications:
 3. notification and streaming strategy must work with mobile runtime constraints
 4. workspace onboarding and PR remediation actions must be touch-friendly
 
+## Multi-Tab UI Invariant
+
+The client provides multi-tab UI so users can work on multiple items concurrently.
+
+1. detail views and workflow pages open as tabs in the app shell
+2. tab state is persisted per workspace
+3. tab switching does not discard running context or unsaved draft input
+4. tab state indicators surface running/action-required/unread-update signals
+
 ## Keyboard Input Rule
 
 All multiline form inputs must support `Cmd+Enter` submit behavior.
@@ -253,6 +262,7 @@ Every screen includes appropriate keyboard shortcuts for its primary items and a
 3. shortcuts must be discoverable in UI labels, tooltips, or a shortcut cheat sheet
 4. all primary screens are covered: Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications Center
 5. shortcut matching uses physical key codes and modifiers so behavior is stable across input language modes
+6. tab management shortcuts are required (`new`, `close`, `previous`, `next`)
 
 ## Observability and Logging
 

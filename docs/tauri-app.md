@@ -38,6 +38,15 @@ Tauri-specific APIs are only for platform integration.
 └────────────────────────────────────────────────────────────┘
 ```
 
+## Tab State Management
+
+The client maintains workspace-scoped tab state in the UI store.
+
+1. each opened item route is represented as a tab entry
+2. tab order and active tab are persisted per workspace
+3. draft form state is preserved while switching tabs
+4. tab badge state tracks running/action-required/unread updates
+
 ## Workspace UX Model
 
 The client exposes workspace switching.
@@ -99,6 +108,8 @@ The client maintains a centralized shortcut registry.
 6. shortcut matching uses `KeyboardEvent.code` + modifiers, not locale-dependent character output
 7. shortcut execution is independent of Korean/English input mode switching
 8. stop actions for in-progress UnitTask and SubTask are included in screen shortcut sets
+9. tab management actions (`Cmd+T`, `Cmd+W`, `Cmd+Shift+[`, `Cmd+Shift+]`) are handled at app-shell scope
+10. context-sensitive shortcuts (such as `Cmd+Enter`) are resolved by focused element role
 
 ## Approved Diff Create PR Action
 
