@@ -192,6 +192,7 @@ Usage rule:
 1. after AI diff approval, `Create PR` button uses this API
 2. request uses `type = PR_CREATE`
 3. prompt is `Create A PR` for the default PR creation action
+4. subtask execution output must include real git commits (one or more) when code changes exist
 
 ### ListSubTasks
 
@@ -200,6 +201,19 @@ Request:
 
 Response:
 - `sub_tasks: SubTask[]`
+
+### ListSubTaskCommits
+
+Request:
+- `sub_task_id: string`
+
+Response:
+- `commits: GeneratedCommit[]`
+
+Rules:
+
+1. commits are returned in execution order
+2. this commit list is the source of truth for PR creation and Commit to Local
 
 ### RetrySubTask
 

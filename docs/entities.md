@@ -200,9 +200,14 @@ enum StreamEventType {
 | status | UnitTaskStatus | Y | Current status |
 | actionTypes | ActionType[] | Y | Current required actions |
 | prTrackingIds | UUID[] | Y | Related PR tracking entries |
+| latestCommitSha | string | N | Latest commit SHA generated for this task branch |
+| generatedCommitCount | int | Y | Total number of generated commits across subtasks |
 | latestPatchRef | string | N | Reference to persisted patch artifact |
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
+
+`latestPatchRef` is a derived artifact for diff rendering.
+The authoritative source for PR creation and Commit to Local is the real git commit chain (`generatedCommits`).
 
 ### SubTask
 
@@ -215,8 +220,21 @@ enum StreamEventType {
 | status | SubTaskStatus | Y | Current status |
 | planModeEnabled | bool | Y | Uses plan-mode interaction |
 | targetActionType | ActionType | N | Action this subtask resolves |
+| baseCommitSha | string | N | Branch HEAD SHA before this subtask started |
+| headCommitSha | string | N | Branch HEAD SHA after this subtask completed |
+| generatedCommits | GeneratedCommit[] | Y | Ordered real git commit chain produced by this subtask |
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
+
+### GeneratedCommit
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| sha | string | Y | Commit SHA |
+| parentShas | string[] | Y | Parent commit SHAs |
+| title | string | Y | Commit subject line |
+| body | string | N | Commit body |
+| authoredAt | timestamp | Y | Commit authored time |
 
 ### AgentSession
 

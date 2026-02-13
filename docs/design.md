@@ -126,6 +126,16 @@ UnitTask
         └── AgentSession #4
 ```
 
+## Commit Chain Invariant
+
+Worker-produced code changes must be represented as real git commits.
+
+1. Every SubTask that changes code produces one or more real commits in the task worktree branch.
+2. Multi-step changes should be split into multiple commits, not squashed into one patch-only result.
+3. Commit order is preserved and stored as SubTask commit chain metadata.
+4. PR creation and Commit to Local use this commit chain as the source of truth.
+5. Patch artifacts are derived from commits for diff viewing and are not authoritative.
+
 ## Worktree-Only Policy
 
 DeliDev does not support editing directly against arbitrary local folders.
@@ -135,7 +145,7 @@ All code execution paths must:
 1. resolve repository through workspace-scoped repository settings
 2. materialize task-specific git worktree
 3. execute agent operations in that worktree
-4. persist patch and commit metadata
+4. persist real git commit chain and commit metadata
 5. cleanup or archive worktree by retention policy
 
 ## PR Management
@@ -145,9 +155,11 @@ PR management is part of the standard lifecycle:
 1. DeliDev tracks PRs created by DeliDev tasks.
 2. When a user approves AI diff on a UnitTask, UI shows a `Create PR` button.
 3. Clicking `Create PR` creates a SubTask with type `PR_CREATE` and prompt `Create A PR`.
-4. Pollers fetch PR state, review comments, and CI status.
-5. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
-6. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
+4. PR creation uses the SubTask real commit chain, not a synthetic patch-only payload.
+5. Commit to Local also applies the same commit chain into the destination repository.
+6. Pollers fetch PR state, review comments, and CI status.
+7. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
+8. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
 
 See `docs/pr-management.md`.
 

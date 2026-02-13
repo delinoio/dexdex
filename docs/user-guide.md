@@ -33,7 +33,7 @@ In UnitTask detail:
 
 1. SubTask status timeline
 2. AgentSession logs
-3. generated patch summary
+3. generated commit chain summary
 4. action badges
 
 ## 5. Handle Action Badges
@@ -61,7 +61,8 @@ After you approve the AI diff in UnitTask detail:
 1. click `Create PR`
 2. DeliDev starts SubTask `PR_CREATE`
 3. coding agent receives prompt `Create A PR`
-4. PR appears in PR Management when completed
+4. worker creates real git commits for the result
+5. PR appears in PR Management when completed
 
 ## 8. Manage PRs
 
@@ -96,3 +97,4 @@ Manage notification behavior in Settings.
 2. all business communication is Connect RPC-based
 3. direct local folder execution is not supported
 4. work is executed through task-specific worktrees
+5. PR creation and Commit to Local use real generated commit chains

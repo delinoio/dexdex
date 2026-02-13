@@ -86,6 +86,7 @@ When a user approves AI diff in UnitTask detail:
 2. button triggers `TaskService.CreateSubTask`
 3. request uses `type = PR_CREATE` and prompt `Create A PR`
 4. resulting SubTask and AgentSession are streamed in existing task timeline
+5. PR creation uses generated real commit chain from the SubTask
 
 ## Offline and Recovery Behavior
 

@@ -71,6 +71,7 @@ Contains:
 5. patch and diff preview
 6. plan-mode decision controls when active
 7. `Create PR` action shown after AI diff approval
+8. commit chain viewer for generated commits
 
 ### Approved Diff PR Action
 
@@ -80,7 +81,19 @@ When a user approves the AI diff in UnitTask detail:
 2. on click, create SubTask with type `PR_CREATE`
 3. send simple prompt `Create A PR` to coding agent
 4. stream the SubTask and AgentSession progress in the same timeline
-5. update PR tracking state after creation
+5. render generated real commit list in order
+6. update PR tracking state after creation
+
+### Commit Chain Panel
+
+UnitTask detail shows commit chain metadata per SubTask:
+
+1. commit SHA
+2. commit title
+3. author and timestamp
+4. commit order index
+
+`Create PR` and `Commit to Local` both use this commit chain.
 
 ## Action Badge System
 

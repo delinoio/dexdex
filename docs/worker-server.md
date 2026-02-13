@@ -7,7 +7,7 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 1. prepare and manage git worktrees
 2. launch and supervise coding agent sessions
 3. stream runtime output and events to main server
-4. persist session artifacts (patch refs, logs, summaries, usage, cost)
+4. persist session artifacts (commit chains, patch refs, logs, summaries, usage, cost)
 5. handle cancellation and retry-safe termination
 
 ## Execution Principles
@@ -43,8 +43,9 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 2. ensure repository cache is up to date
 3. create task-specific worktree path
 4. execute agent sessions in that worktree
-5. export patch and metadata
-6. cleanup according to retention policy
+5. create and persist real git commits in branch history
+6. export patch and metadata derived from commits
+7. cleanup according to retention policy
 
 Path convention:
 
@@ -73,10 +74,21 @@ When `plan_mode_enabled = true` on SubTask:
 
 Worker supports remediation subtask types:
 
-1. `PR_REVIEW_FIX`
-2. `PR_CI_FIX`
+1. `PR_CREATE`
+2. `PR_REVIEW_FIX`
+3. `PR_CI_FIX`
 
 Both run with the same worktree policy and event contract.
+
+## Real Commit Requirement
+
+Worker output must be a real git commit chain.
+
+1. if a SubTask makes code changes, it must create real commits in the worktree branch
+2. multiple logical changes should produce multiple commits
+3. worker persists ordered commit metadata (`sha`, parents, message, timestamps)
+4. patch artifacts are generated from those commits for diff views
+5. PR creation and Commit to Local must consume commit-chain metadata, not patch-only output
 
 ## Agent Abstraction
 
@@ -142,9 +154,10 @@ Emit structured logs for:
 1. worktree create and cleanup
 2. session start and stop
 3. plan-mode wait and resume
-4. artifact export
-5. usage checkpoints and final cost summary
-6. cancellation checkpoints
+4. commit chain generation and commit count
+5. artifact export
+6. usage checkpoints and final cost summary
+7. cancellation checkpoints
 
 ## Security Baseline
 

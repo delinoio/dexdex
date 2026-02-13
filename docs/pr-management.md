@@ -47,7 +47,9 @@ See `docs/entities.md`.
 2. UI shows `Create PR` button
 3. clicking button creates SubTask with type `PR_CREATE`
 4. SubTask sends simple prompt `Create A PR` to coding agent
-5. on success, PR tracking record is created and listed in PR Management
+5. worker creates one or more real git commits for the subtask output
+6. on success, PR is opened from the subtask commit chain
+7. PR tracking record is created and listed in PR Management
 
 ## Automatic Remediation Flow
 

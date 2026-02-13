@@ -56,12 +56,13 @@ Main server stores and owns:
 1. workspace records
 2. repository metadata and grouping
 3. UnitTask and SubTask state machines
-4. AgentSession metadata and log pointers
-5. PR tracking state and auto-fix counters
-6. review assist items
-7. badge theme settings
-8. notification records
-9. event sequence offsets
+4. SubTask commit-chain metadata and commit ancestry
+5. AgentSession metadata and log pointers
+6. PR tracking state and auto-fix counters
+7. review assist items
+8. badge theme settings
+9. notification records
+10. event sequence offsets
 
 ## Task Orchestration Flow
 
