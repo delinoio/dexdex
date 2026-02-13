@@ -49,6 +49,8 @@ Notation rule:
 
 1. shortcut notation uses macOS style (`Cmd`, `Option`, `Shift`)
 2. non-mac platforms map `Cmd` to `Ctrl`
+3. shortcut matching uses physical key codes, not localized character output
+4. shortcuts work regardless of current language input mode (Korean/English IME)
 
 Global shortcuts:
 
@@ -68,6 +70,7 @@ Screen shortcut coverage rule:
 2. each selected item supports open action (`Enter`)
 3. each primary button action has a dedicated shortcut
 4. shortcut hints are shown in tooltip, menu, or action label
+5. active shortcuts must still trigger under IME language switching
 
 ## Workspace Home
 
@@ -125,6 +128,7 @@ Behavior:
 1. `Enter` inserts a newline
 2. `Cmd+Enter` submits the current form
 3. submit button remains available as an alternative
+4. `Cmd+Enter` submit works regardless of current IME language mode
 
 ### Approved Diff PR Action
 

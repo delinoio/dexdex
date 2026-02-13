@@ -223,6 +223,7 @@ Design implications:
 
 All multiline form inputs must support `Cmd+Enter` submit behavior.
 This is a product-wide interaction rule and applies across task, plan, review, and PR workflows.
+Shortcut handling must be independent of current language input mode (Korean/English IME).
 
 ## Screen Shortcut Invariant
 
@@ -232,6 +233,7 @@ Every screen includes appropriate keyboard shortcuts for its primary items and a
 2. primary action buttons require direct keyboard shortcuts
 3. shortcuts must be discoverable in UI labels, tooltips, or a shortcut cheat sheet
 4. all primary screens are covered: Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications Center
+5. shortcut matching uses physical key codes and modifiers so behavior is stable across input language modes
 
 ## Observability and Logging
 

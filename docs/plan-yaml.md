@@ -69,6 +69,7 @@ When subtask is waiting for plan approval:
 4. show audit trail of decisions
 5. in revise feedback multiline input, `Cmd+Enter` submits the revise request
 6. provide keyboard shortcuts for decisions (`A` approve, `V` revise, `Shift+X` reject)
+7. decision shortcuts must work regardless of current IME language mode
 
 ## Audit and Persistence
 

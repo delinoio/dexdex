@@ -118,3 +118,4 @@ Common shortcuts:
 6. `?`: open shortcut cheat sheet
 
 Each primary screen also has dedicated item/action shortcuts shown in the UI hints.
+All shortcuts work regardless of Korean/English input mode.

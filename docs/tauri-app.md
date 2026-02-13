@@ -85,6 +85,7 @@ The client implements unified multiline keyboard handling in the web layer:
 1. `Enter` inserts newline in multiline input controls
 2. `Cmd+Enter` submits the associated form
 3. behavior is consistent across UnitTask, SubTask feedback, plan revise, and review inputs
+4. `Cmd+Enter` handling is stable regardless of current IME language mode
 
 ## Shortcut Registry and Scope
 
@@ -95,6 +96,8 @@ The client maintains a centralized shortcut registry.
 3. shortcut collisions are resolved by scope priority (modal > screen > global)
 4. every primary item action exposed in UI has an associated shortcut entry
 5. each primary screen (Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications) registers its own shortcut set
+6. shortcut matching uses `KeyboardEvent.code` + modifiers, not locale-dependent character output
+7. shortcut execution is independent of Korean/English input mode switching
 
 ## Approved Diff Create PR Action
 
