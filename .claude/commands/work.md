@@ -1,1 +1,0 @@
-Refer to @docs/design.md and documentations in @docs/. Perform the work requested by the user and update the documentation afterward if required.
