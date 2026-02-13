@@ -1,13 +1,12 @@
-# Notification System (To-Be)
+# Notification System
 
-DeliDev uses Web Notification API as the primary desktop/mobile notification channel.
+DeliDev uses Web Notification API as the primary desktop and mobile notification channel.
 
 ## Design Rules
 
-1. Primary notification channel: Web Notification API
-2. In-app notification center is always authoritative
-3. Native notification plugins are not primary in this design
-4. Notification emission is event-stream driven
+1. primary channel: Web Notification API
+2. in-app notification center is authoritative
+3. notification emission is event-stream driven
 
 ## Trigger Sources
 
@@ -21,21 +20,21 @@ DeliDev uses Web Notification API as the primary desktop/mobile notification cha
 
 ```
 EventStreamService emits event
-      -> Client event reducer writes Notification record locally
-      -> If allowed and app backgrounded, call Web Notification API
-      -> User click deep-links into task/pr/review detail
+      -> client event reducer writes Notification record locally
+      -> if allowed and app is backgrounded, call Web Notification API
+      -> user click deep-links into task, PR, or review detail
 ```
 
 ## Permission Handling
 
-1. prompt only after user intent (settings toggle or first actionable event)
+1. prompt after explicit user intent
 2. store local permission state cache
-3. expose clear permission status in settings
+3. expose permission status in settings
 
 ## Deduplication
 
 Use `(workspace_id, sequence, notification_type)` as dedupe key.
-Do not dispatch duplicate browser notifications for already processed sequence IDs.
+Do not dispatch duplicates for already processed sequence IDs.
 
 ## Categories
 
@@ -47,30 +46,30 @@ Do not dispatch duplicate browser notifications for already processed sequence I
 
 ## Delivery Rules
 
-1. Foreground: in-app toast + notification center
-2. Background: Web Notification API + notification center
-3. No permission: notification center only
+1. foreground: in-app toast and notification center
+2. background: Web Notification API and notification center
+3. no permission: notification center only
 
 ## UX Requirements
 
-1. all notifications include route deep link
-2. all notifications expose created timestamp
+1. every notification includes deep link route
+2. every notification includes created timestamp
 3. unread state persists across restarts
-4. mark-as-read is synchronized with server state
+4. mark-as-read syncs with server state
 
 ## Data Model
 
-See `Notification` entity in `docs/entities.md`.
+See `Notification` in `docs/entities.md`.
 
 ## Operational Logging
 
 Client logs:
 
-1. permission prompts and result
-2. dispatch success/failure
+1. permission prompts and results
+2. dispatch success and failure
 3. click-through route handling
 
 Server logs:
 
 1. notification event generation reason
-2. workspace/task/pr correlation IDs
+2. workspace, task, and PR correlation IDs

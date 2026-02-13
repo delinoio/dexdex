@@ -1,20 +1,20 @@
-# UI Design (To-Be, Codex Desktop Inspired)
+# UI Design (Codex Desktop Inspired)
 
-This document defines the target UI/UX structure for the rewrite.
+This document defines DeliDev UI and UX structure.
 
 ## UX Goals
 
 1. Fast triage-first interface for tasks and PR events
 2. Persistent visibility of AI activity timeline
 3. One-click remediation for review and CI issues
-4. Consistent desktop/mobile mental model
+4. Consistent desktop and mobile mental model
 
 ## Visual Direction
 
 Inspired by Codex Desktop style:
 
 1. workspace-oriented shell
-2. dense but readable information layout
+2. dense and readable information layout
 3. timeline-driven debugging and review
 4. clear action-required emphasis
 
@@ -23,13 +23,13 @@ Inspired by Codex Desktop style:
 Desktop layout:
 
 1. Left rail: workspace and navigation
-2. Center pane: task/pr list and filters
+2. Center pane: task and PR list with filters
 3. Right pane: details, timeline, and actions
 
 Mobile layout:
 
 1. top segmented tabs (Tasks, PRs, Review Assist, Notifications)
-2. stacked detail drawers/sheets
+2. stacked detail drawers and sheets
 3. persistent action bar for primary actions
 
 ## Primary Screens
@@ -58,7 +58,7 @@ Each card includes:
 2. repository/group context
 3. status
 4. action badges
-5. latest subtask/session timestamp
+5. latest subtask or session timestamp
 
 ## UnitTask Detail
 
@@ -68,8 +68,8 @@ Contains:
 2. status and action badges
 3. SubTask timeline
 4. AgentSession logs per subtask
-5. patch/diff preview
-6. plan-mode decision controls (when active)
+5. patch and diff preview
+6. plan-mode decision controls when active
 
 ## Action Badge System
 
@@ -78,9 +78,9 @@ DeliDev highlights UnitTasks requiring user action with badges.
 ### Badge Rules
 
 1. one UnitTask can have multiple action badges
-2. badges map from `ActionType -> BadgeColorKey`
-3. default color mapping exists per workspace
-4. user can override mapping in Settings
+2. badges map from `ActionType` to `BadgeColorKey`
+3. default mapping exists per workspace
+4. users can override mapping in Settings
 
 ### Example Mapping
 
@@ -97,7 +97,7 @@ Purpose: polling-driven operations for PRs created by DeliDev tasks.
 Columns:
 
 1. PR metadata and state
-2. latest review/CI signals
+2. latest review and CI signals
 3. auto-fix policy state
 4. quick actions
 
@@ -116,7 +116,7 @@ Each item includes:
 
 1. signal source (review, CI, risk)
 2. summary and details
-3. links to code/PR context
+3. links to code and PR context
 4. quick action to create remediation subtask
 
 ## Plan Mode UX
@@ -126,14 +126,14 @@ When plan mode is active for a subtask:
 1. show current proposal in the detail pane
 2. show decision controls: `Approve`, `Revise`, `Reject`
 3. require explicit decision before execution continues
-4. preserve full plan conversation in session timeline
+4. preserve the full plan conversation in session timeline
 
 ## Notifications UX
 
 1. bell icon with unread count
 2. notification center list with deep links
 3. Web Notification API permission prompt flow
-4. avoid duplicate toasts for same event sequence
+4. duplicate prevention by event sequence
 
 ## Accessibility Baseline
 

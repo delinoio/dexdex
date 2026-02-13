@@ -1,32 +1,27 @@
-# Workspace Connectivity (Replaces Local vs Remote Mode)
+# Workspace Connectivity
 
-DeliDev uses workspace connectivity profiles instead of a mode switch.
-
-## Why This Change
-
-Previous mode language implied two different application architectures.
-The rewrite uses one RPC architecture and two endpoint locality patterns.
+DeliDev uses workspace connectivity profiles.
 
 ## Connectivity Types
 
 ### Local Endpoint Workspace
 
 - `workspace.type = LOCAL_ENDPOINT`
-- endpoint points to a server process running on the same machine/device
+- endpoint points to a server process on the same machine or device
 - typical endpoint: `http://127.0.0.1:<port>`
 
 ### Remote Endpoint Workspace
 
 - `workspace.type = REMOTE_ENDPOINT`
-- endpoint points to a network-hosted shared server
+- endpoint points to a network-hosted server
 
 ## Shared Behavior
 
 Both types use the same:
 
 1. Connect RPC services
-2. Event streaming contracts
-3. task/pr/review workflows
+2. event streaming contracts
+3. task, PR, and review workflows
 4. notification model
 
 ## Differences
@@ -40,17 +35,13 @@ Both types use the same:
 
 ## Workspace Setup Flow
 
-1. user enters workspace name
-2. user selects connectivity type
-3. user enters endpoint URL
-4. user verifies connection
-5. user stores workspace profile
+1. enter workspace name
+2. choose connectivity type
+3. enter endpoint URL
+4. verify connection
+5. save workspace profile
 
-## Mobile Implications
+## Mobile Connectivity
 
 Mobile clients use the same workspace concept.
-A mobile app can connect to a local endpoint (same network/tunneled) or remote endpoint.
-
-## Migration Rule
-
-Any old "mode" UI or docs should be replaced with workspace terminology.
+A mobile app can connect to local endpoints (same network or tunneled) and remote endpoints.

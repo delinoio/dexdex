@@ -1,10 +1,10 @@
-# Event Streaming (To-Be)
+# Event Streaming
 
 DeliDev uses server-streamed workspace events for near-real-time synchronization.
 
 ## Goals
 
-1. minimize polling in client UI for task/PR state
+1. minimize polling in client UI for task and PR state
 2. provide consistent event payloads across desktop and mobile
 3. support replay and reconnection without data loss
 
@@ -38,19 +38,19 @@ DeliDev uses server-streamed workspace events for near-real-time synchronization
 1. client stores last applied sequence
 2. on reconnect, client sends `from_sequence = last + 1`
 3. server replays retained events from that point
-4. if sequence is too old for retention, server returns explicit resync-required error
+4. if sequence is too old for retention, server returns resync-required error
 
 ## Ordering and Idempotency
 
 1. ordering guarantee is per workspace sequence
-2. client reducers must be idempotent by sequence
-3. duplicate envelopes may arrive during reconnect edges and must be ignored
+2. client reducers are idempotent by sequence
+3. duplicate envelopes during reconnect are ignored
 
 ## Backpressure and Health
 
 1. server may batch high-frequency session output events
-2. heartbeat envelopes may be emitted to keep connection alive
-3. clients should auto-reconnect with bounded exponential backoff
+2. heartbeat envelopes may keep connections alive
+3. clients auto-reconnect with bounded exponential backoff
 
 ## Security
 

@@ -1,6 +1,6 @@
-# Developer Setup (To-Be Rewrite)
+# Developer Setup
 
-This guide describes the target development setup for the Go-server rewrite.
+This guide describes the development setup for DeliDev.
 
 ## Repository Layout
 
@@ -11,10 +11,10 @@ This guide describes the target development setup for the Go-server rewrite.
 
 ## Prerequisites
 
-1. Go (target version defined in root `go.mod`)
+1. Go version defined in root `go.mod`
 2. Node.js + pnpm
-3. Rust toolchain (for Tauri host)
-4. Docker/Podman for worker execution
+3. Rust toolchain for Tauri host
+4. Docker or Podman for worker execution
 
 ## Bootstrap
 
@@ -36,17 +36,17 @@ This guide describes the target development setup for the Go-server rewrite.
 2. start worker server locally
 - `go run ./apps/worker-server`
 
-3. start tauri app
+3. start Tauri app
 - `cd apps/tauri-app && pnpm tauri dev`
 
-4. in app, create workspace with endpoint
+4. create workspace with endpoint
 - `http://127.0.0.1:<main-server-port>`
 
 ## Configuration Files
 
-1. `.env` (server runtime)
-2. `apps/tauri-app/.env` (client runtime)
-3. OS keychain entries (credentials/tokens)
+1. `.env` for server runtime
+2. `apps/tauri-app/.env` for client runtime
+3. OS keychain entries for credentials and tokens
 
 ## Recommended Local Env Vars
 
@@ -60,12 +60,12 @@ This guide describes the target development setup for the Go-server rewrite.
 ## Validation Checklist
 
 1. client can create and switch workspaces
-2. unit task can start and produce session logs
+2. UnitTask can start and produce session logs
 3. event stream reconnect works after server restart
-4. PR polling updates appear in PR Management screen
+4. PR polling updates appear in PR Management
 5. Web Notification permission flow works
 
 ## Notes
 
-1. business flows must be validated via Connect RPC, not Tauri-only shortcuts
-2. direct local-folder execution is out of scope; use worktree-based execution only
+1. validate business flows via Connect RPC, not Tauri-only shortcuts
+2. direct local-folder execution is unsupported; use worktree-based execution only

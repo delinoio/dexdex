@@ -1,4 +1,4 @@
-# PR Management (To-Be)
+# PR Management
 
 DeliDev includes polling-based PR management for PRs created by DeliDev tasks.
 
@@ -48,7 +48,7 @@ See `docs/entities.md`.
 3. attempt count checked against max attempts
 4. remediation SubTask auto-created
 5. attempt counter incremented
-6. stream events + notifications emitted
+6. stream events and notifications emitted
 
 ## Retry and Guardrails
 
@@ -61,14 +61,14 @@ See `docs/entities.md`.
 
 1. PR list includes latest signal summary
 2. quick action buttons for manual fix and policy toggle
-3. clear display of attempt budget and recent run outcomes
+3. clear display of attempt budget and recent outcomes
 4. deep links to task, subtask, and PR
 
 ## Logging Requirements
 
-Server logs must include:
+Server logs include:
 
-1. provider polling request/response metadata
+1. provider polling request and response metadata
 2. diff detection result
 3. auto-fix decision and reason
 4. remediation subtask IDs

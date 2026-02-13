@@ -1,61 +1,58 @@
-# Tauri App (Desktop + Mobile) - To-Be Design
+# Tauri App (Desktop + Mobile)
 
-DeliDev client runs in Tauri across desktop and mobile targets.
+DeliDev client runs in Tauri across desktop and mobile platforms.
 The app is Connect RPC-first.
 
 ## Core Rule
 
 Business communication uses Connect RPC as the primary path.
-Tauri-specific APIs are only for platform integration features.
+Tauri-specific APIs are only for platform integration.
 
-## Supported Targets
+## Supported Platforms
 
 1. Desktop: macOS, Windows, Linux
 2. Mobile: iOS, Android
-
-Mobile is a first-wave target in this rewrite.
 
 ## Client Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ Tauri App                                                   │
+│ Tauri App                                                  │
 │                                                            │
-│  React UI Layer                                             │
-│   ├── Workspace shell                                       │
-│   ├── UnitTask + SubTask views                              │
-│   ├── PR management and review assist                       │
-│   └── Settings + notifications                              │
+│  React UI Layer                                            │
+│   ├── Workspace shell                                      │
+│   ├── UnitTask and SubTask views                           │
+│   ├── PR management and review assist                      │
+│   └── Settings and notifications                           │
 │                                                            │
-│  Data Layer                                                  │
-│   ├── Connect RPC clients                                   │
-│   ├── Stream subscriber                                     │
-│   └── Query/cache store                                     │
+│  Data Layer                                                │
+│   ├── Connect RPC clients                                  │
+│   ├── Stream subscriber                                    │
+│   └── Query and cache store                                │
 │                                                            │
-│  Tauri Bridge (minimal business scope)                      │
-│   ├── keychain wrappers                                     │
-│   ├── file picker                                            │
-│   ├── deep link handler                                     │
-│   └── window lifecycle                                       │
+│  Tauri Bridge                                              │
+│   ├── keychain wrappers                                    │
+│   ├── file picker                                          │
+│   ├── deep link handler                                    │
+│   └── window lifecycle                                     │
 └────────────────────────────────────────────────────────────┘
 ```
 
 ## Workspace UX Model
 
-The client does not expose "mode" switching.
-It exposes workspace switching.
+The client exposes workspace switching.
 
 Each workspace has:
 
 1. endpoint URL
 2. auth profile
-3. workspace type (local endpoint vs remote endpoint)
+3. workspace type (`LOCAL_ENDPOINT` or `REMOTE_ENDPOINT`)
 
-A local workspace is implemented by pointing to a locally running server endpoint.
+A local workspace points to a locally running server endpoint.
 
 ## Event Streaming Client
 
-The app maintains a streaming subscription per active workspace:
+The app maintains a stream subscription per active workspace:
 
 1. connect to `EventStreamService.StreamWorkspaceEvents`
 2. keep last applied sequence
@@ -69,8 +66,8 @@ Notification dispatch uses Web Notification API from the web layer.
 Rules:
 
 1. request permission explicitly
-2. do not emit duplicate notifications for same event sequence
-3. preserve in-app notification center state
+2. avoid duplicate notifications by sequence
+3. keep in-app notification center authoritative
 
 ## Plan Mode UX Responsibilities
 
@@ -91,8 +88,8 @@ When a session enters plan wait state:
 
 1. workspace list and active workspace pointer
 2. badge color mapping editor
-3. PR auto-fix preferences UI
-4. notification permission and in-app display preferences
+3. PR auto-fix preferences
+4. notification permission and display preferences
 
 ## Testing Focus
 

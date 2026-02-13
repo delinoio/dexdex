@@ -1,21 +1,21 @@
-# DeliDev API Reference (To-Be, Connect RPC)
+# DeliDev API Reference (Connect RPC)
 
-This document defines the target API contract for the rewrite.
+This document defines the DeliDev API contract.
 All business communication is Connect RPC-based.
 
 ## Protocol
 
 - Transport: HTTP/2 (fallback HTTP/1.1 where needed)
 - Encoding: Protobuf (JSON debug view optional)
-- RPC style: Connect RPC unary + server-streaming
+- RPC style: Connect unary and server-streaming
 - Auth: bearer token for authenticated workspaces
 
 ## API Design Rules
 
 1. Connect RPC is the primary interface.
-2. Tauri-specific commands must not define business contracts.
+2. Tauri-specific commands do not define business contracts.
 3. Public requests and responses use enums for known variants.
-4. Streaming channels must emit typed events with monotonic sequence IDs.
+4. Streaming channels emit typed events with monotonic sequence IDs.
 
 ## Service Overview
 
@@ -29,13 +29,9 @@ All business communication is Connect RPC-based.
 8. `NotificationService`
 9. `EventStreamService`
 
----
-
 ## WorkspaceService
 
 ### CreateWorkspace
-
-Creates a workspace endpoint profile.
 
 Request:
 - `name: string`
@@ -82,8 +78,6 @@ Request:
 
 Response:
 - empty
-
----
 
 ## RepositoryService
 
@@ -135,8 +129,6 @@ Request:
 
 Response:
 - empty
-
----
 
 ## TaskService
 
@@ -221,8 +213,6 @@ Response:
 
 ### SubmitPlanDecision
 
-Used when a plan-mode session requests explicit decision.
-
 Request:
 - `sub_task_id: string`
 - `decision: enum { APPROVE, REVISE, REJECT }`
@@ -230,8 +220,6 @@ Request:
 
 Response:
 - `sub_task: SubTask`
-
----
 
 ## SessionService
 
@@ -270,8 +258,6 @@ Request:
 Response:
 - empty
 
----
-
 ## PrManagementService
 
 ### TrackPullRequest
@@ -300,8 +286,6 @@ Response:
 
 ### RunAutoFixNow
 
-Manual one-click remediation.
-
 Request:
 - `pr_tracking_id: string`
 - `reason: enum { REVIEW_EVENT, CI_FAILURE, MANUAL }`
@@ -318,8 +302,6 @@ Request:
 
 Response:
 - `tracking: PullRequestTracking`
-
----
 
 ## ReviewAssistService
 
@@ -344,8 +326,6 @@ Request:
 Response:
 - `item: ReviewAssistItem`
 
----
-
 ## BadgeThemeService
 
 ### ListBadgeThemes
@@ -365,8 +345,6 @@ Request:
 
 Response:
 - `theme: BadgeTheme`
-
----
 
 ## NotificationService
 
@@ -388,8 +366,6 @@ Request:
 
 Response:
 - `notification: Notification`
-
----
 
 ## EventStreamService
 
@@ -416,8 +392,6 @@ Payload variants:
 6. `ReviewAssistUpdatedEvent`
 7. `NotificationCreatedEvent`
 
----
-
 ## Errors
 
 Standard Connect error mapping:
@@ -431,17 +405,15 @@ Standard Connect error mapping:
 7. `INTERNAL`
 8. `UNAVAILABLE`
 
-Error details should include:
+Error details include:
 
 - `code`
 - `message`
 - `request_id`
 - optional typed detail payload
 
----
+## API Evolution Rules
 
-## Backward Compatibility
-
-1. `CompositeTask` APIs are removed from active contract.
-2. Legacy compatibility (if needed) must be isolated behind migration adapters and excluded from new client code.
-3. New client surfaces must not depend on mode-specific endpoints.
+1. Additive changes are preferred.
+2. Enum expansion is allowed with unknown-value-safe clients.
+3. Breaking changes require synchronized server and client rollout.

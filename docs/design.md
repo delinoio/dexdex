@@ -1,30 +1,22 @@
-# DeliDev Design (To-Be, Rewrite Baseline)
+# DeliDev Design
 
-DeliDev is being rebuilt around a Connect RPC-first architecture with Tauri clients and Go servers.
-This document defines the target design baseline used by all other docs.
-
-## Status
-
-- Document type: To-be specification for rewrite
-- Current implementation may differ
-- Source of truth for data model: `docs/entities.md`
-- Source of truth for RPC contract: `docs/api.md`
+DeliDev uses a Connect RPC-first architecture with Tauri clients and Go servers.
+This document is the primary architecture reference.
 
 ## Product Goals
 
-1. Keep Tauri as the desktop and mobile app container.
-2. Rewrite server stack to Go.
-3. Remove mode-centric UX language and use `Workspace` as the user-facing concept.
-4. Remove `CompositeTask` from the product model.
-5. Support UnitTask-centric workflows with nested SubTask and AgentSession history.
-6. Make PR management and PR review assist first-class.
-7. Provide real-time event streaming for UI updates and automation.
-8. Preserve future parity targets for iOS and Android from day one.
+1. Use Tauri as the desktop and mobile app container.
+2. Use Go for `main-server` and `worker-server`.
+3. Use `Workspace` as the primary connectivity and scope concept.
+4. Use UnitTask-centric workflows with nested SubTask and AgentSession history.
+5. Make PR management and PR review assist first-class workflows.
+6. Provide real-time event streaming for UI updates and automation.
+7. Support iOS and Android as first-wave platforms.
 
 ## Non-Goals
 
 1. Direct local folder execution without worktree.
-2. Tauri-invoke-first API design.
+2. Tauri-invoke-first business contracts.
 3. Native OS notification plugin as the primary notification channel.
 
 ## Top-Level Architecture
@@ -49,42 +41,40 @@ This document defines the target design baseline used by all other docs.
             │                                         └────────────────────┘
 ```
 
-## Monorepo Structure (Target)
+## Monorepo Structure
 
 - `apps/main-server/` (Go)
 - `apps/worker-server/` (Go)
 - `apps/tauri-app/` (Tauri + React)
-- Single root `go.mod` at repository root (shared module for server apps)
+- single root `go.mod` for server apps
 
 ## Connect RPC First Rule
 
-All business data and control flows must use Connect RPC.
+All business data and control flows use Connect RPC.
 
-Tauri-native bindings are allowed only for platform integration needs:
+Tauri-native bindings are used only for platform integration:
 
 1. window lifecycle and tray integration
 2. secure local storage helpers
-3. file picker / OS capabilities
+3. file picker and OS capabilities
 4. deep links
 
-Business operations (task, repo, workspace, PR, review, streaming, settings) are not defined as Tauri-only contracts.
+Business operations (task, repository, workspace, PR, review, streaming, settings) are not Tauri-only contracts.
 
-## Workspace Model (Replaces Mode Model)
+## Workspace Model
 
-DeliDev no longer presents Local Mode vs Remote Mode.
-
-Instead, users create and switch between Workspaces that point to server endpoints.
+DeliDev uses workspace switching.
+Each workspace points to a main server endpoint.
 
 ### Workspace Types
 
-1. Local Workspace
-- Endpoint points to a server running on the same device (for example `http://127.0.0.1:4621`)
-- Uses the same Remote protocol path as any other workspace
-- "Local" means endpoint locality, not a separate protocol/runtime path
+1. Local Endpoint Workspace
+- endpoint runs on the same device (for example `http://127.0.0.1:4621`)
+- uses the same RPC and streaming contracts as remote endpoints
 
-2. Remote Workspace
-- Endpoint points to shared network-hosted main server
-- Same RPC contracts and streaming contracts
+2. Remote Endpoint Workspace
+- endpoint runs on a network-hosted server
+- uses the same RPC and streaming contracts
 
 ## Data Model Overview
 
@@ -93,17 +83,15 @@ Detailed model is maintained in `docs/entities.md`.
 Core entities:
 
 1. Workspace
-2. Repository / RepositoryGroup
-3. UnitTask
-4. SubTask (child of UnitTask)
-5. AgentSession (child of SubTask)
-6. PullRequestTracking
-7. ReviewAssistItem
-8. BadgeTheme / ActionBadge
-
-Deprecated entity:
-
-- CompositeTask (removed from active design)
+2. Repository
+3. RepositoryGroup
+4. UnitTask
+5. SubTask (child of UnitTask)
+6. AgentSession (child of SubTask)
+7. PullRequestTracking
+8. ReviewAssistItem
+9. BadgeTheme and ActionBadge mapping
+10. Notification
 
 ## Task Execution Model
 
@@ -113,15 +101,14 @@ UnitTask is the top-level user-visible work item.
 
 ### SubTask
 
-SubTask is a UnitTask child entity used for retries, review feedback application, PR follow-up fixes, and other bounded actions.
+SubTask is a UnitTask child entity used for initial implementation, retries, review feedback, and PR follow-up fixes.
 
 ### AgentSession
 
 Each SubTask can run one or more AI coding agent sessions.
-This preserves full timeline/history of retries and strategy changes.
 
 ```
-UnitTask (user visible)
+UnitTask
   ├── SubTask #1 (initial implementation)
   │     ├── AgentSession #1
   │     └── AgentSession #2 (retry)
@@ -131,109 +118,104 @@ UnitTask (user visible)
 
 ## Worktree-Only Policy
 
-DeliDev does not support editing directly against an arbitrary local folder.
+DeliDev does not support editing directly against arbitrary local folders.
 
 All code execution paths must:
 
 1. resolve repository through workspace-scoped repository settings
 2. materialize task-specific git worktree
 3. execute agent operations in that worktree
-4. persist patch/commit metadata
-5. cleanup or archive worktree per retention policy
+4. persist patch and commit metadata
+5. cleanup or archive worktree by retention policy
 
-## PR Management (Polling-Based)
+## PR Management
 
-PR management is built into the standard lifecycle:
+PR management is part of the standard lifecycle:
 
 1. DeliDev tracks PRs created by DeliDev tasks.
-2. Polling workers fetch PR state, review comments, and CI status.
-3. On actionable events (review requested changes, CI failure), UI surfaces "Fix with Agent".
-4. If auto-run is enabled in settings, DeliDev starts remediation SubTask automatically.
+2. Pollers fetch PR state, review comments, and CI status.
+3. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
+4. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
 
-Detailed flow lives in `docs/pr-management.md`.
+See `docs/pr-management.md`.
 
 ## PR Review Assist
 
-DeliDev includes review-assist features for user-owned review activity:
+Review assist features include:
 
 1. changed file prioritization
 2. AI summaries and risk markers
-3. suggested review checklist and questions
+3. review checklist and suggested questions
 4. unresolved thread and CI signal aggregation
 
 ## Plan Mode Support
 
-When using coding agents that expose Plan Mode, DeliDev must support the full plan loop:
+For coding agents with plan mode:
 
-1. present plan proposal state
-2. allow explicit approve/revise/reject actions
+1. show plan proposal state
+2. support explicit approve/revise/reject actions
 3. stream plan updates and rationale
-4. attach final approved plan metadata to SubTask/AgentSession records
+4. attach plan decisions to SubTask and AgentSession records
 
-Plan-mode protocol details are in `docs/plan-yaml.md`.
+See `docs/plan-yaml.md`.
 
 ## Event Streaming
 
-DeliDev uses event streaming for low-latency UI state updates and automation triggers.
+DeliDev uses event streaming for low-latency UI updates and automation triggers.
 
 Event families:
 
 1. task state
 2. subtask lifecycle
-3. session/log stream
+3. session output and state
 4. PR tracking state
 5. review assist updates
 6. notification triggers
 
-Detailed stream contract is in `docs/event-streaming.md`.
+See `docs/event-streaming.md`.
 
 ## Notification Architecture
 
-Notification delivery is based on Web Notification API.
+Notification delivery uses Web Notification API.
 
-- Primary channel: browser-compatible notification API in Tauri webview context
-- Native plugin notifications are not the primary path in this design
+- primary channel: notification API in Tauri webview context
+- in-app notification center stores authoritative state
 
 See `docs/notifications.md`.
 
-## Mobile Strategy (iOS + Android)
+## Mobile Strategy
 
-iOS and Android are first-wave targets, not post-MVP stretch goals.
+iOS and Android are first-wave platforms.
 
 Design implications:
 
-1. all core workflows must be API-driven and mobile-safe
+1. core workflows must be API-driven and mobile-safe
 2. no desktop-only business logic path
-3. notification and streaming strategy must work on mobile WebView/runtime constraints
-4. workspace onboarding and PR remediation actions must be usable on touch UIs
+3. notification and streaming strategy must work with mobile runtime constraints
+4. workspace onboarding and PR remediation actions must be touch-friendly
 
 ## Observability and Logging
 
 Server-side structured logging is required for:
 
 1. workspace routing
-2. task/subtask state transitions
+2. task and subtask state transitions
 3. agent session start/stop/failure
 4. PR polling snapshots and decision points
 5. event stream delivery health
 
-Client-side telemetry/logging is required for:
+Client-side logging is required for:
 
-1. stream disconnect/reconnect
+1. stream disconnect and reconnect
 2. notification permission and dispatch outcomes
-3. user-triggered fix actions
+3. user-triggered remediation actions
 
 ## Security Baseline
 
 1. Connect RPC over TLS for non-localhost endpoints
 2. token-based auth for shared remote workspaces
-3. scoped secret usage with minimal lifetime in worker runtime
+3. scoped secret usage with minimal runtime lifetime
 4. strict validation for repository URLs, branch names, prompts, and review payloads
-
-## Deprecations
-
-- `CompositeTask` is removed from active product design.
-- Legacy references may remain only in migration history notes.
 
 ## Related Docs
 

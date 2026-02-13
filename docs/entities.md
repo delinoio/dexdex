@@ -1,7 +1,7 @@
-# DeliDev Entities (To-Be Source of Truth)
+# DeliDev Entities
 
-This document defines the target entity model for the rewrite.
-All architecture, API, and UI documents must align with this file.
+This document defines the core entity model for DeliDev.
+All architecture, API, and UI documents align with this file.
 
 ## Conventions
 
@@ -202,21 +202,21 @@ enum StreamEventType {
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
 
-### SubTask (Child of UnitTask)
+### SubTask
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | id | UUID | Y | SubTask ID |
 | unitTaskId | UUID | Y | Parent UnitTask |
-| type | SubTaskType | Y | Why this subtask exists |
+| type | SubTaskType | Y | Subtask category |
 | prompt | string | Y | Subtask-specific instruction |
 | status | SubTaskStatus | Y | Current status |
-| planModeEnabled | bool | Y | Whether this run uses plan-mode interaction |
-| targetActionType | ActionType | N | Action this subtask is resolving |
+| planModeEnabled | bool | Y | Uses plan-mode interaction |
+| targetActionType | ActionType | N | Action this subtask resolves |
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
 
-### AgentSession (Child of SubTask)
+### AgentSession
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -290,20 +290,12 @@ enum StreamEventType {
 
 1. `Workspace 1:N Repository`
 2. `Workspace 1:N UnitTask`
-3. `UnitTask 1:N SubTask`
-4. `SubTask 1:N AgentSession`
-5. `UnitTask 1:N PullRequestTracking`
-6. `PullRequestTracking 1:N ReviewAssistItem`
-7. `Workspace 1:N BadgeTheme`
+3. `Workspace 1:N BadgeTheme`
+4. `UnitTask 1:N SubTask`
+5. `SubTask 1:N AgentSession`
+6. `UnitTask 1:N PullRequestTracking`
+7. `PullRequestTracking 1:N ReviewAssistItem`
 
 ## Plan Mode Data Attachment
 
 Plan mode metadata is attached to SubTask and AgentSession records.
-No separate CompositeTask-style planning aggregate is used.
-
-## Deprecated Entities
-
-### CompositeTask (Deprecated)
-
-`CompositeTask` and `CompositeTaskNode` are removed from active design and should not appear in new API or UI specs.
-They may be referenced only in migration notes.

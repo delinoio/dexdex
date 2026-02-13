@@ -1,21 +1,21 @@
-# Worker Server (Go) - To-Be Design
+# Worker Server (Go)
 
 Worker Server executes SubTasks using AI coding agents in isolated worktree environments.
 
 ## Responsibilities
 
-1. Prepare and manage git worktrees
-2. Launch and supervise coding agent sessions
-3. Stream runtime output/events to main server
-4. Persist session artifacts (patch refs, logs, summaries)
-5. Handle cancellation and retry-safe termination
+1. prepare and manage git worktrees
+2. launch and supervise coding agent sessions
+3. stream runtime output and events to main server
+4. persist session artifacts (patch refs, logs, summaries)
+5. handle cancellation and retry-safe termination
 
 ## Execution Principles
 
-1. Worktree-only execution (no direct arbitrary folder mode)
-2. One SubTask execution context per worktree
-3. One or more AgentSession runs per SubTask
-4. Deterministic cleanup policy by outcome
+1. worktree-only execution
+2. one SubTask execution context per worktree
+3. one or more AgentSession runs per SubTask
+4. deterministic cleanup policy by outcome
 
 ## Runtime Architecture
 
@@ -30,72 +30,72 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 │         ├── Session Event Emitter                            │
 │         └── Artifact Collector                               │
 │                                                              │
-│  Local Resources                                              │
-│    ├── Repository Cache                                       │
-│    ├── Worktrees                                              │
-│    └── Temporary Session Data                                 │
+│  Local Resources                                             │
+│    ├── Repository Cache                                      │
+│    ├── Worktrees                                             │
+│    └── Temporary Session Data                                │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ## Worktree Lifecycle
 
-1. Resolve repository from workspace + repository group context.
-2. Ensure repository cache is up to date.
-3. Create task-specific worktree path.
-4. Execute agent session(s) inside that worktree.
-5. Export patch/metadata.
-6. Cleanup according to retention policy.
+1. resolve repository from workspace and repository group context
+2. ensure repository cache is up to date
+3. create task-specific worktree path
+4. execute agent sessions in that worktree
+5. export patch and metadata
+6. cleanup according to retention policy
 
-Example path convention:
+Path convention:
 
 - cache: `~/.delidev/repo-cache/<repo-hash>/`
 - worktree: `~/.delidev/worktrees/<unit-task-id>/<sub-task-id>/`
 
 ## SubTask and Session Flow
 
-1. Worker receives `RunSubTask` command.
-2. Worker emits `SUBTASK_UPDATED(IN_PROGRESS)`.
-3. Worker starts `AgentSession`.
-4. Session output is streamed as incremental events.
-5. If Plan Mode is active, session enters waiting state until decision is submitted.
-6. Worker emits completion/failure and artifact metadata.
+1. worker receives `RunSubTask`
+2. worker emits `SUBTASK_UPDATED(IN_PROGRESS)`
+3. worker starts AgentSession
+4. session output is streamed as incremental events
+5. if plan mode is active, session waits for decision
+6. worker emits completion or failure and artifact metadata
 
 ## Plan Mode Support
 
 When `plan_mode_enabled = true` on SubTask:
 
-1. Agent can emit plan proposal checkpoints.
-2. Worker pauses forward execution at decision boundaries.
-3. Main server relays user decision (`APPROVE` / `REVISE` / `REJECT`).
-4. Worker resumes or finalizes accordingly.
+1. agent emits plan proposal checkpoints
+2. worker pauses execution at decision boundaries
+3. main server relays user decision (`APPROVE` / `REVISE` / `REJECT`)
+4. worker resumes or finalizes accordingly
 
 ## PR Remediation SubTasks
 
-Worker must support remediation subtask types:
+Worker supports remediation subtask types:
 
 1. `PR_REVIEW_FIX`
 2. `PR_CI_FIX`
 
-Both types run in the same worktree policy and emit standard task/session events.
+Both run with the same worktree policy and event contract.
 
 ## Agent Abstraction
 
 Worker uses adapter interfaces for multiple agents.
-Each adapter must provide:
+Each adapter provides:
 
 1. command construction
 2. structured output parsing
 3. typed event mapping
-4. cancellation/termination handling
+4. cancellation and termination handling
 
 ## Error Handling
 
-1. repository fetch failure: emit failure event with provider error classification
-2. session startup failure: mark session failed and subtask failed
+1. repository fetch failure: emit classified provider error
+2. session startup failure: mark session and subtask failed
 3. tool execution timeout: emit timeout event and cancel session
-4. partial output corruption: emit parser warning and continue stream where possible
+4. partial output corruption: emit parser warning and continue where possible
 
-## Configuration (Target)
+## Configuration
 
 | Key | Required | Description |
 |---|---|---|
@@ -110,19 +110,15 @@ Each adapter must provide:
 
 Emit structured logs for:
 
-1. worktree create/cleanup
-2. session start/stop
-3. plan-mode wait/resume
+1. worktree create and cleanup
+2. session start and stop
+3. plan-mode wait and resume
 4. artifact export
 5. cancellation checkpoints
 
 ## Security Baseline
 
-1. sanitize and validate all repository URLs and branch refs
+1. sanitize and validate repository URLs and branch refs
 2. never log secret values
 3. inject secrets only at session runtime scope
 4. clear ephemeral secret material after session end
-
-## Migration Note
-
-Worker no longer supports CompositeTask graph execution.
