@@ -17,6 +17,7 @@ This guide explains the DeliDev user workflow.
 1. open Repositories
 2. add repository remote URLs
 3. create RepositoryGroup for related repositories
+4. order repositories intentionally (first repository becomes primary agent execution repository)
 
 ## 3. Create a UnitTask
 

@@ -13,7 +13,7 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 ## Execution Principles
 
 1. worktree-only execution
-2. one SubTask execution context per worktree
+2. one SubTask execution context per RepositoryGroup
 3. one or more AgentSession runs per SubTask
 4. deterministic cleanup policy by outcome
 
@@ -39,18 +39,20 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 
 ## Worktree Lifecycle
 
-1. resolve repository from workspace and repository group context
-2. ensure repository cache is up to date
-3. create task-specific worktree path
-4. execute agent sessions in that worktree
-5. create and persist real git commits in branch history
-6. export patch and metadata derived from commits
-7. cleanup according to retention policy
+1. resolve ordered repositories from workspace and repository group context
+2. ensure each repository cache is up to date
+3. create task-specific worktree path for every repository in the group
+4. choose the first repository worktree as primary execution directory
+5. execute agent sessions in the primary directory
+6. pass remaining repository worktrees as `--add-dir` (or equivalent agent options)
+7. create and persist real git commits in branch history
+8. export patch and metadata derived from commits
+9. cleanup according to retention policy
 
 Path convention:
 
 - cache: `~/.delidev/repo-cache/<repo-hash>/`
-- worktree: `~/.delidev/worktrees/<unit-task-id>/<sub-task-id>/`
+- worktree: `~/.delidev/worktrees/<unit-task-id>/<sub-task-id>/<repo-id>/`
 
 ## SubTask and Session Flow
 
@@ -89,6 +91,14 @@ Worker output must be a real git commit chain.
 3. worker persists ordered commit metadata (`sha`, parents, message, timestamps)
 4. patch artifacts are generated from those commits for diff views
 5. PR creation and Commit to Local must consume commit-chain metadata, not patch-only output
+
+## Primary Repository Launch Rule
+
+Agent process launch uses the RepositoryGroup ordering rule.
+
+1. first repository in `repositoryIds` is the launch directory
+2. all other repositories are attached using `--add-dir` (or equivalent option per agent adapter)
+3. adapter command builders must preserve directory order when constructing arguments
 
 ## Agent Abstraction
 
@@ -158,6 +168,7 @@ Emit structured logs for:
 5. artifact export
 6. usage checkpoints and final cost summary
 7. cancellation checkpoints
+8. primary repository selection and add-dir argument mapping
 
 ## Security Baseline
 

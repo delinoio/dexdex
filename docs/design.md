@@ -105,6 +105,7 @@ Core entities:
 ### UnitTask
 
 UnitTask is the top-level user-visible work item.
+Execution scope is one RepositoryGroup.
 
 ### SubTask
 
@@ -143,10 +144,19 @@ DeliDev does not support editing directly against arbitrary local folders.
 All code execution paths must:
 
 1. resolve repository through workspace-scoped repository settings
-2. materialize task-specific git worktree
-3. execute agent operations in that worktree
+2. materialize task-specific git worktrees for each repository in the target RepositoryGroup
+3. execute agent operations from the first repository worktree and attach other repository worktrees via `--add-dir` or equivalent option
 4. persist real git commit chain and commit metadata
 5. cleanup or archive worktree by retention policy
+
+## RepositoryGroup Execution Rule
+
+RepositoryGroup is the execution unit for agent runs.
+
+1. Worker creates one worktree per repository in the group.
+2. Repository order is preserved from `repositoryIds`.
+3. Agent process starts in the first repository worktree.
+4. Additional repositories are passed as extra directories using `--add-dir` (or agent-equivalent flags).
 
 ## PR Management
 

@@ -112,6 +112,12 @@ Request:
 Response:
 - `group: RepositoryGroup`
 
+Rules:
+
+1. `repository_ids` must contain at least one repository.
+2. `repository_ids` order is preserved exactly as provided.
+3. the first repository becomes the primary execution repository for agent runs.
+
 ### UpdateRepositoryGroup
 
 Request:
@@ -121,6 +127,12 @@ Request:
 
 Response:
 - `group: RepositoryGroup`
+
+Rules:
+
+1. when `repository_ids` is updated, it must contain at least one repository.
+2. execution order is updated to the new list order.
+3. the first repository in the updated list becomes the primary execution repository.
 
 ### DeleteRepositoryGroup
 
@@ -193,6 +205,7 @@ Usage rule:
 2. request uses `type = PR_CREATE`
 3. prompt is `Create A PR` for the default PR creation action
 4. subtask execution output must include real git commits (one or more) when code changes exist
+5. execution resolves RepositoryGroup repositories, creates worktrees for each repo, and launches agent in the first repository with additional repositories attached via `--add-dir` (or equivalent option)
 
 ### ListSubTasks
 

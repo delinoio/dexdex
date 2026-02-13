@@ -183,9 +183,17 @@ enum StreamEventType {
 | id | UUID | Y | Group ID |
 | workspaceId | UUID | Y | Parent workspace |
 | name | string | Y | Group name |
-| repositoryIds | UUID[] | Y | Included repositories |
+| repositoryIds | UUID[] | Y | Ordered repositories (first item is primary execution repository) |
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
+
+RepositoryGroup execution semantics:
+
+1. RepositoryGroup is the unit of task execution scope.
+2. `repositoryIds` order is significant.
+3. repository group must contain at least one repository.
+4. the first repository is the primary execution repository.
+5. remaining repositories are attached as additional working directories for agent execution.
 
 ### UnitTask
 
