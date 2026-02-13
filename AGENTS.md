@@ -9,6 +9,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
+- Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 
 ### Project Structure
 

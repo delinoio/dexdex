@@ -1,834 +1,344 @@
-# UI Design
-
-DeliDev provides a desktop and mobile application for orchestrating AI coding agents.
-
-## Table of Contents
-
-1. [Mode Selection](#mode-selection)
-2. [Onboarding](#onboarding)
-3. [Dashboard](#dashboard)
-4. [Chat Interface](#chat-interface)
-5. [Task Creation](#task-creation)
-6. [Task Detail Pages](#task-detail-pages)
-7. [Review Interface](#review-interface)
-8. [Settings Interface](#settings-interface)
-9. [Repository Management](#repository-management)
-10. [Keyboard Shortcuts](#keyboard-shortcuts)
-11. [Multi-Tab Interface](#multi-tab-interface)
-12. [Desktop Notifications](#desktop-notifications)
-13. [Theme / Dark Mode](#theme--dark-mode)
-
----
-
-## Mode Selection
-
-Mode selection screen shown on first start to choose between Local Mode and Remote Mode.
-
-**Note**: Mobile apps skip this screen and go directly to server URL entry (Remote Mode only).
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        Welcome to DeliDev                                    │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Choose how you want to run DeliDev                                        │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ [Monitor Icon]                                                      │   │
-│  │                                                                     │   │
-│  │ Local Mode                                                          │   │
-│  │ Run everything locally on your machine. All processing happens     │   │
-│  │ on your computer with no external server required.                  │   │
-│  │                                                                     │   │
-│  │ • Full privacy - your code never leaves your machine                │   │
-│  │ • No network latency                                                │   │
-│  │ • Works offline (requires local AI setup)                           │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ [Server Icon]                                                       │   │
-│  │                                                                     │   │
-│  │ Remote Mode                                                         │   │
-│  │ Connect to a remote DeliDev server for task execution and          │   │
-│  │ coordination.                                                       │   │
-│  │                                                                     │   │
-│  │ • Centralized task management                                       │   │
-│  │ • Team collaboration support                                        │   │
-│  │ • Offload computation to server                                     │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ── Server URL Input (shown when Remote Mode selected) ──                  │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Server URL                              [ https://...           ]   │   │
-│  │ Enter the URL of your DeliDev server                                │   │
-│  │                                        [Test Connection]            │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│  You can change this setting later in Settings                             │
-│                                                          [Continue →]      │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Mode Selection Features
-
-| Feature | Description |
-|---------|-------------|
-| Local Mode | Runs server, worker, and client in single process |
-| Remote Mode | Connects to a remote Main Server |
-| Connection Test | Validates server URL before proceeding |
-| Dev Mode Behavior | In development, mode selection shown on every start |
-| Persistence | Mode choice saved for subsequent starts |
-
----
-
-## Onboarding
-
-First-time setup wizard shown after mode selection.
-
-### Step 1: VCS Provider Connection
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        Welcome to DeliDev                                    │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Connect your VCS Provider                                     Step 1 of 2 │
-│  ─────────────────────────────────────────                                 │
-│                                                                            │
-│  Select a provider and enter your access token.                            │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Provider                           [ GitHub               ▼]      │   │
-│  ├────────────────────────────────────────────────────────────────────┤   │
-│  │ Personal Access Token              [ ghp_...               ]      │   │
-│  │                                                                    │   │
-│  │ Required scopes: repo, read:user, workflow                        │   │
-│  │ [Create token on GitHub →]                                        │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ [✓] Connection successful                                          │   │
-│  │ Authenticated as: @username                                        │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                    [Skip]       [Next →]   │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Step 2: Add First Repository
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        Welcome to DeliDev                                    │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Add Your First Repository                                     Step 2 of 2 │
-│  ─────────────────────────────────────────                                 │
-│                                                                            │
-│  Enter a repository URL to get started.                                    │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Repository URL                                                     │   │
-│  │ [ https://github.com/user/my-app                              ]    │   │
-│  │                                        [Validate]                  │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ [✓] Repository found                                               │   │
-│  │                                                                    │   │
-│  │ Name: my-app                                                       │   │
-│  │ Default Branch: main                                               │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                              [← Back]      [Get Started]   │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Dashboard
-
-Main view showing task status in a Kanban-style layout.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Dashboard                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌────────┐│
-│  │ In Progress │ │   Action    │ │Waiting for  │ │    Done     │ │Rejected││
-│  │             │ │  Required   │ │  Others     │ │             │ │/Failed ││
-│  ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────┤ ├────────┤│
-│  │             │ │             │ │             │ │             │ │        ││
-│  │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │ │        ││
-│  │ │ Task 1  │ │ │ │ Task 3  │ │ │ │ Task 5  │ │ │ │ Task 7  │ │ │        ││
-│  │ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │ │        ││
-│  │             │ │             │ │             │ │             │ │        ││
-│  │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │ │        ││
-│  │ │ Task 2  │ │ │ │ Task 4  │ │ │ │ Task 6  │ │ │ │ Task 8  │ │ │        ││
-│  │ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │ │        ││
-│  │             │ │             │ │             │ │             │ │        ││
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └────────┘│
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                            TodoItem List                                     │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │ Issue Triage                                                            ││
-│  │ ┌────────────────────────────────────────────────────────────────────┐  ││
-│  │ │ [bug] App crashes on startup  │  Suggested: bug, high-priority     │  ││
-│  │ └────────────────────────────────────────────────────────────────────┘  ││
-│  │                                                                         ││
-│  │ PR Review                                                               ││
-│  │ ┌────────────────────────────────────────────────────────────────────┐  ││
-│  │ │ feat: Add dark mode  │  12 files changed  │  AI: Adds theme toggle │  ││
-│  │ └────────────────────────────────────────────────────────────────────┘  ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Kanban Columns
-
-| Column | Description |
-|--------|-------------|
-| In Progress | AI is currently working on the task |
-| Action Required | Tasks needing human action (review, approval) |
-| Waiting for Others | Tasks waiting on external processes (PR open, cancelled) |
-| Done | Task complete |
-| Rejected/Failed | Task rejected or failed |
-
-### Task Card
-
-Each task card shows:
-- Task title/description
-- Repository name
-- Current status indicator
-- Progress (for CompositeTask: X/Y nodes complete)
-- Quick actions
-
----
-
-## Chat Interface
-
-Accessible via global hotkey (default: `Option+Z` / `Alt+Z`).
-
-```
-┌────────────────────────────────────────────┐
-│                   Chat                      │
-├────────────────────────────────────────────┤
-│                                            │
-│  ┌──────────────────────────────────────┐  │
-│  │ User: Create a new feature to add    │  │
-│  │ user authentication                   │  │
-│  └──────────────────────────────────────┘  │
-│                                            │
-│  ┌──────────────────────────────────────┐  │
-│  │ Assistant: I'll create a             │  │
-│  │ CompositeTask for this. The plan     │  │
-│  │ includes:                            │  │
-│  │ 1. Database schema for users         │  │
-│  │ 2. Auth API endpoints                │  │
-│  │ 3. Login/signup UI                   │  │
-│  │                                      │  │
-│  │ [Update Plan] [Approve] [Reject]     │  │
-│  └──────────────────────────────────────┘  │
-│                                            │
-├────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────┐  │
-│  │ Type a message...          [mic] [>] │  │
-│  └──────────────────────────────────────┘  │
-└────────────────────────────────────────────┘
-```
-
-### Features
-
-- **Text Input**: Type messages to interact with AI
-- **Voice Input**: Microphone for voice commands
-- **Local AI Agent Execution**: Runs directly in working directory (no Docker)
-- **Full Control**: Create tasks, review, manage repos via chat
-
----
-
-## Task Creation
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                           Create Task                                        │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Repository Group: [ Full Stack App                    ▼]                  │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ 📁 frontend-app  📁 backend-api  📁 shared-libs                   │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Add user authentication to the app                                 │   │
-│  │                                                                    │   │
-│  │ Focus on @src/auth/login.ts and @src/db/schema.ts                  │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Title & Branch (Optional)                                         │   │
-│  │ ┌──────────────────────────────┐ ┌──────────────────────────────┐ │   │
-│  │ │ Task Title                   │ │ Branch Name                  │ │   │
-│  │ │ [ Add user authentication ] │ │ [ feature/add-user-auth    ] │ │   │
-│  │ └──────────────────────────────┘ └──────────────────────────────┘ │   │
-│  │ Leave empty for AI-generated suggestions.                         │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Agent: [ Claude Code                                    ▼]                │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ [✓] Composite mode                                                 │   │
-│  │     Creates a CompositeTask with AI-generated plan                 │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                [Cancel]    [Create Task]   │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### File Mention (@)
-
-Type `@` to reference files:
-
-| Feature | Description |
-|---------|-------------|
-| Autocomplete | Shows file/folder suggestions |
-| Fuzzy Search | Matches partial names |
-| Multiple Files | Multiple `@` mentions allowed |
-
-### Composite Mode
-
-| State | Task Type | Description |
-|-------|-----------|-------------|
-| Checked | CompositeTask | AI generates a plan (PLAN.yaml) |
-| Unchecked | UnitTask | Direct single-step execution |
-
----
-
-## Task Detail Pages
-
-### UnitTask Detail
-
-**URL**: `/unit-tasks/{id}`
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                          UnitTask Details                                    │
-├────────────────────────────────────────────────────────────────────────────┤
-│  Task: Add user authentication                                               │
-│  Status: [In Review]                    Repository: my-project               │
-│  Created: 2024-01-15 10:30              Branch: feature/auth                 │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ AI Agent Request                                              [!]   │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │                                                                     │   │
-│  │  The AI agent is requesting approval:                               │   │
-│  │                                                                     │   │
-│  │  "I've completed the authentication implementation.                 │   │
-│  │   Should I proceed with creating the PR?"                           │   │
-│  │                                                                     │   │
-│  │                              [Deny]    [Approve]                    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Agent Session Log                                                         │
-│  ─────────────────────────────────────────                                 │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ [10:30:15] Starting agent session...                                │   │
-│  │ [10:30:20] Analyzing codebase structure                             │   │
-│  │ [10:35:42] Creating auth module                                     │   │
-│  │ [10:40:18] Writing tests                                            │   │
-│  │ [10:45:30] Requesting user approval...                              │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│  [View Diff]        [Approve]  [Request Changes]  [Reject]                 │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-**When Approved** (`status: approved`):
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ ✓ Approved                                                          │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  This task has been approved. Choose how to apply the changes.      │   │
-│  │                                                                     │   │
-│  │  [Create PR]   [Commit to Local*]  [Dismiss Approval]              │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### CompositeTask Detail
-
-**URL**: `/composite-tasks/{id}`
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        CompositeTask Details                                 │
-├────────────────────────────────────────────────────────────────────────────┤
-│  Task: Build e-commerce checkout system                                      │
-│  Status: [Pending Approval]             Repository: my-shop                  │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Plan Approval Required                                        [!]   │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │                                                                     │   │
-│  │  The AI has generated a plan for this task.                         │   │
-│  │  Please review and approve to proceed.                              │   │
-│  │                                                                     │   │
-│  │  [Update Plan]              [Reject]    [Approve Plan]    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Task Graph                                                                │
-│  ─────────────────────────────────────────                                 │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                                                                     │   │
-│  │   ┌─────────────┐                                                   │   │
-│  │   │ setup-db    │──────┐                                            │   │
-│  │   │ [Pending]   │      │                                            │   │
-│  │   └─────────────┘      │    ┌──────────────┐    ┌─────────────┐     │   │
-│  │                        ├───►│ api-endpoints│───►│  frontend   │     │   │
-│  │   ┌─────────────┐      │    │  [Pending]   │    │  [Pending]  │     │   │
-│  │   │ setup-auth  │──────┘    └──────────────┘    └─────────────┘     │   │
-│  │   │ [Pending]   │                                                   │   │
-│  │   └─────────────┘                                                   │   │
-│  │                                                                     │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Sub-Tasks                                                                 │
-│  ┌────────────────────────────────────────────────────────────────────┐    │
-│  │ 1. setup-db       │ Set up database schema      │ [Pending]   [→]  │    │
-│  │ 2. setup-auth     │ Set up authentication       │ [Pending]   [→]  │    │
-│  │ 3. api-endpoints  │ Implement API endpoints     │ [Pending]   [→]  │    │
-│  │ 4. frontend       │ Implement frontend          │ [Pending]   [→]  │    │
-│  └────────────────────────────────────────────────────────────────────┘    │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│  Progress: 0/4 tasks complete                                              │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Task Graph Visualization
-
-Rendered using `@xyflow/react` in `TaskGraph.tsx`:
-
-| Feature | Description |
-|---------|-------------|
-| Nodes | Custom nodes with title, prompt preview, and status |
-| Edges | Animated arrows showing dependencies |
-| Status Colors | Color-coded by task status (see below) |
-| Zoom Controls | Zoom in/out, fit view |
-| MiniMap | Overview for larger graphs with status-colored nodes |
-| Auto Layout | Automatic node positioning based on dependency levels |
-
-**Node Status Colors:**
-
-| Status | Color | Description |
-|--------|-------|-------------|
-| Pending | Gray | Task not yet started |
-| In Progress | Blue | AI is working on the task |
-| In Review | Blue | Task awaiting human review |
-| Done | Green | Task completed successfully |
-| Approved | Green | Task approved |
-| PR Open | Green | Pull request created |
-| Rejected | Red | Task rejected |
-
----
-
-## Review Interface
-
-Built-in diff viewer for reviewing AI-generated code.
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                          Code Review                                        │
-├────────────────────────────────────────────────────────────────────────────┤
-│  Task: Add user authentication                                              │
-│  Branch: feature/auth                                                       │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Files Changed (5)                    │  src/auth/login.ts                 │
-│  ┌─────────────────────────────────┐  │  ────────────────────────────────── │
-│  │ [✓] src/auth/login.ts    ✓     │  │   1  + import { hash } from 'bcrypt'│
-│  │ [ ] src/auth/signup.ts   (1)   │  │   2  +                              │
-│  │ [✓] src/db/schema.ts     ✓     │  │   3  + export async function login( │
-│  │ [ ] src/routes/auth.ts         │  │   4  +   email: string,             │
-│  │ [ ] tests/auth.test.ts         │  │   5  +   password: string           │
-│  └─────────────────────────────────┘  │   6  + ) {                          │
-│                                       │   7  +   const user = await findUser│
-│  2/5 viewed                          │   ...                                │
-│                                       │                                     │
-│                                       │  [Mark as viewed] [Open in Editor]  │
-├────────────────────────────────────────────────────────────────────────────┤
-│  Comments on this file (1):                                                 │
-│  ┌────────────────────────────────────────────────────────────────────────┐│
-│  │ Line 7: Consider adding rate limiting here              [Edit] [Delete]││
-│  └────────────────────────────────────────────────────────────────────────┘│
-│  [+ Add comment]                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│  [Submit Review]  [Request Changes]  [Reject]  [Commit]  [Create PR]       │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Features
-
-| Feature | Description | Implementation |
-|---------|-------------|----------------|
-| File Tree | List of changed files with viewed status | `DiffFileList` component |
-| Diff Viewer | Side-by-side or unified diff | `DiffViewer` component |
-| Inline Comments | Add comments on specific lines | `InlineComment`, `CommentInputForm`, `LineComments` components |
-| Viewed Tracking | Mark files as reviewed | `DiffViewer` with `isViewed` prop |
-
-### Agent Log Viewer
-
-The Agent Session Log displays real-time streaming output from AI coding agents. It uses dedicated components to render tool events with rich formatting instead of raw JSON.
-
-| Component | File | Description |
-|-----------|------|-------------|
-| `AgentLogViewer` | `components/task/AgentLogViewer.tsx` | Main log viewer with auto-scroll and TTY input |
-| `ToolUseContent` | `components/task/ToolEventComponents.tsx` | Renders tool use events with tool-specific formatting |
-| `ToolResultContent` | `components/task/ToolEventComponents.tsx` | Renders tool results with tool-specific formatting |
-
-#### Supported Tool Formats
-
-| Tool | Display Format |
-|------|----------------|
-| Read | File icon with path, offset/limit info |
-| Write | File icon with path, collapsible content preview |
-| Edit | Pencil icon with path, diff-style old/new strings |
-| Bash | Terminal icon with command, description |
-| Glob | Folder icon with pattern and path |
-| Grep | Search icon with pattern, path, glob filter |
-| Task | Agent type badge, description, collapsible prompt |
-| WebFetch | URL link with prompt |
-| WebSearch | Search icon with query |
-| TodoWrite | Todo list with status indicators |
-| AskUserQuestion | Question with header badge and options |
-
-Unknown tools fall back to JSON display.
-
-### Implementation Components
-
-The review interface is built from the following components:
-
-| Component | File | Description |
-|-----------|------|-------------|
-| `DiffViewer` | `components/review/DiffViewer.tsx` | Main diff display with inline commenting support |
-| `DiffFileList` | `components/review/DiffViewer.tsx` | Sidebar file list with status indicators |
-| `InlineComment` | `components/review/InlineComment.tsx` | Single comment display with edit/delete |
-| `CommentInputForm` | `components/review/InlineComment.tsx` | Form for adding new comments |
-| `LineComments` | `components/review/InlineComment.tsx` | Container for multiple comments on a line |
-| `useReviewComments` | `hooks/useReviewComments.ts` | Hook for comment CRUD operations |
-| `parseUnifiedDiff` | `lib/parseDiff.ts` | Parses unified diff (git patch) strings into `DiffFile[]` for rendering |
-
-### Actions
-
-#### In Review Actions
-
-| Action | Description |
-|--------|-------------|
-| Approve | Approve the task changes |
-| Request Changes | Send feedback for AI rework |
-| Reject | Discard the task |
-
-#### Approved Actions
-
-| Action | Description |
-|--------|-------------|
-| Create PR | Create PR on VCS provider (transitions to `pr_open`) |
-| Commit to Local | Directly applies the task's git patch to a local git repository and commits (transitions to `done`). Only displayed in local mode. Opens a native directory picker to select the target git repository path. No AI agent is involved. |
-| Dismiss Approval | Move task back to `in_review` status |
-
----
-
-## Settings Interface
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                            Settings                                         │
-├────────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌──────────────────┐  ┌──────────────────┐               │
-│  │   Global    │  │    Workspace     │  │   Connection     │               │
-│  └─────────────┘  └──────────────────┘  └──────────────────┘               │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Global Settings (~/.delidev/config.toml)                                  │
-│  ─────────────────────────────────────────                                 │
-│                                                                            │
-│  Appearance                                                                │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Theme          [☀ Light] [🌙 Dark] [🖥 System]                    │   │
-│  │ Currently using dark theme (based on system preference)           │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Hotkey                                                                    │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Open Chat                                     [ Option+Z       ]   │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Agent - Planning                                                          │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Agent Type                              [ Claude Code       ▼]    │   │
-│  │ AI Model                                [ claude-sonnet-4   ▼]    │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Agent - Execution                                                         │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Agent Type                              [ Claude Code       ▼]    │   │
-│  │ AI Model                                [ claude-sonnet-4   ▼]    │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                [Cancel]         [Save]     │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Tabs
-
-| Tab | Description |
-|-----|-------------|
-| Global | User-wide settings (`~/.delidev/config.toml`) |
-| Workspace | Repository-specific (`.delidev/config.toml`) |
-| Connection | Mode selection and server URL |
-
-### Connection Tab (New)
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│  Connection Settings                                                       │
-│  ─────────────────────────────────────────                                 │
-│                                                                            │
-│  Mode: [●] Local Mode  [ ] Remote Mode                                     │
-│                                                                            │
-│  ── Remote Mode Settings (shown when Remote selected) ──                   │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ Server URL                              [ https://...           ]   │   │
-│  │                                        [Test Connection]            │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  Note: Changing mode requires restarting the application.                  │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Repository Management
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        Repository Management                                │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Registered Repositories                                                   │
-│  ─────────────────────────────────────────                                 │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ 📁 my-project          │ github.com/user/my-project    │ [✕]      │   │
-│  ├────────────────────────────────────────────────────────────────────┤   │
-│  │ 📁 another-repo        │ github.com/user/another-repo  │ [✕]      │   │
-│  ├────────────────────────────────────────────────────────────────────┤   │
-│  │ 📁 frontend-app        │ github.com/user/frontend-app  │ [✕]      │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│                                           [+ Add Repositories]             │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Repository Groups
-
-**URL**: `/repository-groups`
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        Repository Groups                                     │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  Create groups of repositories for multi-repository tasks.                 │
-│                                                           [+ Create Group]  │
-│                                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐   │
-│  │ 🗂 Full Stack App      │ 3 repositories     │ [Edit] [Manage] [✕] │   │
-│  │                                                                    │   │
-│  │ 📁 frontend-app  📁 backend-api  📁 shared-libs                   │   │
-│  └────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Keyboard Shortcuts
-
-All keyboard shortcuts are keyboard layout-aware. When using a non-English keyboard layout (e.g., Korean, Russian), shortcuts are matched by the physical key position using `KeyboardEvent.code` as a fallback. This means pressing the physical 'C' key will trigger the 'c' shortcut regardless of the active input method.
-
-### Global Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Option+Z` (macOS) / `Alt+Z` (Win/Linux) | Open Chat |
-
-### Application Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `?` | Show Keyboard Shortcuts |
-| `c` | Create Task |
-| `Cmd+N` / `Ctrl+N` | New Task |
-| `Cmd+,` / `Ctrl+,` | Settings |
-| `Cmd+K` / `Ctrl+K` | Command Palette |
-| `Cmd+1` / `Ctrl+1` | Dashboard |
-| `Escape` | Close Dialog |
-
-### Form Shortcuts
-
-All multiline inputs (textareas) support `Cmd+Enter` (macOS) / `Ctrl+Enter` (Windows/Linux) to submit. This applies to:
-
-| Form / Input | Location | Submit Action |
-|--------------|----------|---------------|
-| Task Creation | `/create-task` | Create Task |
-| Repository Group Dialog | Repository Groups page | Create/Save Group |
-| Onboarding Wizard | Step 1: Next, Step 2: Get Started |
-| Chat Input | Chat window | Send Message |
-| Inline Comment Edit | Review interface | Save Comment |
-| New Comment Form | Review interface | Add Comment |
-| Update Plan | Composite task detail | Update Plan |
-| Request Changes | Unit task detail | Submit Review |
-
-### Review Interface
-
-| Shortcut | Action |
-|----------|--------|
-| `J` / `K` | Navigate Files |
-| `Enter` | Open File |
-| `Cmd+Enter` / `Ctrl+Enter` | Approve |
-
-### Task Detail
-
-| Shortcut | Action |
-|----------|--------|
-| `A` | Approve |
-| `D` | Deny |
-| `L` | Toggle Log |
-| `S` | Stop Execution |
-
-### Tab Navigation
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+T` / `Ctrl+T` | New Tab |
-| `Cmd+W` / `Ctrl+W` | Close Tab |
-| `Cmd+Tab` / `Ctrl+Tab` | Next Tab |
-| `Cmd+1-9` / `Ctrl+1-9` | Switch Tab |
-
----
-
-## Multi-Tab Interface
-
-The tab bar appears above the main content area when there are multiple tabs open. It is hidden on mobile devices.
-
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│  [Dashboard]  [Task: Add auth ×]  [Task: Fix bug ×]                        │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  (Tab content displayed here)                                              │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Implementation
-
-| Component | Location | Description |
-|-----------|----------|-------------|
-| `TabBar` | `components/layout/TabBar.tsx` | Horizontal tab bar UI with close buttons |
-| `useTabNavigation` | `hooks/useTabNavigation.ts` | Syncs router with tab state |
-| `useTabTitle` | `hooks/useTabNavigation.ts` | Updates active tab title |
-
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| Ctrl/Cmd+Click | Open in new tab (via `handleLinkClick` from `useTabNavigation`) |
-| Middle Click | Close tab |
-| Tab Title | Auto-updated based on route |
-| Close Button | Appears on hover for closable tabs |
-| Hidden on Single Tab | Tab bar hidden when only one tab exists |
-| Desktop Only | Tab bar hidden on mobile viewports |
-
-### State Management
-
-Tab state is managed in `stores/uiStore.ts`:
-
-| Function | Description |
-|----------|-------------|
-| `addTab` | Creates new tab, returns ID |
-| `removeTab` | Closes tab, handles active tab selection |
-| `setActiveTab` | Switches to specified tab |
-| `updateTabTitle` | Updates tab title |
-| `updateTabPath` | Updates tab path |
-| `updateTab` | Updates multiple tab properties |
-
----
-
-## Desktop Notifications
-
-### Triggers
-
-| Event | Notification |
-|-------|--------------|
-| TTY Input Request | "Agent is asking a question" |
-| Task Review Ready | "Task ready for review" |
-| Plan Approval | "Plan ready for approval" |
-| Task Failure | "Task failed" |
-
-### Click Behavior
-
-1. App window focused
-2. Navigate to task detail page
-
-### Platform Support
-
-| Platform | Implementation |
-|----------|----------------|
-| Windows | tauri-winrt-notification |
-| Linux | notify-rust |
-| macOS | AppleScript |
-
----
-
-## Theme / Dark Mode
-
-DeliDev supports light, dark, and system-following theme modes. The theme is toggled via the sidebar button or the Settings > Global > Appearance card.
-
-### Theme Modes
-
-| Mode | Description |
-|------|-------------|
-| Light | Forces light theme |
-| Dark | Forces dark theme |
-| System | Follows the operating system's `prefers-color-scheme` setting |
-
-### Implementation
-
-| Component | File | Description |
-|-----------|------|-------------|
-| `themeStore` | `stores/themeStore.ts` | Zustand store with `ThemeMode` enum, persisted to localStorage |
-| `useTheme` | `hooks/useTheme.ts` | Hook that applies `.dark` class to `<html>` and listens for system preference changes |
-| Sidebar toggle | `components/layout/Sidebar.tsx` | Quick-access button that cycles Light → Dark → System |
-| Settings card | `pages/Settings.tsx` | Appearance card with explicit Light/Dark/System buttons |
-
-### CSS Architecture
-
-- CSS variables defined in `index.css` under `:root` (light) and `.dark` (dark) selectors
-- All components use `hsl(var(--variable))` for colors
-- Tailwind CSS v4 `dark:` variant configured via `@custom-variant dark (&:where(.dark, .dark *))` for class-based dark mode
-- Theme preference persisted in localStorage via Zustand's `persist` middleware (key: `delidev-theme-store`)
+# UI Design (Codex Desktop Inspired)
+
+This document defines DeliDev UI and UX structure.
+
+## UX Goals
+
+1. Fast triage-first interface for tasks and PR events
+2. Persistent visibility of AI activity timeline
+3. One-click remediation for review and CI issues
+4. Consistent desktop and mobile mental model
+
+## Visual Direction
+
+Inspired by Codex Desktop style:
+
+1. workspace-oriented shell
+2. dense and readable information layout
+3. timeline-driven debugging and review
+4. clear action-required emphasis
+
+## Layout Blueprint
+
+Desktop layout:
+
+1. Left rail: workspace and navigation
+2. Top tab bar: opened items and tab actions
+3. Center pane: task and PR list with filters
+4. Right pane: details, timeline, and actions
+
+Mobile layout:
+
+1. top segmented tabs (Tasks, PRs, Review Assist, Notifications)
+2. stacked detail drawers and sheets
+3. persistent action bar for primary actions
+4. tab switcher sheet for opened item tabs
+
+## Primary Screens
+
+1. Workspace Home
+2. UnitTask Detail
+3. PR Management
+4. PR Review Assist
+5. Settings
+6. Notifications Center
+
+## Multi-Tab Workspace
+
+DeliDev provides multi-tab UI for working with multiple items in parallel.
+
+Tab rules:
+
+1. any opened item (UnitTask, SubTask context, PR item, review assist item, settings page) opens in a tab
+2. users can switch, reorder, and close tabs without losing unsaved input state
+3. each tab shows state indicators (running, action required, unread update)
+4. tab state is scoped per workspace and restored on relaunch
+5. overflow tabs are accessible from a tab list menu
+
+## Keyboard Shortcut System
+
+Every screen provides appropriate shortcuts for its primary items and actions.
+
+Notation rule:
+
+1. shortcut notation uses macOS style (`Cmd`, `Option`, `Shift`)
+2. non-mac platforms map `Cmd` to `Ctrl`
+3. shortcut matching uses physical key codes, not localized character output
+4. shortcuts work regardless of current language input mode (Korean/English IME)
+5. context-sensitive shortcuts (for example `Cmd+Enter`) resolve by focused control type
+
+Global shortcuts:
+
+1. `Cmd+K`: open command palette
+2. `Cmd+1`: go to Workspace Home
+3. `Cmd+2`: go to PR Management
+4. `Cmd+3`: go to PR Review Assist
+5. `Cmd+,`: open Settings
+6. `Cmd+N`: create UnitTask
+7. `Cmd+B`: toggle sidebar
+8. `Cmd+T`: open new tab
+9. `Cmd+W`: close current tab
+10. `Cmd+Shift+[`: switch to previous tab
+11. `Cmd+Shift+]`: switch to next tab
+12. `?`: open shortcut cheat sheet
+13. `Esc`: close modal, drawer, or inline editor
+
+Screen shortcut coverage rule:
+
+1. each list screen supports next and previous item navigation (`J` / `K`)
+2. each selected item supports open action (`Enter`)
+3. each selected item supports open in new tab (`Cmd+Enter`)
+4. each primary button action has a dedicated shortcut
+5. shortcut hints are shown in tooltip, menu, or action label
+6. active shortcuts must still trigger under IME language switching
+
+## Workspace Home
+
+Shows actionable work first.
+
+Sections:
+
+1. Action Required queue
+2. In Progress queue
+3. PR Attention queue
+4. Completed recently
+
+Each card includes:
+
+1. title
+2. repository/group context
+3. status
+4. action badges
+5. latest subtask or session timestamp
+
+Workspace Home shortcuts:
+
+1. `J` / `K`: move selected card
+2. `Enter`: open selected task or PR item
+3. `Cmd+Enter`: open selected task or PR item in new tab
+4. `A`: focus Action Required queue
+5. `I`: focus In Progress queue
+6. `P`: focus PR Attention queue
+
+## UnitTask Detail
+
+Contains:
+
+1. summary header
+2. status and action badges
+3. SubTask timeline
+4. AgentSession logs per subtask
+5. patch and diff preview
+6. plan-mode decision controls when active
+7. `Create PR` action shown after AI diff approval
+8. commit chain viewer for generated commits
+9. stop controls for in-progress UnitTask and SubTask
+10. inline comment threads anchored to diff lines
+
+### Stop Controls
+
+Users can stop running work with minimal friction:
+
+1. show `Stop UnitTask` button when UnitTask is `IN_PROGRESS`
+2. show `Stop SubTask` action on each in-progress SubTask row
+3. stop action sends cancellation request immediately
+4. UI reflects `CANCELLED` state from stream updates
+
+## Multiline Input Submit Shortcut
+
+All multiline inputs support `Cmd+Enter` for form submission.
+
+Applies to:
+
+1. UnitTask creation prompt input
+2. SubTask feedback and retry prompt input
+3. Plan-mode revise feedback input
+4. PR review assist note and comment input
+5. inline comment composer in code review diff
+
+Behavior:
+
+1. `Enter` inserts a newline
+2. `Cmd+Enter` submits the current form
+3. submit button remains available as an alternative
+4. `Cmd+Enter` submit works regardless of current IME language mode
+
+### Approved Diff PR Action
+
+When a user approves the AI diff in UnitTask detail:
+
+1. show `Create PR` button
+2. on click, create SubTask with type `PR_CREATE`
+3. send simple prompt `Create A PR` to coding agent
+4. stream the SubTask and AgentSession progress in the same timeline
+5. render generated real commit list in order
+6. update PR tracking state after creation
+
+UnitTask Detail shortcuts:
+
+1. `A`: approve current diff
+2. `R`: request changes
+3. `Shift+P`: create PR (when approval condition is met)
+4. `C`: commit to local (when available)
+5. `L`: toggle session log panel
+6. `D`: toggle diff panel
+7. `[` / `]`: move to previous or next changed file
+8. `S`: stop current UnitTask when in progress
+9. `Shift+S`: stop selected SubTask when in progress
+
+### Commit Chain Panel
+
+UnitTask detail shows commit chain metadata per SubTask:
+
+1. commit SHA
+2. commit title
+3. author and timestamp
+4. commit order index
+
+`Create PR` and `Commit to Local` both use this commit chain.
+
+## Action Badge System
+
+DeliDev highlights UnitTasks requiring user action with badges.
+
+### Badge Rules
+
+1. one UnitTask can have multiple action badges
+2. badges map from `ActionType` to `BadgeColorKey`
+3. default mapping exists per workspace
+4. users can override mapping in Settings
+
+### Example Mapping
+
+- `REVIEW_REQUESTED` -> `BLUE`
+- `PR_CREATION_READY` -> `GREEN`
+- `PLAN_APPROVAL_REQUIRED` -> `YELLOW`
+- `CI_FAILED` -> `RED`
+- `MERGE_CONFLICT` -> `ORANGE`
+- `USER_INPUT_REQUIRED` -> `GREEN`
+
+## PR Management Screen
+
+Purpose: polling-driven operations for PRs created by DeliDev tasks.
+
+Columns:
+
+1. PR metadata and state
+2. latest review and CI signals
+3. auto-fix policy state
+4. quick actions
+
+Primary actions:
+
+1. `Fix with Agent`
+2. `Enable Auto-Fix`
+3. `Disable Auto-Fix`
+4. `Open PR`
+
+PR Management shortcuts:
+
+1. `J` / `K`: move selected PR row
+2. `Enter`: open selected PR detail
+3. `Cmd+Enter`: open selected PR detail in new tab
+4. `F`: run `Fix with Agent`
+5. `E`: toggle auto-fix policy for selected PR
+6. `O`: open selected PR in provider page
+7. `R`: refresh selected PR state
+
+## PR Review Assist Screen
+
+Displays review guidance items grouped by urgency and type.
+
+Each item includes:
+
+1. signal source (review, CI, risk)
+2. summary and details
+3. links to code and PR context
+4. quick action to create remediation subtask
+
+PR Review Assist shortcuts:
+
+1. `J` / `K`: move selected review assist item
+2. `Enter`: open selected item detail
+3. `Cmd+Enter`: open selected item detail in new tab
+4. `F`: create remediation subtask
+5. `X`: resolve selected item
+6. `Shift+X`: dismiss selected item
+
+## Code Review Inline Comments
+
+Code review diff view includes line-level inline comment UX.
+
+Requirements:
+
+1. each changed line provides an inline comment entry action
+2. inline comments are anchored by `filePath`, `side`, and `lineNumber`
+3. thread state shows `OPEN` and `RESOLVED` status clearly
+4. users can add, edit, resolve, reopen, and delete inline comments
+5. unresolved inline comment count is visible in diff file list and task summary
+6. inline comment updates are reflected through streaming events without manual refresh
+
+Inline comment shortcuts:
+
+1. `I`: open inline comment composer on focused diff line
+2. `Cmd+Enter`: submit inline comment composer
+3. `R`: reply to selected inline comment thread
+4. `X`: resolve selected inline comment thread
+5. `Shift+X`: reopen selected inline comment thread
+
+## Plan Mode UX
+
+When plan mode is active for a subtask:
+
+1. show current proposal in the detail pane
+2. show decision controls: `Approve`, `Revise`, `Reject`
+3. require explicit decision before execution continues
+4. preserve the full plan conversation in session timeline
+
+Plan Mode shortcuts:
+
+1. `A`: approve plan
+2. `V`: open revise input
+3. `Shift+X`: reject plan
+
+## Notifications UX
+
+1. bell icon with unread count
+2. notification center list with deep links
+3. Web Notification API permission prompt shown at app startup
+4. duplicate prevention by event sequence
+
+Notifications Center shortcuts:
+
+1. `J` / `K`: move selected notification
+2. `Enter`: open deep link for selected notification
+3. `M`: mark selected notification as read
+4. `Shift+M`: mark all visible notifications as read
+
+Settings shortcuts:
+
+1. `/`: focus settings search input
+2. `Cmd+S`: save settings form
+3. `R`: reset current settings section
+
+## Accessibility Baseline
+
+1. keyboard-first action flow on desktop
+2. minimum contrast ratios for badges and statuses
+3. semantic heading and landmark structure
+4. reduced-motion support for streaming updates
+
+## Responsive Breakpoints
+
+1. `>= 1280`: 3-pane layout
+2. `>= 768 and < 1280`: 2-pane layout
+3. `< 768`: stacked mobile flow
+
+## Empty and Error States
+
+1. no workspace configured
+2. stream disconnected
+3. PR provider rate-limited
+4. no actionable items
+
+Each state includes direct recovery actions.

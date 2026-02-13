@@ -1,1112 +1,343 @@
-# DeliDev Design Document
+# DeliDev Design
 
-DeliDev is a desktop and mobile application for orchestrating AI coding agents with support for both local and remote execution.
+DeliDev uses a Connect RPC-first architecture with Tauri clients and Go servers.
+This document is the primary architecture reference.
 
-## Table of Contents
+## Product Goals
 
-1. [Architecture](#architecture)
-2. [Technology Stack](#technology-stack)
-3. [Entities](#entities)
-4. [Configuration](#configuration)
-5. [Authentication](#authentication)
-6. [Secrets Management](#secrets-management)
-7. [Workflows](#workflows)
-8. [Error Handling](#error-handling)
-9. [Related Documents](#related-documents)
+1. Use Tauri as the desktop and mobile app container.
+2. Use Go for `main-server` and `worker-server`.
+3. Use `Workspace` as the primary connectivity and scope concept.
+4. Use UnitTask-centric workflows with nested SubTask and AgentSession history.
+5. Make PR management and PR review assist first-class workflows.
+6. Provide real-time event streaming for UI updates and automation.
+7. Support iOS and Android as first-wave platforms.
 
----
+## Non-Goals
 
-## Architecture
+1. Direct local folder execution without worktree.
+2. Tauri-invoke-first business contracts.
+3. Native OS notification plugin as the primary notification channel.
 
-### Component Roles
-
-DeliDev consists of three main components:
-
-| Component | Role |
-|-----------|------|
-| **Main Server** | Maintains the task list, provides RPC server, coordinates workers |
-| **Worker Server** | Runs AI coding agents (Claude Code, OpenCode, etc.) in Docker sandboxes |
-| **Client** | Desktop/Mobile app based on Tauri, provides user interface |
-
-### Distributed Architecture
+## Top-Level Architecture
 
 ```
-                                ┌─────────────────────────────────┐
-                                │         Main Server             │
-                                │  (Task Management, RPC Server)  │
-                                │                                 │
-                                │  ┌─────────────────────────────┐│
-                                │  │      PostgreSQL / SQLite    ││
-                                │  │      (multi/single mode)    ││
-                                │  └─────────────────────────────┘│
-                                │                                 │
-                                │  JWT Auth (OpenID Connect)      │
-                                └─────────────┬───────────────────┘
-                                              │
-                         Connect RPC over HTTP
-                                              │
-                ┌─────────────────────────────┼─────────────────────────────┐
-                │                             │                             │
-                ▼                             ▼                             ▼
-    ┌───────────────────┐       ┌───────────────────┐       ┌───────────────────┐
-    │   Worker Server   │       │   Worker Server   │       │      Client       │
-    │                   │       │                   │       │  (Desktop/Mobile) │
-    │  ┌─────────────┐  │       │  ┌─────────────┐  │       │                   │
-    │  │Claude Code  │  │       │  │Claude Code  │  │       │  React + Tauri    │
-    │  │OpenCode     │  │       │  │OpenCode     │  │       │  react-query      │
-    │  │Aider, etc.  │  │       │  │Aider, etc.  │  │       │                   │
-    │  └─────────────┘  │       │  └─────────────┘  │       │  Keychain Access  │
-    │                   │       │                   │       │  (macOS, etc.)    │
-    │  Docker Sandbox   │       │  Docker Sandbox   │       │                   │
-    └───────────────────┘       └───────────────────┘       └───────────────────┘
+                        Connect RPC + Event Streams
+┌───────────────────────┐   https://api endpoint   ┌───────────────────────┐
+│ Tauri Client          │ <----------------------> │ Main Server (Go)      │
+│ (Desktop / iOS /      │                          │ - RPC API             │
+│  Android)             │                          │ - Workspace/Task/PR   │
+│ - React UI            │                          │ - Event broker        │
+│ - Web Notification API│                          │ - Auth & policy       │
+└───────────┬───────────┘                          └───────────┬───────────┘
+            │                                                   │
+            │                                                   │ Connect RPC
+            │                                                   │
+            │                                         ┌─────────▼──────────┐
+            │                                         │ Worker Server (Go) │
+            │                                         │ - Worktree exec    │
+            │                                         │ - Agent sessions   │
+            │                                         │ - Log stream       │
+            │                                         └────────────────────┘
 ```
 
-**Key Characteristics:**
+## Monorepo Structure
 
-- **Main Server**: Central hub for task management and worker coordination
-- **Worker Servers**: Execute AI agents in isolated Docker containers
-- **Client**: Never communicates directly with Worker Server (always through Main Server)
+- `apps/main-server/` (Go)
+- `apps/worker-server/` (Go)
+- `apps/tauri-app/` (Tauri + React)
+- single root `go.mod` for server apps
 
-### Single Process Mode
+## Deployment Profiles
 
-For desktop usage, all components can run in a single process for a seamless local experience:
+Main server supports two deployment profiles.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Single Process Desktop App                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐  │
-│  │   Embedded Server   │  │   Embedded Worker   │  │      Client UI      │  │
-│  │                     │  │                     │  │   (Tauri WebView)   │  │
-│  │                     │  │                     │  │                     │  │
-│  │  In-process calls   │◄─┤  In-process calls   │◄─┤   In-process calls  │  │
-│  │  (no network)       │  │  (no network)       │  │   (no network)      │  │
-│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘  │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │                          SQLite Database                                 ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│  Auth: DISABLED (single user, trusted local execution)                      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. Single-instance mode:
+- database: SQLite
+- event propagation: in-memory event broker in main-server process
+- target: local/simple deployments
 
-**Key Features:**
+2. Scale mode:
+- database: PostgreSQL
+- event propagation: Redis streams and pub/sub
+- target: shared/multi-instance deployments
 
-- No network overhead - all RPC calls are direct function invocations
-- SQLite storage for local data
-- Authentication disabled (trusted local execution)
-- Secrets read directly from local keychain
+## Connect RPC First Rule
 
-### Communication
+All business data and control flows use Connect RPC.
+Web client data access uses `@connectrpc/connect-query` with React Query patterns.
 
-| Layer | Protocol |
-|-------|----------|
-| Client ↔ Main Server | Connect RPC over HTTP |
-| Frontend State | react-query for data fetching |
-| Client ↔ Worker | **Not allowed** - all communication goes through Main Server |
+Tauri-native bindings are used only for platform integration:
 
----
+1. window lifecycle and tray integration
+2. secure local storage helpers
+3. file picker and OS capabilities
+4. deep links
 
-## Technology Stack
+Business operations (task, repository, workspace, PR, review, streaming, settings) are not Tauri-only contracts.
 
-### Desktop/Mobile Framework
+Web client rule:
 
-- **Tauri**: Rust-based framework using system WebView
-  - Small binary size (~10MB)
-  - Low memory footprint
-  - Native system integration
-  - Cross-platform: Desktop (Windows, macOS, Linux) and Mobile (iOS, Android)
+1. unary RPCs are consumed through `@connectrpc/connect-query` query and mutation hooks
+2. caching, refetch, and invalidation follow React Query (`@tanstack/react-query`) patterns
+3. ad-hoc `fetch` or component-local RPC calls are not used for business data flows
 
-### Backend (Rust)
+## Workspace Model
 
-| Crate | Purpose |
-|-------|---------|
-| sqlx | Async SQLite/PostgreSQL driver |
-| bollard | Docker API client |
-| git2 | Git operations |
-| reqwest | HTTP client for VCS/RPC APIs |
-| serde | Serialization |
-| tokio | Async runtime |
-| axum | Web server framework |
-| jsonwebtoken | JWT authentication |
+DeliDev uses workspace switching.
+Each workspace points to a main server endpoint.
 
-### Shared Crates
+### Workspace Types
 
-| Crate | Purpose |
-|-------|---------|
-| `entities` | Core entity definitions and shared input sanitization utilities |
-| `coding_agents` | AI agent abstraction, output normalization, Docker sandboxing, task execution |
-| `task_store` | Task storage (SQLite, PostgreSQL, in-memory) |
-| `rpc_protocol` | Connect RPC protocol definitions (Protobuf) |
-| `git_ops` | Git operations, worktree management & repository caching |
-| `auth` | JWT authentication & RBAC |
-| `secrets` | Cross-platform keychain access |
-| `worker_impl` | Local worker implementation with incremental log persistence for single-process mode task execution |
+1. Local Endpoint Workspace
+- endpoint runs on the same device (for example `http://127.0.0.1:4621`)
+- uses the same RPC and streaming contracts as remote endpoints
 
-### Frontend (React + TypeScript)
+2. Remote Endpoint Workspace
+- endpoint runs on a network-hosted server
+- uses the same RPC and streaming contracts
 
-| Package | Purpose |
-|---------|---------|
-| react | UI framework |
-| typescript | Type safety |
-| @rspack/core | Build tool (Rust-based) |
-| tailwindcss | Utility-first CSS |
-| shadcn/ui | Component library |
-| zustand | State management |
-| @tanstack/react-query | Server state management |
+## Data Model Overview
 
-### Coding Agent Normalization
+Detailed model is maintained in `docs/entities.md`.
 
-The `coding_agents` crate normalizes output from all AI coding agents:
+Core entities:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        coding_agents crate                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │Claude Code  │  │  OpenCode   │  │   Aider     │  ...        │
-│  │   Parser    │  │   Parser    │  │   Parser    │             │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘             │
-│         │                │                │                     │
-│         └────────────────┴────────────────┘                     │
-│                          │                                      │
-│                          ▼                                      │
-│         ┌────────────────────────────────────┐                  │
-│         │      Normalized Event Types        │                  │
-│         │  - ToolUse, ToolResult             │                  │
-│         │  - TextOutput, ErrorOutput         │                  │
-│         │  - FileChange, CommandExecution    │                  │
-│         │  - AskUserQuestion, etc.           │                  │
-│         └────────────────────────────────────┘                  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. Workspace
+2. Repository
+3. RepositoryGroup
+4. UnitTask
+5. SubTask (child of UnitTask)
+6. AgentSession (child of SubTask)
+7. PullRequestTracking
+8. ReviewAssistItem
+9. ReviewInlineComment
+10. BadgeTheme and ActionBadge mapping
+11. Notification
 
-**Benefits:**
-- Frontend uses only normalized types
-- Easy to add new AI agents by implementing a parser
-- Consistent UI rendering regardless of agent type
-
-### Task Execution
-
-The `coding_agents` crate also provides platform-agnostic task execution:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    coding_agents::executor                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                     TaskExecutor                         │   │
-│  │  - Creates git worktrees via RepositoryCache            │   │
-│  │  - Runs AI agents with proper configuration             │   │
-│  │  - Streams events via EventEmitter trait                │   │
-│  │  - Handles TTY input via TtyInputRequestManager         │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  ┌─────────────────────┐  ┌─────────────────────┐              │
-│  │   EventEmitter      │  │ TtyInputRequest     │              │
-│  │   (trait)           │  │ Manager             │              │
-│  │                     │  │                     │              │
-│  │ Platform-agnostic   │  │ Pending request     │              │
-│  │ event emission      │  │ tracking & response │              │
-│  └─────────────────────┘  └─────────────────────┘              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Key Components:**
-- `TaskExecutor<E>`: Generic executor parameterized by event emitter
-- `EventEmitter` trait: Platform-specific event emission (Tauri, CLI, etc.)
-- `TtyInputRequestManager`: Manages pending TTY input requests
-- `TaskExecutionConfig`: Configuration for executing a task
-- `run_agent_in_worktree()`: Runs an agent in an existing worktree (used for subtasks)
-
-This design allows the same execution logic to be reused across different platforms (desktop app, CLI, server) by implementing the `EventEmitter` trait.
-
----
-
-## Entities
-
-### VCSType
-
-```
-enum VCSType {
-  git           // Git
-}
-```
-
-### VCSProviderType
-
-```
-enum VCSProviderType {
-  github        // GitHub
-  gitlab        // GitLab
-  bitbucket     // Bitbucket
-}
-```
-
-### AIAgentType
-
-```
-enum AIAgentType {
-  claude_code    // Claude Code - Anthropic's terminal-based agentic coding tool
-  open_code      // OpenCode - Open-source Claude Code alternative
-  gemini_cli     // Gemini CLI - Google's open-source AI agent
-  codex_cli      // Codex CLI - OpenAI's terminal-based coding assistant
-  aider          // Aider - Open-source CLI for multi-file changes
-  amp            // Amp - Sourcegraph's agentic coding CLI
-}
-```
-
-### TokenUsage
-
-Token usage statistics from an AI coding agent session.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| inputTokens | number | Y | Number of input tokens (excluding cache) |
-| outputTokens | number | Y | Number of output tokens generated |
-| cacheReadInputTokens | number | Y | Number of tokens read from cache |
-| cacheCreationInputTokens | number | Y | Number of tokens written to cache |
-| totalCostUsd | number | Y | Total cost in USD for this session |
-| durationMs | number | Y | Duration of the session in milliseconds |
-| numTurns | number | Y | Number of conversation turns (API round-trips) |
-
-### AgentSession
-
-A single AI coding agent session.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| aiAgentType | AIAgentType | Y | Agent type |
-| aiAgentModel | string | N | Model to use |
-| tokenUsage | TokenUsage | N | Token usage statistics from the session |
-
-### AgentTask
-
-A collection of AgentSessions. The retryable unit.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| baseRemotes | BaseRemote[] | Y | Git repository information |
-| agentSessions | AgentSession[] | Y | Session list |
-| aiAgentType | AIAgentType | N | Agent type |
-| aiAgentModel | string | N | Model to use |
+## Task Execution Model
 
 ### UnitTask
 
-A single task unit visible to users.
+UnitTask is the top-level user-visible work item.
+Execution scope is one RepositoryGroup.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| repositoryGroupId | string | Y | Associated RepositoryGroup ID |
-| agentTask | AgentTask | Y | Associated AgentTask (1:1) |
-| branchName | string | N | Custom branch name |
-| linkedPrUrl | string | N | Created PR URL |
-| baseCommit | string | N | Base commit hash |
-| endCommit | string | N | End commit hash |
-| gitPatch | string | N | Git patch (unified diff) of changes made by AI agent |
-| autoFixTasks | AgentTask[] | Y | Auto-fix attempts |
-| status | UnitTaskStatus | Y | Current status |
+### SubTask
 
-#### UnitTaskStatus
+SubTask is a UnitTask child entity used for initial implementation, retries, review feedback, PR creation, and PR follow-up fixes.
+SubTask is also used for small operational tasks triggered by UI actions.
+
+### AgentSession
+
+Each SubTask can run one or more AI coding agent sessions.
 
 ```
-enum UnitTaskStatus {
-  in_progress   // AI is working
-  in_review     // AI work complete, awaiting human review
-  approved      // Human approved
-  pr_open       // PR created
-  done          // PR merged
-  rejected      // Rejected and discarded
-  failed        // Task failed with error
-  cancelled     // Task was cancelled by user
-}
+UnitTask
+  ├── SubTask #1 (initial implementation)
+  │     ├── AgentSession #1
+  │     └── AgentSession #2 (retry)
+  ├── SubTask #2 (create PR)
+  │     └── AgentSession #3
+  └── SubTask #3 (fix CI failure)
+        └── AgentSession #4
 ```
 
-### CompositeTask
-
-Task graph-based Agent Orchestrator.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| repositoryGroupId | string | Y | Associated RepositoryGroup ID |
-| planningTask | AgentTask | Y | AgentTask for generating PLAN.yaml |
-| planYaml | string | N | Raw PLAN.yaml content (persisted after planning) |
-| updatePlanFeedback | string | N | User feedback for re-planning (set by Update Plan, cleared after re-planning) |
-| tasks | CompositeTaskNode[] | Y | List of task nodes |
-| status | CompositeTaskStatus | Y | Current status |
-| executionAgentType | AIAgentType | N | Agent type for UnitTasks |
-
-#### CompositeTaskStatus
-
-```
-enum CompositeTaskStatus {
-  planning           // Generating PLAN.yaml
-  pending_approval   // Waiting for user approval
-  in_progress        // Tasks are executing
-  done               // All tasks completed
-  rejected           // User rejected the plan
-  failed             // Planning or execution failed
-}
-```
-
-### CompositeTaskNode
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| unitTask | UnitTask | Y | Associated UnitTask |
-| dependsOn | CompositeTaskNode[] | Y | Dependent nodes |
-
-### TodoItem
-
-Tasks that humans should do but AI can assist with.
-
-#### type: "issue_triage"
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| issueUrl | string | Y | Issue URL |
-| repositoryId | string | Y | Repository ID |
-| issueTitle | string | Y | Issue title |
-| suggestedLabels | string[] | N | AI suggested labels |
-| suggestedAssignees | string[] | N | AI suggested assignees |
-
-#### type: "pr_review"
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| prUrl | string | Y | PR/MR URL |
-| repositoryId | string | Y | Repository ID |
-| prTitle | string | Y | PR title |
-| changedFilesCount | number | Y | Changed files count |
-| aiSummary | string | N | AI analysis summary |
-
-### Repository
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| vcsType | VCSType | Y | Version control system |
-| vcsProviderType | VCSProviderType | Y | VCS provider |
-| remoteUrl | string | Y | Remote URL |
-| name | string | Y | Repository name |
-| defaultBranch | string | Y | Default branch |
-
-### Workspace
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| name | string | Y | Workspace name |
-| description | string | N | Description |
-| createdAt | timestamp | Y | Creation time |
-| updatedAt | timestamp | Y | Last update time |
-
-### RepositoryGroup
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| name | string | N | Group name |
-| workspaceId | string | Y | Parent workspace ID |
-| repositoryIds | string[] | Y | Repository IDs |
-| createdAt | timestamp | Y | Creation time |
-| updatedAt | timestamp | Y | Last update time |
-
-### TtyInputRequest
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | string | Y | Unique identifier |
-| taskId | string | Y | Associated UnitTask ID |
-| sessionId | string | Y | Agent session ID |
-| prompt | string | Y | Question from agent |
-| inputType | TtyInputType | Y | Input type |
-| options | string[] | N | Available options |
-| createdAt | timestamp | Y | Creation time |
-| status | TtyInputStatus | Y | Current status |
-| response | string | N | User's response |
-| respondedAt | timestamp | N | Response time |
+## Agent Message Normalization Boundary
 
----
+Worker server is the normalization boundary for all coding-agent outputs.
 
-## Configuration
+1. agent adapters parse provider-native outputs (Claude Code, Codex, OpenCode, and others) inside worker runtime
+2. worker emits only normalized session messages and normalized session state events to main server
+3. main server stores and relays only normalized agent messages
+4. Tauri client renders and reacts only to normalized message contracts
+5. provider-native raw payloads are not part of main-server or client contracts
 
-### Global Settings
+## Commit Chain Invariant
 
-Location: `~/.delidev/config.toml`
+Worker-produced code changes must be represented as real git commits.
 
-```toml
-[learning]
-autoLearnFromReviews = false
+1. Every SubTask that changes code produces one or more real commits in the task worktree branch.
+2. Multi-step changes should be split into multiple commits, not squashed into one patch-only result.
+3. Commit order is preserved and stored as SubTask commit chain metadata.
+4. PR creation and Commit to Local use this commit chain as the source of truth.
+5. Patch artifacts are derived from commits for diff viewing and are not authoritative.
 
-[hotkey]
-openChat = "Option+Z"
+## Worktree-Only Policy
 
-[notification]
-enabled = true
-approvalRequest = true
-userQuestion = true
-reviewReady = true
+DeliDev does not support editing directly against arbitrary local folders.
 
-[agent.planning]
-type = "claude_code"
-model = "claude-sonnet-4-20250514"
+All code execution paths must:
 
-[agent.execution]
-type = "claude_code"
-model = "claude-sonnet-4-20250514"
+1. resolve repository through workspace-scoped repository settings
+2. materialize task-specific git worktrees for each repository in the target RepositoryGroup
+3. execute agent operations from the first repository worktree and attach other repository worktrees via `--add-dir` or equivalent option
+4. persist real git commit chain and commit metadata
+5. cleanup or archive worktree by retention policy
 
-[agent.chat]
-type = "claude_code"
-model = "claude-sonnet-4-20250514"
+## RepositoryGroup Execution Rule
 
-[container]
-runtime = "docker"
-use_container = true
+RepositoryGroup is the execution unit for agent runs.
 
-[composite_task]
-auto_approve = false
+1. Worker creates one worktree per repository in the group.
+2. Repository order is preserved from `repositoryIds`.
+3. Agent process starts in the first repository worktree.
+4. Additional repositories are passed as extra directories using `--add-dir` (or agent-equivalent flags).
 
-[concurrency]
-# max_concurrent_sessions = 3
-```
+## PR Management
 
-### Repository Settings
+PR management is part of the standard lifecycle:
 
-Location: `.delidev/config.toml` (committed to git)
+1. DeliDev tracks PRs created by DeliDev tasks.
+2. When a user approves AI diff on a UnitTask, UI shows a `Create PR` button.
+3. Clicking `Create PR` creates a SubTask with type `PR_CREATE` and prompt `Create A PR`.
+4. PR creation uses the SubTask real commit chain, not a synthetic patch-only payload.
+5. Commit to Local also applies the same commit chain into the destination repository.
+6. Pollers fetch PR state, review comments, and CI status.
+7. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
+8. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
 
-```toml
-[branch]
-template = "feature/${taskId}-${slug}"
+See `docs/pr-management.md`.
 
-[automation]
-autoFixReviewComments = true
-autoFixReviewCommentsFilter = "write_access_only"
-autoFixCIFailures = true
-maxAutoFixAttempts = 3
+## PR Review Assist
 
-[learning]
-autoLearnFromReviews = false
+Review assist features include:
 
-[composite_task]
-auto_approve = true
-```
+1. changed file prioritization
+2. AI summaries and risk markers
+3. review checklist and suggested questions
+4. unresolved thread and CI signal aggregation
+5. line-level inline comments in code review diff
 
-### Configuration Precedence
+## Inline Comment Requirement
 
-1. Repository settings take precedence
-2. Global settings as fallback
-3. Built-in defaults if neither is set
+Code review UI provides inline comments anchored to diff lines.
 
----
+1. users can add inline comments on specific file and line positions
+2. inline comments can be resolved and reopened through review workflow
+3. inline comment updates are streamed in real time
+4. inline comments are used as input context for `Request Changes` and related SubTasks
 
-## Authentication
+## Stop Running Work
 
-### Server Authentication (Remote Mode)
+Users can easily stop running work at both UnitTask and SubTask levels.
 
-In remote mode, the server requires authentication for all API requests.
+1. in-progress UnitTask provides a direct stop action.
+2. in-progress SubTask provides a direct stop action.
+3. stop requests propagate immediately to worker session runners.
+4. cancelled items transition to `CANCELLED` and emit stream updates.
 
-#### JWT Authentication
+## Plan Mode Support
 
-- Tokens issued after successful OIDC authentication
-- Includes user ID, email, and name claims
-- Default expiration: 24 hours
+For coding agents with plan mode:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DELIDEV_JWT_SECRET` | Secret key for signing JWTs | (required) |
-| `DELIDEV_JWT_EXPIRATION_HOURS` | Token expiration | 24 |
-| `DELIDEV_JWT_ISSUER` | JWT issuer claim | "delidev" |
+1. show plan proposal state
+2. support explicit approve/revise/reject actions
+3. stream plan updates and rationale
+4. attach plan decisions to SubTask and AgentSession records
 
-#### OpenID Connect (OIDC)
+See `docs/plan-yaml.md`.
 
-Supports authentication with any OIDC provider (Google, GitHub, Keycloak, etc.).
+## Event Streaming
 
-| Variable | Description |
-|----------|-------------|
-| `DELIDEV_OIDC_ISSUER_URL` | OIDC provider issuer URL |
-| `DELIDEV_OIDC_CLIENT_ID` | OAuth2 client ID |
-| `DELIDEV_OIDC_CLIENT_SECRET` | OAuth2 client secret |
-| `DELIDEV_OIDC_REDIRECT_URL` | Redirect URL after authentication |
-| `DELIDEV_OIDC_SCOPES` | Comma-separated scopes |
+DeliDev uses event streaming for low-latency UI updates and automation triggers.
+Main server supports two event propagation backends by deployment mode.
 
-**Security Features:**
-- PKCE (S256 challenge method)
-- CSRF protection via state parameter
-- Database-backed state storage
-- Redirect URI validation
-
-#### Single Process Mode
-
-**Authentication is DISABLED** in single process mode. This mode is intended for local desktop usage where all requests are trusted.
-
-### VCS Provider Authentication
-
-Stored in `~/.delidev/credentials.toml`:
-
-```toml
-[github]
-token = "ghp_xxxxxxxxxxxx"
-
-[gitlab]
-token = "glpat-xxxxxxxxxxxx"
-
-[bitbucket]
-username = "your-username"
-app_password = "xxxxxxxxxxxx"
-```
-
----
-
-## Secrets Management
-
-Secrets are stored in the native system keychain and transported to workers when needed.
-
-### Known Secret Keys
-
-| Key | Description | Used By |
-|-----|-------------|---------|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token | Claude Code |
-| `ANTHROPIC_API_KEY` | Anthropic API key | Claude Code, Amp |
-| `OPENAI_API_KEY` | OpenAI API key | OpenCode, Aider, Codex CLI |
-| `GOOGLE_AI_API_KEY` | Google AI API key | Gemini CLI |
-| `GITHUB_TOKEN` | GitHub access token | All agents |
-
-### Secret Storage
-
-| Platform | Backend |
-|----------|---------|
-| macOS | Keychain Services |
-| Windows | Windows Credential Manager |
-| Linux | Secret Service (libsecret/KWallet) |
-
-### Client-to-Worker Transport
-
-```
-┌─────────────┐    1. Client reads    ┌─────────────┐
-│   Client    │    secrets from       │   Native    │
-│   (Tauri)   │◄───────────────────── │  Keychain   │
-└──────┬──────┘    local keychain     └─────────────┘
-       │
-       │ 2. Client sends secrets
-       │    via sendSecrets RPC
-       ▼
-┌─────────────┐
-│   Server    │    3. Server stores
-│   (Main)    │    secrets temporarily
-└──────┬──────┘    (in-memory, per-task)
-       │
-       │ 4. Server relays secrets
-       │    when task starts
-       ▼
-┌─────────────┐
-│   Worker    │    5. Worker injects
-│             │    secrets as env vars
-└─────────────┘
-```
-
-**Security:**
-- Secrets encrypted at rest (native keychain)
-- TLS for transport (HTTPS/WSS)
-- Temporary in-memory storage on server
-- Cleared after task completion
-- Single-process mode reads directly from local keychain
-
----
-
-## Workflows
-
-### UnitTask Execution Flow
-
-```
-User creates UnitTask (with git_remote_url)
-        ▼
-Check if repository is cached
-        ▼
-┌──────────────────────────────────────┐
-│ Not cached        │ Cached           │
-│ Clone as bare     │ Fetch updates    │
-│ repo to cache     │ from remote      │
-└────────┬──────────┴────────┬─────────┘
-         └────────┬──────────┘
-                  ▼
-Create git worktree from cached repo
-        ▼
-Start Docker container (on Worker)
-        ▼
-Run AI Agent (in_progress)
-        ▼
-Generate git patch from worktree
-        ▼
-Store patch in database (git_patch field)
-        ▼
-AI work done (in_review)
-        ▼
-Human review ──┬──► Approve (approved)
-               ├──► Request changes (subtask → in_review)
-               └──► Reject (rejected)
-
-Approved ──────┬──► Create PR (subtask → pr_open)
-               ├──► Commit to local repo (local mode only, opens directory picker → applies git patch → done)
-               └──► Dismiss approval (back to in_review)
-
-Note: "Commit to Local" is only available in local mode. When clicked, it
-opens a native directory picker for the user to select the target local git
-repository path. The backend directly applies the task's git patch to the
-selected repository using `git apply` and commits the changes. No AI agent
-is involved — it is a direct git operation.
-
-Note: In local mode, "Request Changes" creates a subtask (like "Create PR"
-and "Commit to Local") that applies the reviewer's feedback using the AI
-agent. Inline review comments from the diff viewer and an optional extra
-comment are combined into the subtask prompt. The Approve button is disabled
-when the user has written inline review comments, prompting them to submit
-the feedback via "Request Changes" first.
-
-Note: While in `in_progress`, the user can cancel the task at any time,
-which transitions the status to `cancelled`. The agent execution is
-aborted and any partial work is preserved in the worktree.
-
-Note: The user can delete a task in any status. If the task is currently
-`in_progress`, the agent execution is cancelled first before deletion.
-Deletion permanently removes the task and all associated resources from
-the database via cascade delete methods on the `TaskStore` trait:
-- **Unit task**: deletes the unit task, its associated `AgentTask`, all
-  `AgentSession` records for that agent task, and any auto-fix `AgentTask`
-  records (with their sessions).
-- **Composite task**: deletes all child `CompositeTaskNode` records, each
-  node's `UnitTask` (with cascade as above), the planning `AgentTask`
-  (with its sessions), and finally the composite task itself.
-- For both local and server modes, in-progress child tasks are cancelled
-  before deletion to avoid orphaned running processes.
-
-**Known limitation:** Cascade deletes are not wrapped in a database
-transaction. If the application crashes mid-deletion, orphaned child
-resources (e.g. agent tasks without a parent unit task) may remain. This
-is acceptable for the current single-user desktop use case; a cleanup job
-or transactional cascade should be considered for multi-user deployments.
-
-Both the unit task detail page and composite task detail page include a
-"Delete" button with a confirmation dialog.
-
-On each status transition, `task-status-changed` and `task-completed`
-events are emitted so the frontend updates automatically.
-
-### Subtasks
-
-Subtasks are agent sessions that run within an existing unit task's
-worktree. They are used for post-approval operations like PR creation
-and applying requested changes. Key characteristics:
-
-- A subtask creates a new `AgentSession` under the same `AgentTask`
-- It runs in the existing worktree (no new worktree is created)
-- The parent task transitions to `in_progress` while the subtask runs
-- If the unit task belongs to a composite task, the composite task is
-  also transitioned to `in_progress` while the subtask runs, and
-  re-evaluated (to `done` or `failed`) when the subtask completes
-- On success, the task transitions to the target status (e.g. `pr_open`)
-- On failure or cancellation, the task reverts to `approved`
-- Subtasks are not shown separately in the dashboard - they use the
-  same task ID as the parent
-- The subtask can be cancelled using the same "Stop Agent" button
-- Each session (main execution + subtasks) has its own collapsible
-  "Agent Session Log" section in the task detail view. The backend
-  returns all sessions grouped via `SessionLogsGroup` in the
-  `get_task_logs` response.
-
-```
-Approved ──► execute_subtask(prompt, target_status)
-                    │
-                    ├── Create new AgentSession
-                    ├── Transition to in_progress
-                    ├── Transition parent composite task to in_progress (if applicable)
-                    ├── Run agent in existing worktree
-                    │
-                    ├── Success → regenerate git_patch → target_status (pr_open / done / in_review)
-                    ├── Failure → approved (user can retry)
-                    ├── Cancelled → approved
-                    └── Re-evaluate parent composite task status (if applicable)
-```
-
-### Change Persistence
-
-Changes made by AI agents are persisted as git patches in the database:
-- On task completion, a unified diff is generated from the worktree
-- On subtask completion (e.g. Request Changes), the git patch is
-  regenerated so the diff viewer reflects the latest changes
-- The patch is stored in the `git_patch` field of `UnitTask`
-- This allows changes to be persisted without needing write access
-  to the repository (the worker server may not have push permission)
-- In local mode, the worktree is preserved while the task is in review
-  so the user can inspect changes directly on disk
-- Worktrees for failed/cancelled tasks are cleaned up immediately
-- The frontend parses `git_patch` using `parseUnifiedDiff()` and displays
-  it via the `DiffViewer` component when the user clicks "View Diff"
-```
-
-### Repository Caching
-
-For better performance, DeliDev caches repositories locally:
-
-1. **Cache Location**: `~/.delidev/repo-cache/<url-hash>/` where `<url-hash>` is a SHA256 hash of the normalized repository URL (first 32 hex characters)
-2. **Storage Format**: Bare git repositories (no working directory)
-3. **Worktree Location**: `~/.delidev/worktrees/<task-id>-<branch>/`
-
-This approach:
-- Avoids repeated full clones for the same repository
-- Reduces disk space by using worktrees instead of full clones
-- Enables faster task startup by only fetching changes
-- Supports multiple concurrent tasks on the same repository
-
-### CompositeTask Execution Flow
-
-```
-User creates CompositeTask
-        ▼
-System creates planningTask (AgentTask) and session
-        ▼
-Planning agent starts immediately (status: planning)
-        ▼
-┌────────────────────────────────────────────────────┐
-│ Executor generates PLAN-{suffix}.yaml filename      │
-│ Planning agent creates the specified file            │
-│ - Real-time logs streamed to UI via AgentLogViewer │
-│ - Logs persisted incrementally to database         │
-└────────────────────────────────────────────────────┘
-        ▼
-┌────────────────────────────────────────────────────┐
-│ On Success:                                        │
-│ 1. PLAN.yaml content read from worktree            │
-│ 2. Content persisted to database (plan_yaml field) │
-│ 3. Planning worktree cleaned up immediately        │
-│ 4. Status → pending_approval                       │
-├────────────────────────────────────────────────────┤
-│ On Failure:                                        │
-│ 1. Planning worktree cleaned up                    │
-│ 2. Status → failed                                 │
-└────────────────────────────────────────────────────┘
-        ▼
-┌──────────────────────────────────────┐
-│ Success         │ Failure            │
-│ pending_approval│ failed             │
-└────────┬────────┴────────┬───────────┘
-         ▼                 │
-User reviews plan          │ (User can retry or discard)
-  ├─ Approve ──────────────┤
-  │   1. Validate plan     │
-  │      (cycles, deps,    │
-  │       limits ≤100)     │
-  │   2. → in_progress     │
-  ├─ Update Plan ──────────┼──► Re-plan with feedback
-  │   (appends feedback    │    (status → planning)
-  │    to prompt, resets   │
-  │    to planning status) │
-  └─ Reject → rejected     │
-         ▼                 │
-Status: in_progress        │
-         ▼                 │
-Executor parses plan_yaml  │
-Validates plan again       │
-Creates CompositeTaskNode  │
-+ UnitTask records         │
-(with cleanup on error)    │
-         ▼                 │
-Start root tasks           │
-(no dependencies)          │
-         ▼                 │
-Monitor task graph         │
-(configurable interval):   │
-  - Task completes →       │
-    start ready dependents │
-  - Task fails →           │
-    leave dependents       │
-         ▼                 │
-All tasks done             │
-(status: done or failed)   │
-```
-
-The planning agent execution is handled by `LocalExecutor::execute_composite_task()`, which:
-1. Creates an agent session for the planning task
-2. Generates the plan YAML filename (e.g., `PLAN-a1b2c3.yaml`) before building the prompt
-3. Spawns a background task for execution
-4. Uses `PersistingEventEmitter` for real-time streaming and incremental log persistence
-5. On success, reads the plan YAML file (by its known filename) from the worktree and persists to `plan_yaml` field
-6. Cleans up the planning worktree immediately after persisting (not kept until task completion)
-7. Updates composite task status to `pending_approval` on success or `failed` on error
-8. Emits `task-status-changed` and `task-completed` events so the frontend updates automatically
-
-
-
-The graph execution after approval is handled by `LocalExecutor::execute_composite_task_graph()`, which:
-1. Parses `plan_yaml` into task definitions
-2. Validates the plan (cycles, invalid dependencies, duplicate IDs, empty prompts)
-3. Enforces resource limits (maximum 100 tasks per plan)
-4. Creates `AgentTask`, `UnitTask`, and `CompositeTaskNode` records for each plan task (with automatic cleanup of orphaned records on failure)
-5. Sets dependency relationships between nodes
-6. Starts executing root tasks (tasks with no dependencies) immediately
-7. Spawns a monitoring task that periodically checks for newly ready tasks as dependencies complete (configurable interval, default 3 seconds)
-8. When all tasks reach a terminal state, marks the composite task as `done` (if all succeeded) or `failed` (if any failed)
-
-**Note:** The server's `approve_task` endpoint validates the plan and changes status, but does *not* create `CompositeTaskNode` records. Node creation is delegated entirely to the executor to avoid duplicate record creation between server and desktop (Tauri) code paths.
-
-
-**Update Plan:**
-
-When a composite task is in `pending_approval` or `failed` state, the user can request plan updates via the "Update Plan" button. This:
-1. Stores the user's feedback in the `update_plan_feedback` field (the original `prompt` is **not** modified)
-2. Keeps the existing `plan_yaml` (so the planning agent can reference it)
-3. Creates a new planning `AgentTask`
-4. Resets status to `planning`
-5. Re-triggers `LocalExecutor::execute_composite_task()` which detects `update_plan_feedback` and uses the existing plan + feedback (instead of the original prompt) to generate a revised plan (falls back to initial planning prompt if either is empty)
-6. After re-planning completes (or fails), `update_plan_feedback` is cleared
-
-The `update_plan_with_prompt` Tauri command handles this flow.
-
-
-
-**PLAN.yaml Persistence:**
-- The raw PLAN.yaml content is stored in the `plan_yaml` field of `CompositeTask`
-- This allows the plan to be accessed without the worktree (which is cleaned up immediately)
-- The worktree is cleaned up right after the PLAN.yaml is persisted to conserve disk space
-
-### PR Auto-Management
-
-#### Auto-Fix Review Comments
-
-When enabled:
-1. PR receives review comment
-2. Check author against filter
-3. Create AgentTask to address feedback
-4. AI applies fix and pushes
-5. Repeat up to `maxAutoFixAttempts`
-
-#### Auto-Fix CI Failures
-
-When enabled:
-1. CI fails on PR
-2. Create AgentTask to fix
-3. AI analyzes logs, fixes, pushes
-4. Repeat up to `maxAutoFixAttempts`
-
-### TTY Input Proxy
-
-When an AI agent requires user input:
-
-1. Agent outputs TTY input request
-2. TTY Proxy Service intercepts and pauses execution
-3. Desktop notification sent
-4. User responds via web form
-5. Response written to agent stdin
-6. Execution resumes
-
-### AI Document Learning
-
-When user requests changes on a task:
-
-1. Feedback appended to task prompt
-2. AI agent re-runs with learning instructions
-3. Agent considers if feedback is generalizable
-4. If yes, updates AGENTS.md or CLAUDE.md
-
-### Event-Driven UI Updates
-
-The frontend uses a purely event-driven architecture for real-time updates. No polling is used.
-
-**Task Log Streaming:**
-```
-Tauri Backend ─── agent-output event ──► useTaskLogs hook
-                                              └── Appends to event list in real-time
-                                         (Initial fetch on mount for historical logs)
-```
-
-**Task Status Updates:**
-```
-Tauri Backend ─── task-status-changed ──► useTaskStatusEvents hook
-              ─── task-completed ────────►    └── Invalidates react-query caches
-                                               (task detail, task list, and
-                                                composite task nodes queries)
-```
-
-**Plan Preview (PendingApproval):**
-
-During `pending_approval`, `CompositeTaskNode` records don't exist in the database yet (they are created on plan approval). The frontend parses the raw `plan_yaml` field using `parsePlanYamlToNodes()` to generate preview nodes for the TaskGraph component and sub-task list. Once the plan is approved and execution begins, the preview is replaced by real database-backed nodes.
-
-### Notification Flow
-
-The notification system provides persistent, actionable notifications for system events:
-
-```
-Tauri Backend Events ──► useNotificationEvents hook
-                              ├── notificationCenterStore (persistent, localStorage)
-                              └── Desktop notification (if window unfocused)
-
-User Interface:
-  Sidebar bell icon (unread badge) ──► NotificationPanel (slide-out)
-  /notifications route ──────────────► Notifications page (full list)
-  'n' keyboard shortcut ─────────────► Toggle NotificationPanel
-```
-
-Notification categories: `task_review_ready`, `plan_approval`, `task_failed`, `tty_input_request`, `task_completed`.
-
-Each notification links to the relevant task page. See [Notification System](./notifications.md) for full details.
-
----
-
-## Error Handling
-
-### Docker Errors
-
-| Error | Resolution |
-|-------|------------|
-| Docker daemon not running | Start Docker Desktop |
-| Image pull failed | Check network, verify image name |
-| Container start failed | Check resources, verify ports |
-
-### VCS Provider Errors
-
-| Error | Resolution |
-|-------|------------|
-| Authentication failed | Update token in credentials.toml |
-| Permission denied | Verify token scopes |
-| Rate limit exceeded | Wait for reset |
-| PR creation failed | Check branch protection rules |
-
-### Network Errors
-
-| Error | Resolution |
-|-------|------------|
-| Connection timeout | Check internet connection |
-| SSL certificate error | Update system certificates |
-
----
-
-## Security
-
-### Input Validation
-
-All user inputs are validated to prevent security vulnerabilities:
-
-#### Repository URL Validation
-
-| Check | Description |
-|-------|-------------|
-| Allowed schemes | Only `https://`, `http://`, `git@`, `ssh://` are allowed |
-| Dangerous characters | Blocks `$`, `` ` ``, `|`, `;`, `&`, newlines |
-| Shell injection | Blocks `$(`, `${` patterns |
-| Length limit | Maximum 2048 characters |
-
-#### Branch Name Validation
-
-| Check | Description |
-|-------|-------------|
-| Path traversal | Blocks `..` sequences |
-| Special characters | Blocks `$`, `` ` ``, `|`, `;`, `&`, `~`, `^`, `:`, etc. |
-| Git patterns | Blocks `.lock` suffix, leading/trailing dots, `@{` |
-| Length limit | Maximum 256 characters |
-
-#### Prompt Validation
-
-| Check | Description |
-|-------|-------------|
-| Minimum length | At least 1 character |
-| Maximum length | 100,000 characters |
-| Null bytes | Not allowed |
-
-#### Feedback Validation (Update Plan)
-
-| Check | Description |
-|-------|-------------|
-| Control characters | Removed (except `\n` and `\t`) via `entities::sanitize_user_input()` |
-| Maximum length | 10,000 characters (`entities::MAX_FEEDBACK_LENGTH`) |
-
-#### Title Validation
-
-| Check | Description |
-|-------|-------------|
-| Maximum length | 500 characters |
-| Null bytes | Not allowed |
-
-### Rate Limiting
-
-Task creation is rate-limited to prevent resource exhaustion:
-
-| Limit | Value |
-|-------|-------|
-| Minimum interval | 500 milliseconds between task creations |
-| Max tasks per plan | 100 tasks per composite task plan |
-
-### Path Sanitization
-
-Task IDs and branch names are sanitized when used in file system paths:
-
-| Input | Sanitization |
-|-------|--------------|
-| Task ID | Only alphanumeric and hyphens allowed |
-| Branch name | Slashes and special characters converted to hyphens |
-
----
-
-## Chat Interface
-
-The chat interface provides a global communication channel with AI agents.
-
-### Components
-
-| Component | Purpose |
-|-----------|---------|
-| ChatWindow | Modal overlay containing the chat UI |
-| MessageList | Scrollable list of chat messages |
-| ChatInput | Text input with send button |
-
-### State Management
-
-Chat state is managed via Zustand in `chatStore.ts`:
-
-| State | Type | Description |
-|-------|------|-------------|
-| isOpen | boolean | Chat window visibility |
-| messages | ChatMessage[] | Message history |
-| inputValue | string | Current input text |
-| isLoading | boolean | AI response pending |
-
-### Message Structure
-
-```typescript
-interface ChatMessage {
-  id: string;          // UUID (crypto.randomUUID)
-  role: MessageRole;   // User or Assistant
-  content: string;     // Message text
-  timestamp: Date;     // Creation time
-}
-```
-
-### Global Hotkey
-
-- **macOS**: `Option + Z`
-- **Windows/Linux**: `Alt + Z`
-
-Toggles chat window visibility from anywhere in the app.
-
----
-
-## Related Documents
-
-- [Main Server](./main-server.md) - Main Server details
-- [Worker Server](./worker-server.md) - Worker Server details
-- [Tauri App](./tauri-app.md) - Desktop/Mobile app details
-- [Local vs Remote Mode](./client-local-vs-remote.md) - Mode comparison
-- [UI Design](./ui.md) - User interface specifications
-- [Notification System](./notifications.md) - Notification center, desktop notifications, and event handling
-- [PLAN.yaml Specification](./plan-yaml.md) - Task plan format
+1. single-instance mode: in-memory event propagation
+2. scale mode: Redis-based propagation and replay
+
+Event families:
+
+1. task state
+2. subtask lifecycle
+3. session output and state
+4. PR tracking state
+5. review assist updates
+6. inline comment updates
+7. notification triggers
+
+See `docs/event-streaming.md`.
+
+## Notification Architecture
+
+Notification delivery uses Web Notification API.
+
+- primary channel: notification API in Tauri webview context
+- in-app notification center stores authoritative state
+- permission request is initiated during app startup
+
+See `docs/notifications.md`.
+
+## Mobile Strategy
+
+iOS and Android are first-wave platforms.
+
+Design implications:
+
+1. core workflows must be API-driven and mobile-safe
+2. no desktop-only business logic path
+3. notification and streaming strategy must work with mobile runtime constraints
+4. workspace onboarding and PR remediation actions must be touch-friendly
+
+## Multi-Tab UI Invariant
+
+The client provides multi-tab UI so users can work on multiple items concurrently.
+
+1. detail views and workflow pages open as tabs in the app shell
+2. tab state is persisted per workspace
+3. tab switching does not discard running context or unsaved draft input
+4. tab state indicators surface running/action-required/unread-update signals
+
+## Keyboard Input Rule
+
+All multiline form inputs must support `Cmd+Enter` submit behavior.
+This is a product-wide interaction rule and applies across task, plan, review, and PR workflows.
+Shortcut handling must be independent of current language input mode (Korean/English IME).
+
+## Screen Shortcut Invariant
+
+Every screen includes appropriate keyboard shortcuts for its primary items and actions.
+
+1. list navigation and item-open shortcuts are required on list/detail screens
+2. primary action buttons require direct keyboard shortcuts
+3. shortcuts must be discoverable in UI labels, tooltips, or a shortcut cheat sheet
+4. all primary screens are covered: Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications Center
+5. shortcut matching uses physical key codes and modifiers so behavior is stable across input language modes
+6. tab management shortcuts are required (`new`, `close`, `previous`, `next`)
+
+## Observability and Logging
+
+Server-side structured logging is required for:
+
+1. workspace routing
+2. task and subtask state transitions
+3. agent session start/stop/failure
+4. agent token usage and cost snapshots
+5. PR polling snapshots and decision points
+6. event stream delivery health
+
+Client-side logging is required for:
+
+1. stream disconnect and reconnect
+2. notification permission and dispatch outcomes
+3. user-triggered remediation actions
+
+## Security Baseline
+
+1. Connect RPC over TLS for non-localhost endpoints
+2. token-based auth for shared remote workspaces
+3. scoped secret usage with minimal runtime lifetime
+4. strict validation for repository URLs, branch names, prompts, and review payloads
+
+## Related Docs
+
+1. `docs/entities.md`
+2. `docs/api.md`
+3. `docs/main-server.md`
+4. `docs/worker-server.md`
+5. `docs/tauri-app.md`
+6. `docs/ui.md`
+7. `docs/pr-management.md`
+8. `docs/event-streaming.md`
+9. `docs/workspace-connectivity.md`
+10. `docs/notifications.md`
+11. `docs/plan-yaml.md`

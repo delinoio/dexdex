@@ -1,441 +1,218 @@
-# Main Server
+# Main Server (Go)
 
-The Main Server is the central hub of DeliDev's distributed architecture. It maintains the task list, coordinates workers, and provides the RPC interface for clients.
+Main Server is the control plane for DeliDev.
+It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 
-## Role
+## Responsibilities
 
-| Responsibility | Description |
-|----------------|-------------|
-| Task Management | Maintains the list of tasks (UnitTask, CompositeTask) |
-| Worker Coordination | Assigns tasks to available workers, tracks worker health |
-| RPC Server | Provides Connect RPC API for clients |
-| Authentication | Handles JWT authentication and OIDC (in remote mode) |
-| Secret Relay | Receives secrets from clients, relays to workers when tasks start |
+1. workspace endpoint and auth management
+2. repository and repository group lifecycle
+3. UnitTask and SubTask orchestration state
+4. PR tracking and polling scheduler
+5. review-assist generation and updates
+6. inline comment lifecycle for code review diff
+7. validate and persist normalized coding-agent message payloads
+8. event stream fan-out to clients
+9. worker coordination, job dispatch, and cancellation propagation
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Main Server                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────┐  ┌─────────────────────────────────┐  │
-│  │   RPC Endpoints     │  │      Worker Registry            │  │
-│  │   (Connect RPC)     │  │   - Active workers list         │  │
-│  │                     │  │   - Health check status         │  │
-│  └──────────┬──────────┘  │   - Task assignments            │  │
-│             │             └─────────────────────────────────┘  │
-│             ▼                                                   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    Task Store                            │   │
-│  │   - UnitTask, CompositeTask                              │   │
-│  │   - AgentTask, AgentSession                              │   │
-│  │   - TodoItem, Repository                                 │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│             │                                                   │
-│             ▼                                                   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    Database                              │   │
-│  │   PostgreSQL (multi-user) / SQLite (single-user)        │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  ┌─────────────────────┐  ┌─────────────────────────────────┐  │
-│  │   Auth Module       │  │      Secret Cache               │  │
-│  │   - JWT issuance    │  │   - Per-task secret storage     │  │
-│  │   - OIDC flow       │  │   - In-memory, cleared on       │  │
-│  │   - Token verify    │  │     task completion             │  │
-│  └─────────────────────┘  └─────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Main Server (Go)                                             │
+│                                                              │
+│  Connect RPC Handlers                                        │
+│   ├── WorkspaceService                                       │
+│   ├── RepositoryService                                      │
+│   ├── TaskService                                            │
+│   ├── SessionService                                         │
+│   ├── PrManagementService                                    │
+│   ├── ReviewAssistService                                    │
+│   ├── ReviewCommentService                                   │
+│   ├── BadgeThemeService                                      │
+│   ├── NotificationService                                    │
+│   └── EventStreamService                                     │
+│                                                              │
+│  Domain Services                                             │
+│   ├── TaskCoordinator                                        │
+│   ├── PRPoller                                               │
+│   ├── ReviewAssistEngine                                     │
+│   ├── EventBroker                                            │
+│   └── WorkerRouter                                           │
+│                                                              │
+│  Storage                                                     │
+│   ├── SQLite (single-instance mode)                          │
+│   ├── PostgreSQL (scale mode)                                │
+│   ├── In-memory event broker (single-instance mode)          │
+│   └── Redis (scale mode; optional otherwise)                 │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## API Endpoints (Connect RPC)
+## Connect RPC Priority
 
-All endpoints use Connect RPC protocol over HTTP. Services are defined in Protobuf and generated for both Rust and TypeScript.
+Main server is the canonical business interface.
+No client workflow requires Tauri-only business contracts.
 
-### Task Management
+## Data Ownership
 
-| Method | Description |
-|--------|-------------|
-| `task.createUnit` | Create a new UnitTask |
-| `task.createComposite` | Create a new CompositeTask |
-| `task.get` | Get task by ID |
-| `task.list` | List tasks with filters |
-| `task.updateStatus` | Update task status |
-| `task.delete` | Delete a task |
-| `task.retry` | Retry a failed task |
-| `task.approve` | Approve a task (CompositeTask plan or UnitTask review) |
-| `task.reject` | Reject a task |
-| `task.requestChanges` | Request changes on a task in review |
+Main server stores and owns:
 
-### Agent Session
+1. workspace records
+2. repository metadata and grouping
+3. ordered RepositoryGroup membership and primary repository selection (first repository in group)
+4. UnitTask and SubTask state machines
+5. SubTask commit-chain metadata and commit ancestry
+6. AgentSession metadata and normalized session output events
+7. PR tracking state and auto-fix counters
+8. review assist items
+9. review inline comments and status
+10. badge theme settings
+11. notification records
+12. event sequence offsets
 
-| Method | Description |
-|--------|-------------|
-| `session.getLog` | Get agent session output log |
-| `session.streamLog` | Stream agent session output (WebSocket) |
-| `session.stop` | Stop a running agent session |
-| `session.submitTtyInput` | Submit response to TTY input request |
+## Task Orchestration Flow
 
-### Repository Management
+1. `CreateUnitTask` persists task with `QUEUED` status.
+2. scheduler enqueues initial SubTask (`INITIAL_IMPLEMENTATION`).
+3. WorkerRouter assigns job to worker server.
+4. worker emits normalized lifecycle and session output events.
+5. main server updates UnitTask action state and emits stream events.
 
-| Method | Description |
-|--------|-------------|
-| `repository.add` | Add a repository |
-| `repository.list` | List repositories |
-| `repository.get` | Get repository by ID |
-| `repository.remove` | Remove a repository |
-| `repositoryGroup.create` | Create a repository group |
-| `repositoryGroup.list` | List repository groups |
-| `repositoryGroup.update` | Update a repository group |
-| `repositoryGroup.delete` | Delete a repository group |
+Cancellation flow:
 
-### Workspace Management
+1. user calls `CancelUnitTask` or `CancelSubTask`.
+2. main server sends cancellation signal to worker runner immediately.
+3. main server persists `CANCELLED` status after worker acknowledgement or timeout policy.
+4. cancellation status is published through event stream.
 
-| Method | Description |
-|--------|-------------|
-| `workspace.create` | Create a workspace |
-| `workspace.list` | List workspaces |
-| `workspace.get` | Get workspace by ID |
-| `workspace.update` | Update workspace |
-| `workspace.delete` | Delete workspace |
+## PR Polling and Auto-Fix
 
-### TodoItem
+1. PRPoller periodically checks tracked PRs.
+2. On `changes_requested` or `ci_failed`:
+- create ReviewAssistItem
+- mark UnitTask action as required
+- emit notification and stream event
+3. If auto-fix policy is enabled:
+- create remediation SubTask
+- dispatch to worker
 
-| Method | Description |
-|--------|-------------|
-| `todo.list` | List todo items |
-| `todo.get` | Get todo item by ID |
-| `todo.updateStatus` | Update todo item status |
-| `todo.dismiss` | Dismiss a todo item |
+## Event Broker
 
-### Secrets
+Event broker requirements:
 
-| Method | Description |
-|--------|-------------|
-| `secrets.send` | Send secrets from client to server (for task execution) |
-| `secrets.clear` | Clear cached secrets for a task |
+1. monotonic sequence per workspace
+2. replay from sequence cursor
+3. best-effort fan-out to connected clients
+4. durable enqueue before publish in `SCALE` mode
 
-### Worker (Internal)
+## Deployment Modes
 
-These endpoints are used by Worker Servers, not clients.
+Main server supports two deployment modes.
 
-| Method | Description |
-|--------|-------------|
-| `worker.register` | Register a new worker |
-| `worker.heartbeat` | Send heartbeat from worker |
-| `worker.unregister` | Unregister a worker |
-| `worker.getTask` | Get next task to execute |
-| `worker.reportStatus` | Report task execution status |
-| `worker.getSecrets` | Get secrets for a task (called by worker when task starts) |
+1. `SINGLE_INSTANCE`:
+- use SQLite as primary database
+- use in-memory event propagation inside the main-server process
+- no Redis dependency required
 
-### Authentication
+2. `SCALE`:
+- use PostgreSQL as primary database
+- use Redis as event propagation and replay backbone
+- designed for multi-instance/shared deployments
 
-| Method | Description |
-|--------|-------------|
-| `auth.getLoginUrl` | Get OIDC login URL |
-| `auth.handleCallback` | Handle OIDC callback |
-| `auth.refreshToken` | Refresh access token |
-| `auth.getCurrentUser` | Get current authenticated user |
-| `auth.logout` | Logout (invalidate token) |
+## Event Propagation Backends
 
-## Database Schema
+Event broker backend depends on deployment mode.
 
-### Core Tables
+1. in-memory backend (`SINGLE_INSTANCE`):
+- publish and subscribe in process memory
+- supports single-process fan-out
+- replay is limited to process lifetime
 
-```sql
--- Users (multi-user mode only)
-CREATE TABLE users (
-    id UUID PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+2. Redis backend (`SCALE`):
+- publish domain events to Redis streams
+- use Redis pub/sub fan-out for connected stream workers
+- persist ordered event envelopes with sequence metadata
+- replay from Redis stream offsets on reconnect
 
--- Workspaces
-CREATE TABLE workspaces (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    user_id UUID REFERENCES users(id),  -- NULL in single-user mode
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+## Worker Coordination
 
--- Repositories
-CREATE TABLE repositories (
-    id UUID PRIMARY KEY,
-    workspace_id UUID NOT NULL REFERENCES workspaces(id),
-    name VARCHAR(255) NOT NULL,
-    remote_url TEXT NOT NULL,
-    default_branch VARCHAR(255) NOT NULL DEFAULT 'main',
-    vcs_type VARCHAR(50) NOT NULL DEFAULT 'git',
-    vcs_provider_type VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+Main server routes executable SubTasks using:
 
--- Repository Groups
-CREATE TABLE repository_groups (
-    id UUID PRIMARY KEY,
-    workspace_id UUID NOT NULL REFERENCES workspaces(id),
-    name VARCHAR(255),  -- NULL for single-repo groups
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+1. worker health status
+2. workspace affinity (optional)
+3. concurrency caps
+4. retry budget
 
-CREATE TABLE repository_group_members (
-    group_id UUID NOT NULL REFERENCES repository_groups(id),
-    repository_id UUID NOT NULL REFERENCES repositories(id),
-    PRIMARY KEY (group_id, repository_id)
-);
-```
+## Normalized Agent Message Contract
 
-### Task Tables
+Main server consumes only normalized agent message contracts from worker.
 
-```sql
--- Agent Sessions
-CREATE TABLE agent_sessions (
-    id UUID PRIMARY KEY,
-    agent_task_id UUID NOT NULL REFERENCES agent_tasks(id),
-    ai_agent_type VARCHAR(50) NOT NULL,
-    ai_agent_model VARCHAR(255),
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    output_log TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+1. provider-native agent output is never parsed at main-server layer
+2. incoming worker payloads are validated against normalized `SessionOutputEvent` schema
+3. rejected payloads are logged as contract violations and not forwarded to clients
+4. persisted session logs and streamed `SESSION_OUTPUT` events use the same normalized schema
 
--- Agent Tasks
-CREATE TABLE agent_tasks (
-    id UUID PRIMARY KEY,
-    ai_agent_type VARCHAR(50),
-    ai_agent_model VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+## Database Support
 
-CREATE TABLE agent_task_base_remotes (
-    agent_task_id UUID NOT NULL REFERENCES agent_tasks(id),
-    git_remote_url TEXT NOT NULL,
-    git_branch_name VARCHAR(255) NOT NULL,
-    PRIMARY KEY (agent_task_id, git_remote_url)
-);
+Main server supports both PostgreSQL and SQLite by deployment mode.
 
--- Unit Tasks
-CREATE TABLE unit_tasks (
-    id UUID PRIMARY KEY,
-    repository_group_id UUID NOT NULL REFERENCES repository_groups(id),
-    agent_task_id UUID NOT NULL REFERENCES agent_tasks(id),
-    branch_name VARCHAR(255),
-    linked_pr_url TEXT,
-    base_commit VARCHAR(40),
-    end_commit VARCHAR(40),
-    status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
-    prompt TEXT NOT NULL,
-    title VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
+1. `SINGLE_INSTANCE`: SQLite recommended.
+2. `SCALE`: PostgreSQL required and recommended.
+3. Both backends use the same logical schema and migration policy.
 
-CREATE TABLE unit_task_auto_fix_tasks (
-    unit_task_id UUID NOT NULL REFERENCES unit_tasks(id),
-    agent_task_id UUID NOT NULL REFERENCES agent_tasks(id),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (unit_task_id, agent_task_id)
-);
+## Authentication and Authorization
 
--- Composite Tasks
-CREATE TABLE composite_tasks (
-    id UUID PRIMARY KEY,
-    repository_group_id UUID NOT NULL REFERENCES repository_groups(id),
-    planning_task_id UUID NOT NULL REFERENCES agent_tasks(id),
-    status VARCHAR(50) NOT NULL DEFAULT 'planning',
-    execution_agent_type VARCHAR(50),
-    prompt TEXT NOT NULL,
-    title VARCHAR(255),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- Composite Task Nodes
-CREATE TABLE composite_task_nodes (
-    id UUID PRIMARY KEY,
-    composite_task_id UUID NOT NULL REFERENCES composite_tasks(id),
-    unit_task_id UUID NOT NULL REFERENCES unit_tasks(id),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE composite_task_node_dependencies (
-    node_id UUID NOT NULL REFERENCES composite_task_nodes(id),
-    depends_on_node_id UUID NOT NULL REFERENCES composite_task_nodes(id),
-    PRIMARY KEY (node_id, depends_on_node_id)
-);
-```
-
-### Other Tables
-
-```sql
--- Todo Items
-CREATE TABLE todo_items (
-    id UUID PRIMARY KEY,
-    type VARCHAR(50) NOT NULL,  -- 'issue_triage', 'pr_review'
-    source VARCHAR(50) NOT NULL DEFAULT 'auto',
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    repository_id UUID NOT NULL REFERENCES repositories(id),
-    data JSONB NOT NULL,  -- Type-specific fields
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- TTY Input Requests
-CREATE TABLE tty_input_requests (
-    id UUID PRIMARY KEY,
-    task_id UUID NOT NULL REFERENCES unit_tasks(id),
-    session_id UUID NOT NULL REFERENCES agent_sessions(id),
-    prompt TEXT NOT NULL,
-    input_type VARCHAR(50) NOT NULL,
-    options JSONB,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    response TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    responded_at TIMESTAMP
-);
-
--- OIDC Auth States
-CREATE TABLE auth_states (
-    state VARCHAR(255) PRIMARY KEY,
-    code_verifier VARCHAR(255) NOT NULL,
-    redirect_uri TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMP NOT NULL
-);
-
--- Workers (for worker registry)
-CREATE TABLE workers (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    endpoint_url TEXT NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'active',
-    last_heartbeat TIMESTAMP NOT NULL DEFAULT NOW(),
-    current_task_id UUID REFERENCES unit_tasks(id),
-    registered_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-```
-
-## Worker Management
-
-### Worker Registration
-
-Workers register themselves with the Main Server on startup:
-
-```
-Worker starts
-    ▼
-POST worker.register {
-    name: "worker-1",
-    endpoint_url: "http://worker-1:54872"
-}
-    ▼
-Server adds worker to registry
-    ▼
-Worker starts heartbeat loop
-```
-
-### Heartbeat
-
-Workers send periodic heartbeats (every 30 seconds):
-
-```
-Worker sends heartbeat
-    ▼
-POST worker.heartbeat {
-    worker_id: "...",
-    status: "idle" | "busy",
-    current_task_id: "..." | null
-}
-    ▼
-Server updates last_heartbeat timestamp
-```
-
-If a worker misses 3 consecutive heartbeats (90 seconds), it is marked as `unhealthy` and tasks assigned to it are reassigned.
-
-### Task Assignment
-
-When a new task needs execution:
-
-1. Server finds an available (idle + healthy) worker
-2. Server marks worker as `busy` with task assignment
-3. Worker receives task via `worker.getTask` polling or WebSocket notification
-4. Worker fetches secrets via `worker.getSecrets`
-5. Worker executes task and reports progress
-6. Worker reports completion via `worker.reportStatus`
-7. Server marks worker as `idle`
-
-## Authentication Flow
-
-### Remote Mode (OIDC)
-
-```
-Client requests login
-    ▼
-Server generates auth URL with:
-    - PKCE code_verifier/code_challenge
-    - State parameter (stored in DB)
-    - Redirect URI
-    ▼
-User authenticates with OIDC provider
-    ▼
-Provider redirects to callback
-    ▼
-Server exchanges code for tokens
-    ▼
-Server validates ID token
-    ▼
-Server creates/updates user in DB
-    ▼
-Server issues JWT to client
-    ▼
-Client uses JWT for subsequent requests
-```
-
-### Single-User Mode
-
-Authentication is completely disabled. All requests are treated as authenticated.
+1. endpoint-auth profile per workspace
+2. bearer token validation for shared deployments
+3. workspace-scoped authorization checks for every RPC
 
 ## Configuration
 
-### Environment Variables
+| Key | Required | Description |
+|---|---|---|
+| `DELIDEV_DEPLOYMENT_MODE` | Y | `SINGLE_INSTANCE` or `SCALE` |
+| `DELIDEV_HTTP_ADDR` | Y | Connect RPC bind address |
+| `DELIDEV_DATABASE_URL` | Y | SQLite DSN (`SINGLE_INSTANCE`) or PostgreSQL DSN (`SCALE`) |
+| `DELIDEV_REDIS_URL` | N | Redis connection URL (required only in `SCALE`) |
+| `DELIDEV_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace streams (`SCALE` only) |
+| `DELIDEV_WORKER_RPC_TIMEOUT` | N | Worker call timeout |
+| `DELIDEV_PR_POLL_INTERVAL_SEC` | N | PR polling interval |
+| `DELIDEV_AUTH_ISSUER_URL` | N | OIDC issuer |
+| `DELIDEV_AUTH_AUDIENCE` | N | expected token audience |
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection URL | Remote mode |
-| `DELIDEV_SINGLE_USER_MODE` | Set to `true` for single-user mode | No |
-| `DELIDEV_JWT_SECRET` | JWT signing secret | Remote mode |
-| `DELIDEV_OIDC_ISSUER_URL` | OIDC provider URL | Remote mode |
-| `DELIDEV_OIDC_CLIENT_ID` | OAuth2 client ID | Remote mode |
-| `DELIDEV_OIDC_CLIENT_SECRET` | OAuth2 client secret | Remote mode |
-| `DELIDEV_SERVER_PORT` | Server port | No (default: 54871) |
-| `DELIDEV_LOG_LEVEL` | Log level | No (default: info) |
+Deployment examples:
 
-### Single-User Mode
+1. `SINGLE_INSTANCE`:
+- `DELIDEV_DEPLOYMENT_MODE=SINGLE_INSTANCE`
+- `DELIDEV_DATABASE_URL=sqlite:///Users/<user>/.delidev/main-server.db`
 
-When `DELIDEV_SINGLE_USER_MODE=true`:
-- Uses SQLite instead of PostgreSQL
-- Authentication is disabled
-- All requests bypass auth middleware
-- User table is not used
+2. `SCALE`:
+- `DELIDEV_DEPLOYMENT_MODE=SCALE`
+- `DELIDEV_DATABASE_URL=postgres://localhost:5432/delidev`
+- `DELIDEV_REDIS_URL=redis://localhost:6379/0`
 
-## Error Handling
+## Logging and Metrics
 
-| Error Code | Description |
-|------------|-------------|
-| -32600 | Invalid Request |
-| -32601 | Method not found |
-| -32602 | Invalid params |
-| -32603 | Internal error |
-| -32001 | Authentication required |
-| -32002 | Permission denied |
-| -32003 | Resource not found |
-| -32004 | Worker unavailable |
-| -32005 | Task execution failed |
+Structured logs include:
+
+1. `workspace_id`
+2. `unit_task_id`
+3. `sub_task_id`
+4. `session_id`
+5. `pr_tracking_id`
+6. `request_id`
+
+Key metrics:
+
+1. task queue latency
+2. subtask success and failure rate
+3. stream delivery lag
+4. PR poll cycle duration
+5. auto-fix success ratio
+
+## Failure Handling
+
+1. worker unavailable: SubTask returns to queue with backoff
+2. PR provider API failure: keep last known state and retry on next poll cycle
+3. stream client disconnect: client resumes from last sequence
+4. duplicate event processing: idempotency by `event_id` and sequence checks
