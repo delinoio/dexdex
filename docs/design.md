@@ -202,8 +202,9 @@ Server-side structured logging is required for:
 1. workspace routing
 2. task and subtask state transitions
 3. agent session start/stop/failure
-4. PR polling snapshots and decision points
-5. event stream delivery health
+4. agent token usage and cost snapshots
+5. PR polling snapshots and decision points
+6. event stream delivery health
 
 Client-side logging is required for:
 

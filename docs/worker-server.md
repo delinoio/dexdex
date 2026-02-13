@@ -7,7 +7,7 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 1. prepare and manage git worktrees
 2. launch and supervise coding agent sessions
 3. stream runtime output and events to main server
-4. persist session artifacts (patch refs, logs, summaries)
+4. persist session artifacts (patch refs, logs, summaries, usage, cost)
 5. handle cancellation and retry-safe termination
 
 ## Execution Principles
@@ -88,6 +88,35 @@ Each adapter provides:
 3. typed event mapping
 4. cancellation and termination handling
 
+## Token Usage and Cost Tracking
+
+Worker tracks token usage and cost for every AgentSession.
+This applies to Claude Code, Codex, OpenCode, and any additional adapter.
+
+Requirements:
+
+1. collect provider-reported usage counters per session
+2. normalize usage into a shared `tokenUsage` schema
+3. compute or ingest `total_cost_usd` from provider pricing metadata
+4. emit usage checkpoints during long-running sessions
+5. emit final usage and cost summary at session completion
+6. send normalized usage and cost data to main server for persistence
+
+Normalized fields:
+
+1. `provider`
+2. `model`
+3. `inputTokens`
+4. `outputTokens`
+5. `cacheReadTokens`
+6. `cacheWriteTokens`
+7. `totalTokens`
+8. `totalCostUsd`
+9. `pricingVersion`
+10. `capturedAt`
+
+If an agent does not expose a counter, the field is `null` and raw usage payload is retained for audit.
+
 ## Error Handling
 
 1. repository fetch failure: emit classified provider error
@@ -114,7 +143,8 @@ Emit structured logs for:
 2. session start and stop
 3. plan-mode wait and resume
 4. artifact export
-5. cancellation checkpoints
+5. usage checkpoints and final cost summary
+6. cancellation checkpoints
 
 ## Security Baseline
 

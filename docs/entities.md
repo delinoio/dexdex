@@ -225,10 +225,26 @@ enum StreamEventType {
 | agentType | enum | Y | Coding agent type |
 | model | string | N | Model name |
 | status | AgentSessionStatus | Y | Runtime status |
-| tokenUsage | object | N | Usage/cost metrics |
+| tokenUsage | TokenUsageMetrics | N | Usage and cost metrics |
 | startedAt | timestamp | N | Start time |
 | completedAt | timestamp | N | End time |
 | createdAt | timestamp | Y | Created time |
+
+### TokenUsageMetrics
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| provider | string | Y | Agent/provider identifier |
+| model | string | N | Model name reported by provider |
+| inputTokens | int64 | N | Input tokens |
+| outputTokens | int64 | N | Output tokens |
+| cacheReadTokens | int64 | N | Tokens read from cache |
+| cacheWriteTokens | int64 | N | Tokens written to cache |
+| totalTokens | int64 | N | Total tokens consumed |
+| totalCostUsd | decimal | N | Total session cost in USD |
+| pricingVersion | string | N | Pricing table/version identifier |
+| rawUsagePayload | json | N | Raw provider usage payload for audit/debug |
+| capturedAt | timestamp | Y | Last usage capture time |
 
 ### PullRequestTracking
 
