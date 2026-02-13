@@ -135,6 +135,16 @@ UnitTask
         └── AgentSession #4
 ```
 
+## Agent Message Normalization Boundary
+
+Worker server is the normalization boundary for all coding-agent outputs.
+
+1. agent adapters parse provider-native outputs (Claude Code, Codex, OpenCode, and others) inside worker runtime
+2. worker emits only normalized session messages and normalized session state events to main server
+3. main server stores and relays only normalized agent messages
+4. Tauri client renders and reacts only to normalized message contracts
+5. provider-native raw payloads are not part of main-server or client contracts
+
 ## Commit Chain Invariant
 
 Worker-produced code changes must be represented as real git commits.

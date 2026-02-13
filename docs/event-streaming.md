@@ -43,6 +43,12 @@ Event propagation uses Redis as the required transport backbone.
 7. `INLINE_COMMENT_UPDATED`
 8. `NOTIFICATION_CREATED`
 
+Session output normalization rules:
+
+1. `SESSION_OUTPUT` payload uses normalized `SessionOutputEvent` contract
+2. main server forwards normalized events without provider-specific payload transforms
+3. clients consume only normalized session output events
+
 Inline comment event rules:
 
 1. create, edit, resolve/reopen, and delete operations emit `INLINE_COMMENT_UPDATED`

@@ -74,6 +74,20 @@ enum AgentSessionStatus {
 }
 ```
 
+### SessionOutputKind
+
+```text
+enum SessionOutputKind {
+  TEXT
+  PLAN_UPDATE
+  TOOL_CALL
+  TOOL_RESULT
+  PROGRESS
+  WARNING
+  ERROR
+}
+```
+
 ### ActionType
 
 ```text
@@ -290,6 +304,22 @@ SubTask cancellation semantics:
 | completedAt | timestamp | N | End time |
 | createdAt | timestamp | Y | Created time |
 
+### SessionOutputEvent
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| id | UUID | Y | Event ID |
+| sessionId | UUID | Y | Parent AgentSession |
+| sequence | uint64 | Y | Monotonic sequence within session |
+| kind | SessionOutputKind | Y | Normalized output category |
+| message | string | N | Human-readable normalized text |
+| attributes | map<string,string> | N | Normalized key/value metadata |
+| emittedAt | timestamp | Y | Emission time |
+
+Normalization rule:
+
+1. `SessionOutputEvent` is provider-agnostic and is the only agent output contract used by main server and clients.
+
 ### TokenUsageMetrics
 
 | Field | Type | Required | Description |
@@ -303,7 +333,6 @@ SubTask cancellation semantics:
 | totalTokens | int64 | N | Total tokens consumed |
 | totalCostUsd | decimal | N | Total session cost in USD |
 | pricingVersion | string | N | Pricing table/version identifier |
-| rawUsagePayload | json | N | Raw provider usage payload for audit/debug |
 | capturedAt | timestamp | Y | Last usage capture time |
 
 ### PullRequestTracking
@@ -385,9 +414,10 @@ SubTask cancellation semantics:
 3. `Workspace 1:N BadgeTheme`
 4. `UnitTask 1:N SubTask`
 5. `SubTask 1:N AgentSession`
-6. `UnitTask 1:N PullRequestTracking`
-7. `PullRequestTracking 1:N ReviewAssistItem`
-8. `UnitTask 1:N ReviewInlineComment`
+6. `AgentSession 1:N SessionOutputEvent`
+7. `UnitTask 1:N PullRequestTracking`
+8. `PullRequestTracking 1:N ReviewAssistItem`
+9. `UnitTask 1:N ReviewInlineComment`
 
 ## Plan Mode Data Attachment
 

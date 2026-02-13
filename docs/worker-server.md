@@ -6,9 +6,10 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 
 1. prepare and manage git worktrees
 2. launch and supervise coding agent sessions
-3. stream runtime output and events to main server
-4. persist session artifacts (commit chains, patch refs, logs, summaries, usage, cost)
-5. handle cancellation and retry-safe termination
+3. normalize provider-native agent output into shared message contracts
+4. stream normalized runtime output and events to main server
+5. persist session artifacts (commit chains, patch refs, logs, summaries, usage, cost)
+6. handle cancellation and retry-safe termination
 
 ## Execution Principles
 
@@ -59,9 +60,10 @@ Path convention:
 1. worker receives `RunSubTask`
 2. worker emits `SUBTASK_UPDATED(IN_PROGRESS)`
 3. worker starts AgentSession
-4. session output is streamed as incremental events
-5. if plan mode is active, session waits for decision
-6. worker emits completion or failure and artifact metadata
+4. adapter converts provider-native output into normalized `SessionOutputEvent`
+5. normalized session output is streamed as incremental events
+6. if plan mode is active, session waits for decision
+7. worker emits completion or failure and artifact metadata
 
 Cancellation path:
 
@@ -114,8 +116,20 @@ Each adapter provides:
 
 1. command construction
 2. structured output parsing
-3. typed event mapping
+3. provider-to-normalized event mapping
 4. cancellation and termination handling
+
+## Agent Message Normalization (Required)
+
+Worker is the only component that handles provider-native agent message formats.
+
+1. parse provider-native output in adapter runtime
+2. map provider-specific event shapes to normalized `SessionOutputEvent`
+3. map provider-specific lifecycle signals to normalized session state updates
+4. send only normalized session messages to main server
+5. keep provider-native raw payloads worker-local for debug if needed
+
+Main server and Tauri client never parse provider-native output formats.
 
 ## Token Usage and Cost Tracking
 
@@ -144,7 +158,8 @@ Normalized fields:
 9. `pricingVersion`
 10. `capturedAt`
 
-If an agent does not expose a counter, the field is `null` and raw usage payload is retained for audit.
+If an agent does not expose a counter, the field is `null`.
+Provider-native raw usage payload may be retained only in worker-local debug storage.
 
 ## Error Handling
 

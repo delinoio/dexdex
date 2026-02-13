@@ -16,6 +16,7 @@ All business communication is Connect RPC-based.
 2. Tauri-specific commands do not define business contracts.
 3. Public requests and responses use enums for known variants.
 4. Streaming channels emit typed events with monotonic sequence IDs.
+5. Coding-agent session output contracts are normalized and provider-agnostic.
 
 ## Service Overview
 
@@ -303,6 +304,11 @@ Response:
 - `events: SessionOutputEvent[]`
 - `next_cursor?: string`
 
+Rules:
+
+1. returned events follow the normalized `SessionOutputEvent` contract.
+2. provider-native raw messages are not exposed by this API.
+
 ### StopAgentSession
 
 Request:
@@ -510,7 +516,7 @@ Payload variants:
 
 1. `TaskUpdatedEvent`
 2. `SubTaskUpdatedEvent`
-3. `SessionOutputEvent`
+3. `SessionOutputEvent` (normalized contract)
 4. `SessionStateChangedEvent`
 5. `PrUpdatedEvent`
 6. `ReviewAssistUpdatedEvent`

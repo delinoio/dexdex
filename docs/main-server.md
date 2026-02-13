@@ -11,8 +11,9 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 4. PR tracking and polling scheduler
 5. review-assist generation and updates
 6. inline comment lifecycle for code review diff
-7. event stream fan-out to clients
-8. worker coordination, job dispatch, and cancellation propagation
+7. validate and persist normalized coding-agent message payloads
+8. event stream fan-out to clients
+9. worker coordination, job dispatch, and cancellation propagation
 
 ## Architecture
 
@@ -60,7 +61,7 @@ Main server stores and owns:
 3. ordered RepositoryGroup membership and primary repository selection (first repository in group)
 4. UnitTask and SubTask state machines
 5. SubTask commit-chain metadata and commit ancestry
-6. AgentSession metadata and log pointers
+6. AgentSession metadata and normalized session output events
 7. PR tracking state and auto-fix counters
 8. review assist items
 9. review inline comments and status
@@ -73,7 +74,7 @@ Main server stores and owns:
 1. `CreateUnitTask` persists task with `QUEUED` status.
 2. scheduler enqueues initial SubTask (`INITIAL_IMPLEMENTATION`).
 3. WorkerRouter assigns job to worker server.
-4. worker emits lifecycle and log events.
+4. worker emits normalized lifecycle and session output events.
 5. main server updates UnitTask action state and emits stream events.
 
 Cancellation flow:
@@ -120,6 +121,15 @@ Main server routes executable SubTasks using:
 2. workspace affinity (optional)
 3. concurrency caps
 4. retry budget
+
+## Normalized Agent Message Contract
+
+Main server consumes only normalized agent message contracts from worker.
+
+1. provider-native agent output is never parsed at main-server layer
+2. incoming worker payloads are validated against normalized `SessionOutputEvent` schema
+3. rejected payloads are logged as contract violations and not forwarded to clients
+4. persisted session logs and streamed `SESSION_OUTPUT` events use the same normalized schema
 
 ## Database Support
 

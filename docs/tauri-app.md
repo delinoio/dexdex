@@ -7,6 +7,7 @@ The app is Connect RPC-first.
 
 Business communication uses Connect RPC as the primary path.
 Tauri-specific APIs are only for platform integration.
+Client consumes normalized coding-agent message contracts only.
 
 ## Supported Platforms
 
@@ -68,6 +69,7 @@ The app maintains a stream subscription per active workspace:
 3. reconnect with `from_sequence`
 4. apply idempotent event reducers
 5. merge `INLINE_COMMENT_UPDATED` events into review diff state
+6. render `SESSION_OUTPUT` payloads from normalized `SessionOutputEvent` schema only
 
 ## Web Data Access Pattern
 
