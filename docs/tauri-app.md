@@ -75,7 +75,7 @@ Notification dispatch uses Web Notification API from the web layer.
 
 Rules:
 
-1. request permission explicitly
+1. request permission during app startup from web layer
 2. avoid duplicate notifications by sequence
 3. keep in-app notification center authoritative
 

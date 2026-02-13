@@ -236,6 +236,7 @@ Notification delivery uses Web Notification API.
 
 - primary channel: notification API in Tauri webview context
 - in-app notification center stores authoritative state
+- permission request is initiated during app startup
 
 See `docs/notifications.md`.
 

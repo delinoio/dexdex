@@ -121,6 +121,8 @@ DeliDev sends:
 1. in-app notifications
 2. Web Notification API notifications when permission is granted
 
+The app requests notification permission during startup.
+
 Manage notification behavior in Settings.
 
 ## 14. Product Rules

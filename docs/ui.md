@@ -305,7 +305,7 @@ Plan Mode shortcuts:
 
 1. bell icon with unread count
 2. notification center list with deep links
-3. Web Notification API permission prompt flow
+3. Web Notification API permission prompt shown at app startup
 4. duplicate prevention by event sequence
 
 Notifications Center shortcuts:

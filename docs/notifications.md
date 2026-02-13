@@ -19,7 +19,8 @@ DeliDev uses Web Notification API as the primary desktop and mobile notification
 ## Notification Flow
 
 ```
-EventStreamService emits event
+App startup requests Web Notification permission
+      -> EventStreamService emits event
       -> client event reducer writes Notification record locally
       -> if allowed and app is backgrounded, call Web Notification API
       -> user click deep-links into task, PR, or review detail
@@ -27,9 +28,10 @@ EventStreamService emits event
 
 ## Permission Handling
 
-1. prompt after explicit user intent
-2. store local permission state cache
-3. expose permission status in settings
+1. request Web Notification permission at app startup
+2. if permission is denied, do not auto-loop prompts during the same session
+3. store local permission state cache
+4. expose permission status and retry action in settings
 
 ## Deduplication
 
