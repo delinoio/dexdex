@@ -39,7 +39,7 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 │                                                              │
 │  Storage                                                     │
 │   ├── Postgres (primary)                                     │
-│   └── Redis (optional: stream cursor/cache/locks)            │
+│   └── Redis (required: event propagation and replay)          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,6 +90,15 @@ Event broker requirements:
 3. best-effort fan-out to connected clients
 4. durable enqueue before publish
 
+## Redis Event Propagation
+
+Main server uses Redis as the required event backbone.
+
+1. publish every domain event to Redis stream channels
+2. use Redis pub/sub fan-out for connected stream workers
+3. persist ordered event envelopes with sequence metadata
+4. replay from Redis stream offsets on reconnect
+
 ## Worker Coordination
 
 Main server routes executable SubTasks using:
@@ -111,7 +120,8 @@ Main server routes executable SubTasks using:
 |---|---|---|
 | `DELIDEV_HTTP_ADDR` | Y | Connect RPC bind address |
 | `DELIDEV_DATABASE_URL` | Y | Postgres DSN |
-| `DELIDEV_EVENT_BACKEND` | N | `postgres` or `redis` |
+| `DELIDEV_REDIS_URL` | Y | Redis connection URL for event propagation |
+| `DELIDEV_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace event streams |
 | `DELIDEV_WORKER_RPC_TIMEOUT` | N | Worker call timeout |
 | `DELIDEV_PR_POLL_INTERVAL_SEC` | N | PR polling interval |
 | `DELIDEV_AUTH_ISSUER_URL` | N | OIDC issuer |

@@ -162,6 +162,7 @@ See `docs/plan-yaml.md`.
 ## Event Streaming
 
 DeliDev uses event streaming for low-latency UI updates and automation triggers.
+Main server uses Redis to propagate and replay events.
 
 Event families:
 

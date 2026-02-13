@@ -14,6 +14,15 @@ DeliDev uses server-streamed workspace events for near-real-time synchronization
 - Request: `workspace_id`, optional `from_sequence`
 - Response: stream of `WorkspaceEventEnvelope`
 
+## Redis Backbone
+
+Event propagation uses Redis as the required transport backbone.
+
+1. Redis Streams store ordered workspace event envelopes
+2. Redis pub/sub propagates fresh events to active stream handlers
+3. stream resume uses Redis stream offsets and workspace sequence mapping
+4. replay and reconnect behavior is defined against Redis retention policy
+
 ## Envelope Contract
 
 | Field | Type | Description |
