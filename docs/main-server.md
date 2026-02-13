@@ -38,7 +38,8 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 │   └── WorkerRouter                                           │
 │                                                              │
 │  Storage                                                     │
-│   ├── Postgres (primary)                                     │
+│   ├── PostgreSQL (recommended)                               │
+│   ├── SQLite (supported for local deployments)               │
 │   └── Redis (required: event propagation and replay)          │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -108,6 +109,14 @@ Main server routes executable SubTasks using:
 3. concurrency caps
 4. retry budget
 
+## Database Support
+
+Main server supports both PostgreSQL and SQLite.
+
+1. PostgreSQL is the recommended database for shared and production deployments.
+2. SQLite is supported for local and single-node deployments.
+3. Both backends use the same logical schema and migration policy.
+
 ## Authentication and Authorization
 
 1. endpoint-auth profile per workspace
@@ -119,13 +128,18 @@ Main server routes executable SubTasks using:
 | Key | Required | Description |
 |---|---|---|
 | `DELIDEV_HTTP_ADDR` | Y | Connect RPC bind address |
-| `DELIDEV_DATABASE_URL` | Y | Postgres DSN |
+| `DELIDEV_DATABASE_URL` | Y | PostgreSQL or SQLite DSN (PostgreSQL recommended) |
 | `DELIDEV_REDIS_URL` | Y | Redis connection URL for event propagation |
 | `DELIDEV_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace event streams |
 | `DELIDEV_WORKER_RPC_TIMEOUT` | N | Worker call timeout |
 | `DELIDEV_PR_POLL_INTERVAL_SEC` | N | PR polling interval |
 | `DELIDEV_AUTH_ISSUER_URL` | N | OIDC issuer |
 | `DELIDEV_AUTH_AUDIENCE` | N | expected token audience |
+
+Database URL examples:
+
+1. PostgreSQL (recommended): `postgres://localhost:5432/delidev`
+2. SQLite (local): `sqlite:///Users/<user>/.delidev/main-server.db`
 
 ## Logging and Metrics
 

@@ -48,6 +48,13 @@ This document is the primary architecture reference.
 - `apps/tauri-app/` (Tauri + React)
 - single root `go.mod` for server apps
 
+## Database Strategy
+
+Main server supports PostgreSQL and SQLite.
+
+1. PostgreSQL is the recommended default database.
+2. SQLite is supported for local endpoint deployments.
+
 ## Connect RPC First Rule
 
 All business data and control flows use Connect RPC.

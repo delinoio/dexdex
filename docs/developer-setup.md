@@ -59,6 +59,11 @@ This guide describes the development setup for DeliDev.
 | `DELIDEV_PR_POLL_INTERVAL_SEC` | `30` |
 | `DELIDEV_WORKTREE_ROOT` | `~/.delidev/worktrees` |
 
+Database URL options:
+
+1. Recommended (PostgreSQL): `postgres://localhost:5432/delidev`
+2. Local alternative (SQLite): `sqlite:///Users/<user>/.delidev/main-server.db`
+
 ## Validation Checklist
 
 1. client can create and switch workspaces
