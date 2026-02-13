@@ -219,6 +219,11 @@ Design implications:
 3. notification and streaming strategy must work with mobile runtime constraints
 4. workspace onboarding and PR remediation actions must be touch-friendly
 
+## Keyboard Input Rule
+
+All multiline form inputs must support `Cmd+Enter` submit behavior.
+This is a product-wide interaction rule and applies across task, plan, review, and PR workflows.
+
 ## Observability and Logging
 
 Server-side structured logging is required for:

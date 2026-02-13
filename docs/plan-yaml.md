@@ -67,6 +67,7 @@ When subtask is waiting for plan approval:
 2. lock conflicting destructive actions
 3. enable approve, revise, and reject controls
 4. show audit trail of decisions
+5. in revise feedback multiline input, `Cmd+Enter` submits the revise request
 
 ## Audit and Persistence
 

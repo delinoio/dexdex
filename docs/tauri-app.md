@@ -78,6 +78,14 @@ When a session enters plan wait state:
 3. submit decision through Task API
 4. continue streaming results in the same SubTask timeline
 
+## Multiline Submit Handling
+
+The client implements unified multiline keyboard handling in the web layer:
+
+1. `Enter` inserts newline in multiline input controls
+2. `Cmd+Enter` submits the associated form
+3. behavior is consistent across UnitTask, SubTask feedback, plan revise, and review inputs
+
 ## Approved Diff Create PR Action
 
 When a user approves AI diff in UnitTask detail:

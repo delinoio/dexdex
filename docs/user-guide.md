@@ -36,6 +36,11 @@ In UnitTask detail:
 3. generated commit chain summary
 4. action badges
 
+Multiline input tip:
+
+1. use `Cmd+Enter` to submit any multiline form
+2. use `Enter` for a new line
+
 ## 5. Handle Action Badges
 
 When user action is needed, UnitTask shows badges such as:

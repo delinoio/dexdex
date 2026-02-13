@@ -73,6 +73,23 @@ Contains:
 7. `Create PR` action shown after AI diff approval
 8. commit chain viewer for generated commits
 
+## Multiline Input Submit Shortcut
+
+All multiline inputs support `Cmd+Enter` for form submission.
+
+Applies to:
+
+1. UnitTask creation prompt input
+2. SubTask feedback and retry prompt input
+3. Plan-mode revise feedback input
+4. PR review assist note and comment input
+
+Behavior:
+
+1. `Enter` inserts a newline
+2. `Cmd+Enter` submits the current form
+3. submit button remains available as an alternative
+
 ### Approved Diff PR Action
 
 When a user approves the AI diff in UnitTask detail:
