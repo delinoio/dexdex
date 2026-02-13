@@ -111,6 +111,16 @@ Contains:
 6. plan-mode decision controls when active
 7. `Create PR` action shown after AI diff approval
 8. commit chain viewer for generated commits
+9. stop controls for in-progress UnitTask and SubTask
+
+### Stop Controls
+
+Users can stop running work with minimal friction:
+
+1. show `Stop UnitTask` button when UnitTask is `IN_PROGRESS`
+2. show `Stop SubTask` action on each in-progress SubTask row
+3. stop action sends cancellation request immediately
+4. UI reflects `CANCELLED` state from stream updates
 
 ## Multiline Input Submit Shortcut
 
@@ -150,6 +160,8 @@ UnitTask Detail shortcuts:
 5. `L`: toggle session log panel
 6. `D`: toggle diff panel
 7. `[` / `]`: move to previous or next changed file
+8. `S`: stop current UnitTask when in progress
+9. `Shift+S`: stop selected SubTask when in progress
 
 ### Commit Chain Panel
 

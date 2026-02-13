@@ -11,7 +11,7 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 4. PR tracking and polling scheduler
 5. review-assist generation and updates
 6. event stream fan-out to clients
-7. worker coordination and job dispatch
+7. worker coordination, job dispatch, and cancellation propagation
 
 ## Architecture
 
@@ -72,6 +72,13 @@ Main server stores and owns:
 3. WorkerRouter assigns job to worker server.
 4. worker emits lifecycle and log events.
 5. main server updates UnitTask action state and emits stream events.
+
+Cancellation flow:
+
+1. user calls `CancelUnitTask` or `CancelSubTask`.
+2. main server sends cancellation signal to worker runner immediately.
+3. main server persists `CANCELLED` status after worker acknowledgement or timeout policy.
+4. cancellation status is published through event stream.
 
 ## PR Polling and Auto-Fix
 

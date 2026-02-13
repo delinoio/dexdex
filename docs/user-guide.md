@@ -42,7 +42,15 @@ Multiline input tip:
 1. use `Cmd+Enter` to submit any multiline form
 2. use `Enter` for a new line
 
-## 5. Handle Action Badges
+## 5. Stop Running Work
+
+You can stop running work immediately:
+
+1. in UnitTask detail, click `Stop UnitTask` while task is in progress
+2. in SubTask timeline, click `Stop SubTask` on a running subtask
+3. wait for status to change to `CANCELLED` from stream updates
+
+## 6. Handle Action Badges
 
 When user action is needed, UnitTask shows badges such as:
 
@@ -52,7 +60,7 @@ When user action is needed, UnitTask shows badges such as:
 
 Badge colors depend on workspace badge settings.
 
-## 6. Use Plan Mode
+## 7. Use Plan Mode
 
 If the session enters plan wait:
 
@@ -60,7 +68,7 @@ If the session enters plan wait:
 2. choose `Approve`, `Revise`, or `Reject`
 3. optionally add revise feedback
 
-## 7. Create PR After Diff Approval
+## 8. Create PR After Diff Approval
 
 After you approve the AI diff in UnitTask detail:
 
@@ -70,7 +78,7 @@ After you approve the AI diff in UnitTask detail:
 4. worker creates real git commits for the result
 5. PR appears in PR Management when completed
 
-## 8. Manage PRs
+## 9. Manage PRs
 
 Open PR Management to:
 
@@ -79,7 +87,7 @@ Open PR Management to:
 3. run `Fix with Agent`
 4. enable or disable auto-fix policy
 
-## 9. Use Review Assist
+## 10. Use Review Assist
 
 Open Review Assist to:
 
@@ -88,7 +96,7 @@ Open Review Assist to:
 3. resolve or dismiss items
 4. trigger remediation subtasks
 
-## 10. Notifications
+## 11. Notifications
 
 DeliDev sends:
 
@@ -97,7 +105,7 @@ DeliDev sends:
 
 Manage notification behavior in Settings.
 
-## 11. Product Rules
+## 12. Product Rules
 
 1. DeliDev uses workspace connectivity
 2. all business communication is Connect RPC-based
@@ -105,7 +113,7 @@ Manage notification behavior in Settings.
 4. work is executed through task-specific worktrees
 5. PR creation and Commit to Local use real generated commit chains
 
-## 12. Keyboard Shortcuts
+## 13. Keyboard Shortcuts
 
 All screens provide shortcuts for key items and actions.
 

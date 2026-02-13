@@ -40,6 +40,7 @@ See `docs/entities.md`.
 3. server creates remediation SubTask
 4. worker executes and streams results
 5. PR status is re-polled and reflected
+6. user can stop the running remediation SubTask with `CancelSubTask`
 
 ## Manual PR Creation Flow (Approved Diff)
 

@@ -98,6 +98,7 @@ The client maintains a centralized shortcut registry.
 5. each primary screen (Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications) registers its own shortcut set
 6. shortcut matching uses `KeyboardEvent.code` + modifiers, not locale-dependent character output
 7. shortcut execution is independent of Korean/English input mode switching
+8. stop actions for in-progress UnitTask and SubTask are included in screen shortcut sets
 
 ## Approved Diff Create PR Action
 
@@ -108,6 +109,14 @@ When a user approves AI diff in UnitTask detail:
 3. request uses `type = PR_CREATE` and prompt `Create A PR`
 4. resulting SubTask and AgentSession are streamed in existing task timeline
 5. PR creation uses generated real commit chain from the SubTask
+
+## Stop Running Task Actions
+
+Client exposes immediate stop actions:
+
+1. `CancelUnitTask` for running UnitTask
+2. `CancelSubTask` for running SubTask
+3. stream updates keep cancellation state synchronized in UI
 
 ## Offline and Recovery Behavior
 

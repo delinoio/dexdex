@@ -217,6 +217,12 @@ RepositoryGroup execution semantics:
 `latestPatchRef` is a derived artifact for diff rendering.
 The authoritative source for PR creation and Commit to Local is the real git commit chain (`generatedCommits`).
 
+UnitTask cancellation semantics:
+
+1. user can cancel an in-progress UnitTask at any time.
+2. canceling UnitTask stops active SubTask execution and active AgentSession processes.
+3. UnitTask transitions to `CANCELLED` after cancellation is acknowledged.
+
 ### SubTask
 
 | Field | Type | Required | Description |
@@ -233,6 +239,12 @@ The authoritative source for PR creation and Commit to Local is the real git com
 | generatedCommits | GeneratedCommit[] | Y | Ordered real git commit chain produced by this subtask |
 | createdAt | timestamp | Y | Created time |
 | updatedAt | timestamp | Y | Updated time |
+
+SubTask cancellation semantics:
+
+1. user can cancel an in-progress SubTask at any time.
+2. cancellation terminates active AgentSession processes for that SubTask.
+3. SubTask transitions to `CANCELLED` when cancellation completes.
 
 ### GeneratedCommit
 

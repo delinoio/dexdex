@@ -187,6 +187,26 @@ Request:
 Response:
 - `task: UnitTask`
 
+Rule:
+
+1. use `CancelUnitTask` for user-initiated stop of in-progress UnitTasks.
+
+### CancelUnitTask
+
+Request:
+- `task_id: string`
+- `reason?: string`
+
+Response:
+- `task: UnitTask`
+
+Rules:
+
+1. endpoint is optimized for fast user stop actions.
+2. valid when UnitTask is in progress.
+3. cancellation stops active SubTask and AgentSession execution for the task.
+4. resulting UnitTask status is `CANCELLED`.
+
 ### CreateSubTask
 
 Request:
@@ -240,9 +260,17 @@ Response:
 
 Request:
 - `sub_task_id: string`
+- `reason?: string`
 
 Response:
 - `sub_task: SubTask`
+
+Rules:
+
+1. endpoint is optimized for fast user stop actions.
+2. valid when SubTask is in progress.
+3. cancellation stops active AgentSession execution for the subtask.
+4. resulting SubTask status is `CANCELLED`.
 
 ### SubmitPlanDecision
 

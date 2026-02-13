@@ -182,6 +182,15 @@ Review assist features include:
 3. review checklist and suggested questions
 4. unresolved thread and CI signal aggregation
 
+## Stop Running Work
+
+Users can easily stop running work at both UnitTask and SubTask levels.
+
+1. in-progress UnitTask provides a direct stop action.
+2. in-progress SubTask provides a direct stop action.
+3. stop requests propagate immediately to worker session runners.
+4. cancelled items transition to `CANCELLED` and emit stream updates.
+
 ## Plan Mode Support
 
 For coding agents with plan mode:

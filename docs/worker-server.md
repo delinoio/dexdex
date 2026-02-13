@@ -63,6 +63,13 @@ Path convention:
 5. if plan mode is active, session waits for decision
 6. worker emits completion or failure and artifact metadata
 
+Cancellation path:
+
+1. worker receives cancel signal for UnitTask or SubTask.
+2. worker terminates active agent processes for affected SubTask immediately.
+3. worker emits cancellation lifecycle events.
+4. worker returns final `CANCELLED` status to main server.
+
 ## Plan Mode Support
 
 When `plan_mode_enabled = true` on SubTask:
@@ -145,6 +152,7 @@ If an agent does not expose a counter, the field is `null` and raw usage payload
 2. session startup failure: mark session and subtask failed
 3. tool execution timeout: emit timeout event and cancel session
 4. partial output corruption: emit parser warning and continue where possible
+5. user cancellation request: stop process immediately and flush cancellation events
 
 ## Configuration
 
