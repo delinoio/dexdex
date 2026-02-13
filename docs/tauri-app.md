@@ -78,6 +78,15 @@ When a session enters plan wait state:
 3. submit decision through Task API
 4. continue streaming results in the same SubTask timeline
 
+## Approved Diff Create PR Action
+
+When a user approves AI diff in UnitTask detail:
+
+1. UI renders `Create PR` button
+2. button triggers `TaskService.CreateSubTask`
+3. request uses `type = PR_CREATE` and prompt `Create A PR`
+4. resulting SubTask and AgentSession are streamed in existing task timeline
+
 ## Offline and Recovery Behavior
 
 1. temporary network loss: show degraded state and auto-retry stream

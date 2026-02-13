@@ -40,6 +40,7 @@ enum UnitTaskStatus {
 enum SubTaskType {
   INITIAL_IMPLEMENTATION
   REQUEST_CHANGES
+  PR_CREATE
   PR_REVIEW_FIX
   PR_CI_FIX
   MANUAL_RETRY
@@ -78,6 +79,7 @@ enum AgentSessionStatus {
 ```text
 enum ActionType {
   REVIEW_REQUESTED
+  PR_CREATION_READY
   PLAN_APPROVAL_REQUIRED
   CI_FAILED
   MERGE_CONFLICT
@@ -208,7 +210,7 @@ enum StreamEventType {
 |---|---|---|---|
 | id | UUID | Y | SubTask ID |
 | unitTaskId | UUID | Y | Parent UnitTask |
-| type | SubTaskType | Y | Subtask category |
+| type | SubTaskType | Y | Subtask category (includes small operational tasks like PR creation) |
 | prompt | string | Y | Subtask-specific instruction |
 | status | SubTaskStatus | Y | Current status |
 | planModeEnabled | bool | Y | Uses plan-mode interaction |

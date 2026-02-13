@@ -14,7 +14,7 @@ DeliDev includes polling-based PR management for PRs created by DeliDev tasks.
 
 1. `PullRequestTracking`
 2. `ReviewAssistItem`
-3. `SubTask` with type `PR_REVIEW_FIX` or `PR_CI_FIX`
+3. `SubTask` with type `PR_CREATE`, `PR_REVIEW_FIX`, or `PR_CI_FIX`
 
 See `docs/entities.md`.
 
@@ -40,6 +40,14 @@ See `docs/entities.md`.
 3. server creates remediation SubTask
 4. worker executes and streams results
 5. PR status is re-polled and reflected
+
+## Manual PR Creation Flow (Approved Diff)
+
+1. user approves AI diff in UnitTask detail
+2. UI shows `Create PR` button
+3. clicking button creates SubTask with type `PR_CREATE`
+4. SubTask sends simple prompt `Create A PR` to coding agent
+5. on success, PR tracking record is created and listed in PR Management
 
 ## Automatic Remediation Flow
 

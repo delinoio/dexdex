@@ -108,7 +108,8 @@ UnitTask is the top-level user-visible work item.
 
 ### SubTask
 
-SubTask is a UnitTask child entity used for initial implementation, retries, review feedback, and PR follow-up fixes.
+SubTask is a UnitTask child entity used for initial implementation, retries, review feedback, PR creation, and PR follow-up fixes.
+SubTask is also used for small operational tasks triggered by UI actions.
 
 ### AgentSession
 
@@ -119,8 +120,10 @@ UnitTask
   ├── SubTask #1 (initial implementation)
   │     ├── AgentSession #1
   │     └── AgentSession #2 (retry)
-  └── SubTask #2 (fix CI failure)
-        └── AgentSession #3
+  ├── SubTask #2 (create PR)
+  │     └── AgentSession #3
+  └── SubTask #3 (fix CI failure)
+        └── AgentSession #4
 ```
 
 ## Worktree-Only Policy
@@ -140,9 +143,11 @@ All code execution paths must:
 PR management is part of the standard lifecycle:
 
 1. DeliDev tracks PRs created by DeliDev tasks.
-2. Pollers fetch PR state, review comments, and CI status.
-3. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
-4. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
+2. When a user approves AI diff on a UnitTask, UI shows a `Create PR` button.
+3. Clicking `Create PR` creates a SubTask with type `PR_CREATE` and prompt `Create A PR`.
+4. Pollers fetch PR state, review comments, and CI status.
+5. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
+6. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
 
 See `docs/pr-management.md`.
 

@@ -70,6 +70,17 @@ Contains:
 4. AgentSession logs per subtask
 5. patch and diff preview
 6. plan-mode decision controls when active
+7. `Create PR` action shown after AI diff approval
+
+### Approved Diff PR Action
+
+When a user approves the AI diff in UnitTask detail:
+
+1. show `Create PR` button
+2. on click, create SubTask with type `PR_CREATE`
+3. send simple prompt `Create A PR` to coding agent
+4. stream the SubTask and AgentSession progress in the same timeline
+5. update PR tracking state after creation
 
 ## Action Badge System
 
@@ -85,6 +96,7 @@ DeliDev highlights UnitTasks requiring user action with badges.
 ### Example Mapping
 
 - `REVIEW_REQUESTED` -> `BLUE`
+- `PR_CREATION_READY` -> `GREEN`
 - `PLAN_APPROVAL_REQUIRED` -> `YELLOW`
 - `CI_FAILED` -> `RED`
 - `MERGE_CONFLICT` -> `ORANGE`

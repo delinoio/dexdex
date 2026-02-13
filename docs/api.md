@@ -187,6 +187,12 @@ Request:
 Response:
 - `sub_task: SubTask`
 
+Usage rule:
+
+1. after AI diff approval, `Create PR` button uses this API
+2. request uses `type = PR_CREATE`
+3. prompt is `Create A PR` for the default PR creation action
+
 ### ListSubTasks
 
 Request:
