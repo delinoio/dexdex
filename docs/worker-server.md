@@ -1,392 +1,128 @@
-# Worker Server
+# Worker Server (Go) - To-Be Design
 
-The Worker Server executes AI coding agents in isolated Docker containers. It receives tasks from the Main Server and reports execution progress.
+Worker Server executes SubTasks using AI coding agents in isolated worktree environments.
 
-## Role
+## Responsibilities
 
-| Responsibility | Description |
-|----------------|-------------|
-| AI Agent Execution | Runs Claude Code, OpenCode, Aider, and other AI coding agents |
-| Docker Sandboxing | Executes agents in isolated Docker containers |
-| Secret Injection | Injects secrets as environment variables |
-| Output Normalization | Normalizes agent output via `coding_agents` crate |
-| Heartbeat | Reports health status to Main Server |
+1. Prepare and manage git worktrees
+2. Launch and supervise coding agent sessions
+3. Stream runtime output/events to main server
+4. Persist session artifacts (patch refs, logs, summaries)
+5. Handle cancellation and retry-safe termination
 
-## Architecture
+## Execution Principles
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Worker Server                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                   Task Executor                          │   │
-│  │   - Receives task from Main Server                       │   │
-│  │   - Manages task lifecycle                               │   │
-│  └──────────────────────────┬──────────────────────────────┘   │
-│                             │                                   │
-│                             ▼                                   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                Docker Manager                            │   │
-│  │   - Creates containers for each AgentSession             │   │
-│  │   - Builds images from .delidev/setup/Dockerfile         │   │
-│  │   - Manages container lifecycle                          │   │
-│  └──────────────────────────┬──────────────────────────────┘   │
-│                             │                                   │
-│                             ▼                                   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                coding_agents Crate                       │   │
-│  │   - Agent abstraction (Claude Code, OpenCode, etc.)      │   │
-│  │   - Output parsing and normalization                     │   │
-│  │   - TTY input detection                                  │   │
-│  └──────────────────────────┬──────────────────────────────┘   │
-│                             │                                   │
-│                             ▼                                   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                  Git Operations                          │   │
-│  │   - Worktree creation                                    │   │
-│  │   - Branch management                                    │   │
-│  │   - Commit operations                                    │   │
-│  │   - Patch generation (git_ops::generate_patch_async)     │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  ┌─────────────────────┐  ┌─────────────────────────────────┐  │
-│  │   Heartbeat Loop    │  │      Secret Handler             │  │
-│  │   (to Main Server)  │  │   - Receives secrets from Main  │  │
-│  │                     │  │   - Injects as env vars         │  │
-│  └─────────────────────┘  └─────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. Worktree-only execution (no direct arbitrary folder mode)
+2. One SubTask execution context per worktree
+3. One or more AgentSession runs per SubTask
+4. Deterministic cleanup policy by outcome
 
-## Task Execution Flow
+## Runtime Architecture
 
 ```
-1. Task Received from Main Server
-   - Contains git_remote_url (e.g., https://github.com/user/repo)
-   - Contains branch_name for the task
-              ▼
-2. Ensure Repository is Cached
-   - Check if bare repo exists in ~/.delidev/repo-cache/
-   - If not cached: clone as bare repository
-   - If cached: fetch latest changes from remote
-              ▼
-3. Create Git Worktree from Cache
-   - Create worktree at ~/.delidev/worktrees/<task-id>-<branch>/
-   - Checkout the specified branch
-              ▼
-4. Get Secrets from Main Server
-   - worker.getSecrets RPC call
-              ▼
-5. Build Docker Image (if needed)
-   - From .delidev/setup/Dockerfile
-   - Or use default (node:20-slim)
-              ▼
-6. Start Docker Container
-   - Mount worktree as /workspace/{repo}
-   - Set HOME=/workspace
-   - Inject secrets as env vars
-              ▼
-7. Run AI Agent
-   - Execute agent command (claude, opencode, etc.)
-   - Stream output to Main Server
-   - Detect TTY input requests
-              ▼
-8. Wait for Completion or User Input
-   - If TTY input needed: notify Main Server, wait for response
-   - If completed: collect output
-              ▼
-9. Generate Git Patch
-   - Capture unified diff of all changes via git_ops::generate_patch_async
-   - Store patch in UnitTask.git_patch field in database
-   - This persists changes without needing repository write access
-              ▼
-10. Report Result to Main Server
-   - worker.reportStatus RPC call (includes git_patch)
-              ▼
-11. Cleanup
-   - Stop container
-   - In local mode: preserve worktree while task is in_review
-   - Cleanup worktree for failed/cancelled tasks
+┌──────────────────────────────────────────────────────────────┐
+│ Worker Server (Go)                                           │
+│                                                              │
+│  Job Receiver (Connect RPC client/server)                    │
+│    └── SubTask Runner                                        │
+│         ├── Worktree Manager                                 │
+│         ├── Agent Adapter Layer                              │
+│         ├── Session Event Emitter                            │
+│         └── Artifact Collector                               │
+│                                                              │
+│  Local Resources                                              │
+│    ├── Repository Cache                                       │
+│    ├── Worktrees                                              │
+│    └── Temporary Session Data                                 │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Repository Caching
+## Worktree Lifecycle
 
-The Worker uses repository caching for improved performance:
+1. Resolve repository from workspace + repository group context.
+2. Ensure repository cache is up to date.
+3. Create task-specific worktree path.
+4. Execute agent session(s) inside that worktree.
+5. Export patch/metadata.
+6. Cleanup according to retention policy.
 
-```
-~/.delidev/
-├── repo-cache/                    # Cached bare repositories keyed by URL hash
-│   ├── a1b2c3d4e5f67890.../       # SHA256 hash of normalized URL (32 chars)
-│   └── f9e8d7c6b5a43210.../       # Each hash uniquely identifies a repo URL
-└── worktrees/                     # Task worktrees
-    ├── task123-main/              # Worktree for task on main branch
-    └── task456-feature-auth/      # Worktree for task on feature branch
-```
+Example path convention:
 
-**Security Note**: The URL hash is computed after stripping any embedded credentials from the URL, ensuring that credentials are never leaked into filesystem paths or logs.
+- cache: `~/.delidev/repo-cache/<repo-hash>/`
+- worktree: `~/.delidev/worktrees/<unit-task-id>/<sub-task-id>/`
 
-**Benefits:**
-- Avoids repeated full clones for the same repository
-- Reduces disk space by using worktrees instead of full clones
-- Enables faster task startup by only fetching changes
-- Supports multiple concurrent tasks on the same repository
+## SubTask and Session Flow
 
-## Docker Sandboxing
+1. Worker receives `RunSubTask` command.
+2. Worker emits `SUBTASK_UPDATED(IN_PROGRESS)`.
+3. Worker starts `AgentSession`.
+4. Session output is streamed as incremental events.
+5. If Plan Mode is active, session enters waiting state until decision is submitted.
+6. Worker emits completion/failure and artifact metadata.
 
-### Container Configuration
+## Plan Mode Support
 
-Each AgentSession runs in an isolated Docker container:
+When `plan_mode_enabled = true` on SubTask:
 
-| Setting | Value |
-|---------|-------|
-| Network | Host network (for git/API access) |
-| User | Non-root user (configurable) |
-| Working Directory | `/workspace/{repoName}` |
-| Home Directory | `/workspace` |
-| Memory Limit | Configurable (default: 8GB) |
-| CPU Limit | Configurable (default: no limit) |
+1. Agent can emit plan proposal checkpoints.
+2. Worker pauses forward execution at decision boundaries.
+3. Main server relays user decision (`APPROVE` / `REVISE` / `REJECT`).
+4. Worker resumes or finalizes accordingly.
 
-### Image Building
+## PR Remediation SubTasks
 
-The Worker builds Docker images for each repository:
+Worker must support remediation subtask types:
 
-1. **Check for custom Dockerfile**: `.delidev/setup/Dockerfile`
-2. **Build image**: If Dockerfile exists, build custom image
-3. **Use default**: Otherwise, use `node:20-slim`
+1. `PR_REVIEW_FIX`
+2. `PR_CI_FIX`
 
-### Volume Mounts
+Both types run in the same worktree policy and emit standard task/session events.
 
-| Host Path | Container Path | Purpose |
-|-----------|----------------|---------|
-| `{worktree_path}` | `/workspace/{repoName}` | Repository code |
-| `~/.claude` | `/workspace/.claude` | Claude Code config (if using Claude Code) |
-| `~/.opencode` | `/workspace/.opencode` | OpenCode config (if using OpenCode) |
+## Agent Abstraction
 
-### Environment Variables
+Worker uses adapter interfaces for multiple agents.
+Each adapter must provide:
 
-Injected into the container:
-
-| Variable | Source |
-|----------|--------|
-| `HOME` | Set to `/workspace` |
-| `TERM` | Set to `xterm-256color` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | From secrets (if present) |
-| `CLAUDE_CODE_USE_OAUTH` | Set to `1` if OAuth token present |
-| `ANTHROPIC_API_KEY` | From secrets (if present) |
-| `OPENAI_API_KEY` | From secrets (if present) |
-| `GOOGLE_AI_API_KEY` | From secrets (if present) |
-| `GEMINI_API_KEY` | Same as GOOGLE_AI_API_KEY |
-| `GITHUB_TOKEN` | From secrets (if present) |
-| `GH_TOKEN` | Same as GITHUB_TOKEN |
-
-## AI Agent Execution
-
-### Supported Agents
-
-| Agent | Command | Output Format |
-|-------|---------|---------------|
-| Claude Code | `claude --output-format stream-json` | JSON stream |
-| OpenCode | `opencode --output-format json` | JSON |
-| Gemini CLI | `gemini` | Text |
-| Codex CLI | `codex` | Text |
-| Aider | `aider --yes` | Text |
-| Amp | `amp` | JSON |
-
-### Output Normalization
-
-The `coding_agents` crate normalizes all agent outputs to a unified format:
-
-```rust
-pub enum NormalizedEvent {
-    // Text output
-    TextOutput { content: String, stream: bool },
-    ErrorOutput { content: String },
-
-    // Tool usage
-    ToolUse { tool_name: String, input: serde_json::Value },
-    ToolResult { tool_name: String, output: serde_json::Value, is_error: bool },
-
-    // File operations
-    FileChange { path: String, change_type: FileChangeType, content: Option<String> },
-
-    // Commands
-    CommandExecution { command: String, exit_code: Option<i32>, output: Option<String> },
-
-    // User interaction
-    AskUserQuestion { question: String, options: Option<Vec<String>> },
-    UserResponse { response: String },
-
-    // Session lifecycle
-    SessionStart { agent_type: AIAgentType, model: Option<String> },
-    SessionEnd { success: bool, error: Option<String> },
-
-    // Thinking/reasoning
-    Thinking { content: String },
-}
-
-pub enum FileChangeType {
-    Create,
-    Modify,
-    Delete,
-    Rename { from: String },
-}
-```
-
-### TTY Input Detection
-
-The Worker detects when agents request user input:
-
-**Claude Code**: Detects `AskUserQuestion` tool use in stream-json output:
-```json
-{"type": "tool_use", "name": "AskUserQuestion", "input": {"question": "..."}}
-```
-
-**OpenCode**: Detects question events:
-```json
-{"type": "question", "content": "...", "options": [...]}
-```
-
-When detected:
-1. Worker pauses agent execution (holds stdin)
-2. Creates TtyInputRequest in Main Server
-3. Waits for response via RPC callback
-4. Writes response to agent stdin
-5. Resumes execution
-
-## Secrets Handling
-
-### Secret Retrieval
-
-When a task starts, the Worker retrieves secrets from Main Server:
-
-```
-Worker                             Main Server
-   │                                    │
-   ├─── worker.getSecrets ─────────────►│
-   │    { task_id: "..." }              │
-   │                                    │
-   │◄── Secrets response ───────────────┤
-   │    { secrets: {...} }              │
-   │                                    │
-```
-
-### Secret Injection
-
-Secrets are injected as environment variables when starting the Docker container:
-
-```rust
-// Pseudocode
-let mut env_vars = HashMap::new();
-
-if let Some(token) = secrets.get("CLAUDE_CODE_OAUTH_TOKEN") {
-    env_vars.insert("CLAUDE_CODE_OAUTH_TOKEN", token);
-    env_vars.insert("CLAUDE_CODE_USE_OAUTH", "1");
-}
-
-if let Some(key) = secrets.get("ANTHROPIC_API_KEY") {
-    env_vars.insert("ANTHROPIC_API_KEY", key);
-}
-
-// ... other secrets
-
-docker.create_container(ContainerConfig {
-    env: env_vars,
-    // ...
-});
-```
-
-### Security
-
-- Secrets are never written to disk
-- Secrets are cleared from memory after container stops
-- Container environment is isolated
-- Secrets are passed via Docker API, not command line
-
-## Heartbeat System
-
-### Heartbeat Loop
-
-The Worker sends heartbeats every 30 seconds:
-
-```
-Worker                             Main Server
-   │                                    │
-   ├─── worker.heartbeat ──────────────►│
-   │    {                               │
-   │      worker_id: "...",             │
-   │      status: "idle" | "busy",      │
-   │      current_task_id: "..." | null │
-   │    }                               │
-   │                                    │
-   │◄── Heartbeat ACK ──────────────────┤
-   │                                    │
-```
-
-### Health Status
-
-| Status | Description |
-|--------|-------------|
-| `idle` | Ready to accept tasks |
-| `busy` | Currently executing a task |
-| `unhealthy` | Missed 3+ heartbeats (set by Main Server) |
-
-### Failure Recovery
-
-If the Worker crashes during task execution:
-
-1. Main Server detects missed heartbeats (after 90 seconds)
-2. Main Server marks Worker as `unhealthy`
-3. Main Server reassigns task to another Worker
-4. Original Worker's container is eventually cleaned up
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DELIDEV_MAIN_SERVER_URL` | Main Server URL | Required |
-| `DELIDEV_WORKER_NAME` | Worker identifier | Hostname |
-| `DELIDEV_WORKER_PORT` | Worker port | 54872 |
-| `DELIDEV_DOCKER_SOCKET` | Docker socket path | `/var/run/docker.sock` |
-| `DELIDEV_CONTAINER_MEMORY_LIMIT` | Container memory limit | 8g |
-| `DELIDEV_CONTAINER_CPU_LIMIT` | Container CPU limit | No limit |
-| `DELIDEV_LOG_LEVEL` | Log level | info |
-
-### Container Runtime
-
-The Worker supports both Docker and Podman:
-
-| Runtime | Socket Path |
-|---------|-------------|
-| Docker | `/var/run/docker.sock` |
-| Podman | `/run/user/{uid}/podman/podman.sock` |
-
-Set `DELIDEV_CONTAINER_RUNTIME=podman` to use Podman.
+1. command construction
+2. structured output parsing
+3. typed event mapping
+4. cancellation/termination handling
 
 ## Error Handling
 
-### Container Errors
+1. repository fetch failure: emit failure event with provider error classification
+2. session startup failure: mark session failed and subtask failed
+3. tool execution timeout: emit timeout event and cancel session
+4. partial output corruption: emit parser warning and continue stream where possible
 
-| Error | Action |
-|-------|--------|
-| Container failed to start | Report failure to Main Server, cleanup |
-| Agent crashed | Collect logs, report failure |
-| Timeout | Kill container, report timeout failure |
-| Out of memory | Kill container, report OOM failure |
+## Configuration (Target)
 
-### Network Errors
+| Key | Required | Description |
+|---|---|---|
+| `DELIDEV_WORKER_ID` | Y | Stable worker identifier |
+| `DELIDEV_MAIN_SERVER_URL` | Y | Main server endpoint |
+| `DELIDEV_WORKTREE_ROOT` | N | Worktree base path |
+| `DELIDEV_REPO_CACHE_ROOT` | N | Repository cache root |
+| `DELIDEV_MAX_PARALLEL_SUBTASKS` | N | Concurrency cap |
+| `DELIDEV_AGENT_EXEC_TIMEOUT_SEC` | N | Session timeout |
 
-| Error | Action |
-|-------|--------|
-| Main Server unreachable | Retry with exponential backoff |
-| Heartbeat failed | Continue retrying until connection restored |
-| Task retrieval failed | Wait for next heartbeat cycle |
+## Logging Requirements
 
-### Recovery
+Emit structured logs for:
 
-The Worker is designed to be stateless:
-- All task state is stored in Main Server
-- Worker can be restarted without losing progress
-- Main Server handles task reassignment on Worker failure
+1. worktree create/cleanup
+2. session start/stop
+3. plan-mode wait/resume
+4. artifact export
+5. cancellation checkpoints
+
+## Security Baseline
+
+1. sanitize and validate all repository URLs and branch refs
+2. never log secret values
+3. inject secrets only at session runtime scope
+4. clear ephemeral secret material after session end
+
+## Migration Note
+
+Worker no longer supports CompositeTask graph execution.

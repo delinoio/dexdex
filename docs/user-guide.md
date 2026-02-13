@@ -1,438 +1,89 @@
-# DeliDev User Guide
+# DeliDev User Guide (To-Be)
 
-Welcome to DeliDev! This guide will help you get started with using DeliDev to orchestrate AI coding agents for your software development workflow.
+This guide explains the target user workflow for the rewritten DeliDev.
 
-## Table of Contents
+## 1. Create a Workspace
 
-1. [Introduction](#introduction)
-2. [Getting Started](#getting-started)
-3. [Core Concepts](#core-concepts)
-4. [Using the Desktop App](#using-the-desktop-app)
-5. [Creating Tasks](#creating-tasks)
-6. [Reviewing AI Work](#reviewing-ai-work)
-7. [Managing Repositories](#managing-repositories)
-8. [Configuration](#configuration)
-9. [Keyboard Shortcuts](#keyboard-shortcuts)
-10. [Troubleshooting](#troubleshooting)
+1. Open Workspace settings.
+2. Click `Create Workspace`.
+3. Enter name and endpoint URL.
+4. Choose workspace type:
+- Local Endpoint Workspace
+- Remote Endpoint Workspace
+5. Save and set as active.
 
----
+## 2. Add Repositories
 
-## Introduction
+1. Open Repositories.
+2. Add repository remote URLs.
+3. Create RepositoryGroup for related repositories.
 
-DeliDev is a desktop and mobile application for orchestrating AI coding agents. It allows you to:
+## 3. Create a UnitTask
 
-- Create coding tasks and have AI agents complete them
-- Review and approve AI-generated code changes
-- Manage multiple repositories and workspaces
-- Automate PR reviews and CI fixes
-- Work in local mode (single user) or remote mode (team)
+1. Click `New UnitTask`.
+2. Select RepositoryGroup.
+3. Enter title and prompt.
+4. Submit.
 
-### Supported AI Agents
+DeliDev creates the initial SubTask and starts AgentSession execution.
 
-DeliDev supports multiple AI coding agents:
+## 4. Monitor Execution
 
-| Agent | Description |
-|-------|-------------|
-| **Claude Code** | Anthropic's terminal-based agentic coding tool |
-| **OpenCode** | Open-source Claude Code alternative |
-| **Gemini CLI** | Google's AI agent |
-| **Codex CLI** | OpenAI's coding assistant |
-| **Aider** | Open-source CLI for multi-file changes |
-| **Amp** | Sourcegraph's agentic coding CLI |
+In UnitTask detail you can track:
 
----
+1. SubTask status timeline
+2. AgentSession logs
+3. generated patch summary
+4. action badges
 
-## Getting Started
+## 5. Handle Action Badges
 
-### Installation
+When user action is needed, UnitTask shows badges such as:
 
-1. **Download** the DeliDev installer for your platform:
-   - macOS: `.dmg` file
-   - Windows: `.exe` installer
-   - Linux: `.AppImage` or `.deb` package
+1. Review Requested
+2. Plan Approval Required
+3. CI Failed
 
-2. **Install** by following the platform-specific instructions.
+Badge colors depend on your workspace badge settings.
 
-3. **Launch** DeliDev from your applications menu.
+## 6. Use Plan Mode (When Agent Supports It)
 
-### First Run
+If the session enters plan wait:
 
-On first launch, you'll be guided through:
+1. review proposed plan
+2. choose `Approve`, `Revise`, or `Reject`
+3. optionally add feedback for revise
 
-1. **Mode Selection**: Choose between Local Mode or Remote Mode
-2. **VCS Connection**: Connect your GitHub, GitLab, or Bitbucket account
-3. **Repository Setup**: Add your first repository
+## 7. Manage PRs
 
-### Setting Up API Keys
+Open PR Management screen to:
 
-DeliDev stores API keys securely in your system keychain. To configure:
+1. see tracked PR status
+2. review new comments and CI outcomes
+3. run `Fix with Agent`
+4. enable or disable auto-fix policy
 
-1. Open **Settings** (Cmd/Ctrl + ,)
-2. Go to the **Secrets** tab
-3. Add your API keys:
-   - `ANTHROPIC_API_KEY` for Claude Code
-   - `OPENAI_API_KEY` for OpenCode, Aider, Codex CLI
-   - `GOOGLE_AI_API_KEY` for Gemini CLI
-   - `GITHUB_TOKEN` for GitHub operations
+## 8. Review Assist
 
----
+Open Review Assist screen to:
 
-## Core Concepts
+1. inspect prioritized review/CI items
+2. open linked code context
+3. resolve or dismiss items
+4. trigger remediation subtasks quickly
 
-### Workspaces
+## 9. Notifications
 
-A **Workspace** is a container for organizing your repositories and tasks. You can have multiple workspaces for different projects or clients.
+DeliDev sends:
 
-### Repository Groups
+1. in-app notifications
+2. Web Notification API notifications (if permission granted)
 
-A **Repository Group** is a collection of one or more repositories that work together. Tasks are created for repository groups, allowing multi-repo operations.
+You can manage notification behavior in Settings.
 
-### Tasks
+## 10. Important Product Rules
 
-DeliDev has two types of tasks:
-
-#### UnitTask
-
-A **UnitTask** is a single coding task that an AI agent completes. It goes through these statuses:
-
-| Status | Description |
-|--------|-------------|
-| `in_progress` | AI is actively working on the task |
-| `in_review` | AI work is complete, awaiting your review |
-| `approved` | You approved the changes |
-| `pr_open` | A PR has been created |
-| `done` | PR was merged |
-| `rejected` | Task was rejected and discarded |
-
-#### CompositeTask
-
-A **CompositeTask** contains multiple UnitTasks organized as a dependency graph. It's useful for complex features that need to be broken into steps.
-
-Statuses:
-- `planning` - AI is generating a PLAN.yaml
-- `pending_approval` - Waiting for you to approve the plan
-- `in_progress` - Tasks are being executed
-- `done` - All tasks completed
-- `rejected` - Plan was rejected
-
-### TodoItems
-
-**TodoItems** are tasks that require human attention but can be AI-assisted:
-
-- **Issue Triage**: New issues that need labeling/assignment
-- **PR Review**: Pull requests that need review
-
----
-
-## Using the Desktop App
-
-### Dashboard
-
-The dashboard shows your tasks in a Kanban board layout:
-
-- **In Progress**: Tasks the AI is currently working on
-- **Action Required**: Tasks needing your action (review, approval)
-- **Waiting for Others**: Tasks waiting on external processes (PR open, cancelled)
-- **Done**: Completed tasks
-- **Rejected/Failed**: Tasks that were rejected or failed
-
-Below the board, you'll see **TodoItems** requiring attention.
-
-### Navigation
-
-- **Dashboard**: Main view with task board
-- **Tasks**: List view of all tasks
-- **Repositories**: Manage your repositories
-- **Settings**: Configure DeliDev
-
-### Command Palette
-
-Press `Cmd/Ctrl + K` to open the command palette for quick access to any action.
-
----
-
-## Creating Tasks
-
-### Creating a UnitTask
-
-1. Click **New Task** or press `Cmd/Ctrl + N`
-2. Select a **Repository Group** (or create one)
-3. Enter your **Prompt** describing what you want the AI to do
-4. Optionally set:
-   - **Title**: A short name for the task
-   - **Branch Name**: Custom branch name
-   - **AI Agent**: Which agent to use
-5. Click **Create Task**
-
-### Writing Good Prompts
-
-For best results:
-
-- Be specific about what you want
-- Reference specific files with `@` mentions
-- Describe the expected outcome
-- Include any constraints or preferences
-
-**Good prompt:**
-```
-Fix the login bug where users are logged out after 5 minutes.
-The issue is likely in @src/auth/session.ts. The session
-timeout should be 24 hours, not 5 minutes.
-```
-
-**Poor prompt:**
-```
-Fix the login
-```
-
-### Creating a CompositeTask
-
-For complex features requiring multiple steps:
-
-1. Click **New Composite Task**
-2. Select a **Repository Group**
-3. Describe the overall feature
-4. The AI will create a PLAN.yaml breaking it into steps
-5. Review and approve the plan
-6. DeliDev executes the tasks in dependency order
-
----
-
-## Reviewing AI Work
-
-### Review Interface
-
-When a task is `in_review`:
-
-1. Click on the task to open the review interface
-2. You'll see:
-   - **File Tree**: Changed files
-   - **Diff Viewer**: Side-by-side or unified view
-   - **AI Session Log**: What the AI did
-
-### Review Actions
-
-- **Approve**: Accept the changes as-is
-- **Request Changes**: Send feedback for the AI to iterate
-- **Reject**: Discard the changes
-- **Create PR**: Create a pull request with the changes
-
-### Providing Feedback
-
-When requesting changes:
-
-1. Click **Request Changes**
-2. Enter your feedback in the dialog
-3. The AI will receive your feedback and make improvements
-4. The task returns to `in_progress`
-
-### TTY Input Requests
-
-Sometimes the AI needs your input (e.g., confirming a destructive action). You'll see a notification when this happens.
-
-1. Click the notification or the task
-2. Answer the AI's question
-3. The AI continues with your answer
-
----
-
-## Managing Repositories
-
-### Adding a Repository
-
-1. Go to **Repositories**
-2. Click **Add Repository**
-3. Enter the repository URL (GitHub, GitLab, or Bitbucket)
-4. DeliDev will detect the VCS type and default branch
-
-### Repository Groups
-
-Create groups to work with multiple repositories:
-
-1. Go to **Repositories**
-2. Click **Create Group**
-3. Name the group
-4. Select repositories to include
-
-### Repository Settings
-
-Each repository can have custom settings:
-
-1. Open the repository
-2. Click **Settings**
-3. Configure:
-   - Branch naming template
-   - Auto-fix settings
-   - AI agent preferences
-
----
-
-## Configuration
-
-### Global Settings
-
-Location: `~/.delidev/config.toml`
-
-```toml
-[hotkey]
-openChat = "Option+Z"  # Global hotkey to open DeliDev
-
-[notification]
-enabled = true
-approvalRequest = true
-userQuestion = true
-reviewReady = true
-
-[agent.execution]
-type = "claude_code"
-model = "claude-sonnet-4-20250514"
-
-[container]
-runtime = "docker"
-use_container = true
-```
-
-### Repository Settings
-
-Location: `.delidev/config.toml` in your repository
-
-```toml
-[branch]
-template = "feature/${taskId}-${slug}"
-
-[automation]
-autoFixReviewComments = true
-autoFixCIFailures = true
-maxAutoFixAttempts = 3
-```
-
-### VCS Credentials
-
-Location: `~/.delidev/credentials.toml`
-
-```toml
-[github]
-token = "ghp_xxxxxxxxxxxx"
-
-[gitlab]
-token = "glpat-xxxxxxxxxxxx"
-```
-
----
-
-## Keyboard Shortcuts
-
-### Global
-
-| Shortcut | Action |
-|----------|--------|
-| `Option+Z` / `Alt+Z` | Open DeliDev (global hotkey) |
-| `Cmd/Ctrl + N` | New task |
-| `Cmd/Ctrl + ,` | Open settings |
-| `Cmd/Ctrl + K` | Command palette |
-| `Escape` | Close dialog/modal |
-
-### Tab Navigation
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl + T` | New tab |
-| `Cmd/Ctrl + W` | Close tab |
-| `Cmd/Ctrl + Tab` | Next tab |
-| `Cmd/Ctrl + Shift + Tab` | Previous tab |
-
-### Review Interface
-
-| Shortcut | Action |
-|----------|--------|
-| `J` / `K` | Navigate files |
-| `Enter` | Open selected file |
-| `Cmd/Ctrl + Enter` | Approve task |
-| `R` | Request changes |
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-#### Docker Not Running
-
-**Symptom**: Tasks fail to start
-
-**Solution**:
-1. Ensure Docker Desktop is running
-2. Verify with `docker ps` in terminal
-3. Restart Docker if needed
-
-#### API Key Issues
-
-**Symptom**: "Authentication failed" errors
-
-**Solution**:
-1. Go to Settings > Secrets
-2. Verify your API keys are correct
-3. Check the key hasn't expired
-
-#### Task Stuck in Progress
-
-**Symptom**: Task shows "in progress" but nothing is happening
-
-**Solution**:
-1. Check the session log for errors
-2. Try stopping and retrying the task
-3. Verify Docker container is running
-
-#### Connection Issues (Remote Mode)
-
-**Symptom**: Can't connect to server
-
-**Solution**:
-1. Verify server URL in settings
-2. Check network connectivity
-3. Ensure server is running
-
-### Getting Help
-
-- **Documentation**: Check the [docs folder](/docs)
-- **Issues**: Report bugs on GitHub
-- **Logs**: Check `~/.delidev/logs/` for detailed logs
-
-### Reset DeliDev
-
-To start fresh:
-
-1. Quit DeliDev
-2. Delete `~/.delidev/` directory
-3. Relaunch DeliDev
-
-**Warning**: This will remove all local data and settings.
-
----
-
-## Tips and Best Practices
-
-### Writing Effective Prompts
-
-1. **Be specific**: Include file paths, function names, error messages
-2. **Provide context**: Explain why you need the change
-3. **Set constraints**: Mention any requirements (e.g., "maintain backward compatibility")
-4. **Reference files**: Use `@filename` to reference specific files
-
-### Organizing Work
-
-1. Create separate workspaces for different projects
-2. Use repository groups for related repos
-3. Name tasks clearly for easy tracking
-4. Review and close completed tasks regularly
-
-### Security
-
-1. Never commit `.delidev/` directories to version control
-2. Use environment-specific API keys
-3. Rotate API keys periodically
-4. Review AI changes before approving
-
----
-
-Happy coding with DeliDev!
+1. DeliDev uses workspace connectivity, not mode switching.
+2. All business communication is Connect RPC-based.
+3. Direct local folder execution is not supported.
+4. Work is executed through task-specific worktrees.

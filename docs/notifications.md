@@ -1,194 +1,76 @@
-# Notification System
+# Notification System (To-Be)
 
-This document describes the DeliDev notification system, covering both persistent in-app notifications (notification center) and platform desktop notifications.
+DeliDev uses Web Notification API as the primary desktop/mobile notification channel.
 
-## Overview
+## Design Rules
 
-DeliDev has two complementary notification subsystems:
+1. Primary notification channel: Web Notification API
+2. In-app notification center is always authoritative
+3. Native notification plugins are not primary in this design
+4. Notification emission is event-stream driven
 
-| Subsystem | Purpose | Persistence |
-|-----------|---------|-------------|
-| **Toast Notifications** | Ephemeral feedback for user actions (e.g., "Settings saved") | Transient (auto-dismiss) |
-| **Notification Center** | Persistent record of system events (task status changes, agent questions) | Persisted to localStorage |
-| **Desktop Notifications** | OS-level notifications when app is not focused | Platform-managed |
+## Trigger Sources
 
-## Architecture
+1. UnitTask enters `ACTION_REQUIRED`
+2. SubTask enters `WAITING_FOR_PLAN_APPROVAL`
+3. PR review activity requires remediation
+4. PR CI failure
+5. AgentSession failure
+
+## Notification Flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Tauri Backend (Rust)                     │
-│                                                             │
-│  notifications.rs ──► Desktop Notification (OS-level)       │
-│  events.rs ──────────► Tauri Event Bus                      │
-└────────────────────────────┬────────────────────────────────┘
-                             │ Events
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Frontend (React/TypeScript)                │
-│                                                             │
-│  useNotificationEvents.ts                                   │
-│    ├── Listens to Tauri events                              │
-│    ├── Creates persistent notifications in center store     │
-│    └── Sends desktop notifications when window unfocused    │
-│                                                             │
-│  notificationCenterStore.ts (Zustand + persist)             │
-│    ├── Stores persistent notifications                      │
-│    ├── Read/unread state management                         │
-│    └── Persisted to localStorage                            │
-│                                                             │
-│  notificationStore.ts (Zustand)                             │
-│    └── Ephemeral toast notifications (auto-dismiss)         │
-└─────────────────────────────────────────────────────────────┘
+EventStreamService emits event
+      -> Client event reducer writes Notification record locally
+      -> If allowed and app backgrounded, call Web Notification API
+      -> User click deep-links into task/pr/review detail
 ```
 
-## Notification Categories
+## Permission Handling
 
-| Category | Trigger | Description |
-|----------|---------|-------------|
-| `task_review_ready` | Task status → `in_review` | AI completed work, awaiting human review |
-| `plan_approval` | Task status → `pending_approval` | Composite task plan ready for approval |
-| `task_failed` | Task status → `failed` | Task execution failed |
-| `tty_input_request` | TTY input event | AI agent is asking a question |
-| `task_completed` | Task completed event | Task finished successfully |
+1. prompt only after user intent (settings toggle or first actionable event)
+2. store local permission state cache
+3. expose clear permission status in settings
 
-## Frontend Components
+## Deduplication
 
-### Notification Center Store
+Use `(workspace_id, sequence, notification_type)` as dedupe key.
+Do not dispatch duplicate browser notifications for already processed sequence IDs.
 
-**File:** `src/stores/notificationCenterStore.ts`
+## Categories
 
-Zustand store with `persist` middleware. Stores notifications in `localStorage` under `delidev-notification-center`.
+1. `TASK_ACTION_REQUIRED`
+2. `PLAN_ACTION_REQUIRED`
+3. `PR_REVIEW_ACTIVITY`
+4. `PR_CI_FAILURE`
+5. `AGENT_SESSION_FAILED`
 
-```typescript
-interface PersistentNotification {
-  id: string;
-  category: NotificationCategory;
-  title: string;
-  message: string;
-  read: boolean;
-  taskId?: string;
-  taskType?: "unit_task" | "composite_task";
-  createdAt: number;
-}
-```
+## Delivery Rules
 
-**Actions:**
-- `addNotification()` — Add a new notification (unread by default). Automatically trims when exceeding `MAX_NOTIFICATIONS` (200), removing oldest read notifications first.
-- `removeNotification(id)` — Delete a notification
-- `markAsRead(id)` — Mark a single notification as read
-- `markAllAsRead()` — Mark all notifications as read
-- `clearAll()` — Remove all notifications
-- `toggleOpen()` / `setOpen()` — Open/close the notification panel
-- `getUnreadCount()` — Get the number of unread notifications
+1. Foreground: in-app toast + notification center
+2. Background: Web Notification API + notification center
+3. No permission: notification center only
 
-**Limits:**
-- Maximum 200 notifications are stored (`MAX_NOTIFICATIONS`). When exceeded, oldest read notifications are trimmed first. If still over the limit (e.g., all unread), the oldest notifications are dropped.
+## UX Requirements
 
-### Shared Utilities
+1. all notifications include route deep link
+2. all notifications expose created timestamp
+3. unread state persists across restarts
+4. mark-as-read is synchronized with server state
 
-**File:** `src/components/notifications/utils.ts`
+## Data Model
 
-Helper functions used by both the panel and full-page components:
-- `categoryLabel(category)` — Human-readable label for a notification category
-- `categoryColor(category)` — Tailwind background color class for a category
-- `formatTimeAgo(timestamp)` — Relative time string (e.g., "5m ago", "2d ago")
-- `formatTime(timestamp)` — Absolute or relative time for full-page view
-- `getNotificationPath(notification)` — Route path for a notification's associated task
+See `Notification` entity in `docs/entities.md`.
 
-### Notification Panel
+## Operational Logging
 
-**File:** `src/components/notifications/NotificationPanel.tsx`
+Client logs:
 
-A slide-out sidebar panel from the right side of the screen. Features:
-- Header with unread count badge
-- "Mark all as read" and "Clear all" action buttons
-- Scrollable list of notification items
-- Each item shows: category badge, title, message, timestamp
-- Hover actions: "Mark as read" and "Delete" buttons
-- Click navigates to the relevant task page
-- "View all notifications" link to the full page
-- Backdrop overlay for dismissal
+1. permission prompts and result
+2. dispatch success/failure
+3. click-through route handling
 
-### Notifications Page
+Server logs:
 
-**File:** `src/pages/Notifications.tsx`
-
-Full-page view at `/notifications` route. Features:
-- Header with unread count
-- Bulk actions: "Mark all as read", "Clear all"
-- Notification rows with: unread indicator, category, title, message, timestamp
-- Hover actions: mark as read (checkmark icon) and delete (trash icon)
-- Click navigates to the relevant task page
-- Empty state illustration when no notifications
-
-### Sidebar Integration
-
-**File:** `src/components/layout/Sidebar.tsx`
-
-Bell icon button in the sidebar with:
-- Unread count badge (red circle with count, shows "99+" for > 99)
-- Toggles the notification panel open/close
-- Respects sidebar collapsed state
-
-### Mobile Navigation
-
-**File:** `src/components/mobile/MobileNavigation.tsx`
-
-"Alerts" tab in mobile bottom navigation linking to `/notifications` page.
-
-## Event Listener Hook
-
-**File:** `src/hooks/useNotificationEvents.ts`
-
-Initializes once in `App.tsx`. Listens to three Tauri event types:
-
-1. **`task-status-changed`** — Creates notifications for `in_review`, `pending_approval`, and `failed` status transitions
-2. **`task-completed`** — Creates notifications for successful completions and failures with error details
-3. **`tty-input-request`** — Creates notifications when agents ask questions
-
-Also sends desktop notifications via `@tauri-apps/plugin-notification` when `document.hasFocus()` is `false`.
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `n` | Toggle notification panel |
-| `Escape` | Close notification panel (among other dialogs) |
-
-## Desktop Notifications
-
-Desktop notifications are sent in two places:
-
-1. **Rust backend** (`src-tauri/src/notifications.rs`): Sends OS notifications via `tauri-plugin-notification` for task events during execution.
-2. **Frontend** (`useNotificationEvents.ts`): Sends OS notifications when the window is not focused and Tauri events arrive.
-
-Permission is requested once on app startup via `useNotificationPermission` hook.
-
-## Toast Notifications (Ephemeral)
-
-**File:** `src/stores/notificationStore.ts`
-
-Separate from the notification center. Used for immediate user feedback:
-
-```typescript
-notify.success("Settings saved", "Your settings have been saved.");
-notify.error("Failed to save", "Please try again.");
-notify.warning("Rate limit", "Approaching API rate limit.");
-notify.info("Update available", "A new version is available.");
-```
-
-Toasts auto-dismiss after 5 seconds by default.
-
-## Configuration
-
-Notification preferences are configured in global settings (`~/.delidev/config.toml`):
-
-```toml
-[notification]
-enabled = true
-approvalRequest = true
-userQuestion = true
-reviewReady = true
-```
-
-These settings control which desktop notifications are sent from the Rust backend.
+1. notification event generation reason
+2. workspace/task/pr correlation IDs

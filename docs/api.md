@@ -1,878 +1,447 @@
-# DeliDev API Documentation
+# DeliDev API Reference (To-Be, Connect RPC)
 
-This document describes the API endpoints available in the DeliDev Main Server.
+This document defines the target API contract for the rewrite.
+All business communication is Connect RPC-based.
 
-## Table of Contents
+## Protocol
 
-1. [Overview](#overview)
-2. [Authentication](#authentication)
-3. [Task Management](#task-management)
-4. [Session Management](#session-management)
-5. [Repository Management](#repository-management)
-6. [Workspace Management](#workspace-management)
-7. [Todo Items](#todo-items)
-8. [Secrets Management](#secrets-management)
-9. [Worker Management](#worker-management)
-10. [Webhooks](#webhooks)
-11. [Error Handling](#error-handling)
+- Transport: HTTP/2 (fallback HTTP/1.1 where needed)
+- Encoding: Protobuf (JSON debug view optional)
+- RPC style: Connect RPC unary + server-streaming
+- Auth: bearer token for authenticated workspaces
 
----
+## API Design Rules
 
-## Overview
+1. Connect RPC is the primary interface.
+2. Tauri-specific commands must not define business contracts.
+3. Public requests and responses use enums for known variants.
+4. Streaming channels must emit typed events with monotonic sequence IDs.
 
-The DeliDev API is a RESTful API that uses JSON for request and response bodies. All endpoints are served over HTTP(S) and follow consistent patterns for error handling and pagination.
+## Service Overview
 
-### Base URL
-
-- **Local Mode**: `http://localhost:54871`
-- **Remote Mode**: Configured via `DELIDEV_SERVER_URL`
-
-### Content Type
-
-All requests and responses use `application/json` content type.
+1. `WorkspaceService`
+2. `RepositoryService`
+3. `TaskService`
+4. `SessionService`
+5. `PrManagementService`
+6. `ReviewAssistService`
+7. `BadgeThemeService`
+8. `NotificationService`
+9. `EventStreamService`
 
 ---
 
-## Authentication
+## WorkspaceService
 
-In multi-user mode, all API requests (except authentication endpoints) require a valid JWT token in the `Authorization` header.
+### CreateWorkspace
 
-### Headers
+Creates a workspace endpoint profile.
 
-```
-Authorization: Bearer <jwt_token>
-```
+Request:
+- `name: string`
+- `type: WorkspaceType`
+- `endpoint_url: string`
+- `auth_profile_id?: string`
 
-### Endpoints
+Response:
+- `workspace: Workspace`
 
-#### Get Login URL
+### ListWorkspaces
 
-Returns the OIDC login URL for authentication.
+Request:
+- `limit: int32`
+- `offset: int32`
 
-- **URL**: `POST /api/auth/get-login-url`
-- **Request Body**:
-  ```json
-  {
-    "redirect_uri": "http://localhost:54871/callback"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "url": "https://auth.provider.com/authorize?..."
-  }
-  ```
+Response:
+- `workspaces: Workspace[]`
+- `total_count: int32`
 
-#### Handle Callback
+### UpdateWorkspace
 
-Handles the OIDC callback and returns JWT tokens.
+Request:
+- `workspace_id: string`
+- `name?: string`
+- `endpoint_url?: string`
+- `auth_profile_id?: string`
 
-- **URL**: `GET /api/auth/callback`
-- **Query Parameters**: `code`, `state`
-- **Response**:
-  ```json
-  {
-    "access_token": "jwt_token",
-    "refresh_token": "refresh_token",
-    "expires_in": 86400,
-    "user": {
-      "id": "uuid",
-      "email": "user@example.com",
-      "name": "User Name"
-    }
-  }
-  ```
+Response:
+- `workspace: Workspace`
 
-#### Refresh Token
+### DeleteWorkspace
 
-Refreshes an expired JWT token.
+Request:
+- `workspace_id: string`
 
-- **URL**: `POST /api/auth/refresh`
-- **Request Body**:
-  ```json
-  {
-    "refresh_token": "refresh_token"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "access_token": "new_jwt_token",
-    "expires_in": 86400
-  }
-  ```
+Response:
+- empty
 
-#### Get Current User
+### SetActiveWorkspace
 
-Returns the currently authenticated user.
+Request:
+- `workspace_id: string`
 
-- **URL**: `GET /api/auth/me`
-- **Response**:
-  ```json
-  {
-    "user": {
-      "id": "uuid",
-      "email": "user@example.com",
-      "name": "User Name"
-    }
-  }
-  ```
-
-#### Logout
-
-Invalidates the current session.
-
-- **URL**: `POST /api/auth/logout`
-- **Response**: `204 No Content`
+Response:
+- empty
 
 ---
 
-## Task Management
+## RepositoryService
 
-### Create Unit Task
+### AddRepository
 
-Creates a new UnitTask for a single repository operation.
+Request:
+- `workspace_id: string`
+- `remote_url: string`
+- `default_branch?: string`
 
-- **URL**: `POST /api/task/create-unit`
-- **Request Body**:
-  ```json
-  {
-    "repository_group_id": "uuid",
-    "prompt": "Fix the login bug",
-    "title": "Bug Fix",
-    "branch_name": "fix/login-bug",
-    "ai_agent_type": "claude_code",
-    "ai_agent_model": "claude-sonnet-4-20250514"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "task": {
-      "id": "uuid",
-      "repository_group_id": "uuid",
-      "agent_task_id": "uuid",
-      "prompt": "Fix the login bug",
-      "title": "Bug Fix",
-      "branch_name": "fix/login-bug",
-      "linked_pr_url": null,
-      "base_commit": null,
-      "end_commit": null,
-      "auto_fix_task_ids": [],
-      "status": "in_progress",
-      "created_at": "2026-02-01T00:00:00Z",
-      "updated_at": "2026-02-01T00:00:00Z"
-    }
-  }
-  ```
+Response:
+- `repository: Repository`
 
-### Create Composite Task
+### ListRepositories
 
-Creates a new CompositeTask that can contain multiple UnitTasks.
+Request:
+- `workspace_id: string`
+- `limit: int32`
+- `offset: int32`
 
-- **URL**: `POST /api/task/create-composite`
-- **Request Body**:
-  ```json
-  {
-    "repository_group_id": "uuid",
-    "prompt": "Implement feature X with tests",
-    "title": "Feature X",
-    "execution_agent_type": "claude_code"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "task": {
-      "id": "uuid",
-      "repository_group_id": "uuid",
-      "planning_task_id": "uuid",
-      "prompt": "Implement feature X with tests",
-      "title": "Feature X",
-      "node_ids": [],
-      "status": "planning",
-      "execution_agent_type": "claude_code",
-      "created_at": "2026-02-01T00:00:00Z",
-      "updated_at": "2026-02-01T00:00:00Z"
-    }
-  }
-  ```
+Response:
+- `repositories: Repository[]`
+- `total_count: int32`
 
-### Get Task
+### CreateRepositoryGroup
 
-Gets a task by ID (either UnitTask or CompositeTask).
+Request:
+- `workspace_id: string`
+- `name: string`
+- `repository_ids: string[]`
 
-- **URL**: `POST /api/task/get`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response** (UnitTask):
-  ```json
-  {
-    "unit_task": { ... }
-  }
-  ```
-- **Response** (CompositeTask):
-  ```json
-  {
-    "composite_task": { ... }
-  }
-  ```
+Response:
+- `group: RepositoryGroup`
 
-### List Tasks
+### UpdateRepositoryGroup
 
-Lists tasks with optional filters.
+Request:
+- `group_id: string`
+- `name?: string`
+- `repository_ids?: string[]`
 
-- **URL**: `POST /api/task/list`
-- **Request Body**:
-  ```json
-  {
-    "repository_group_id": "uuid",
-    "unit_status": "in_progress",
-    "composite_status": null,
-    "limit": 20,
-    "offset": 0
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "unit_tasks": [...],
-    "composite_tasks": [...],
-    "total_count": 42
-  }
-  ```
+Response:
+- `group: RepositoryGroup`
 
-### Update Task Status
+### DeleteRepositoryGroup
 
-Updates the status of a task.
+Request:
+- `group_id: string`
 
-- **URL**: `POST /api/task/update-status`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid",
-    "unit_status": "in_review"
-  }
-  ```
-- **Response**: Updated task object
-
-### Delete Task
-
-Deletes a task.
-
-- **URL**: `POST /api/task/delete`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
-
-### Retry Task
-
-Retries a failed task.
-
-- **URL**: `POST /api/task/retry`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**: Updated task object
-
-### Approve Task
-
-Approves a task that's in review.
-
-- **URL**: `POST /api/task/approve`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
-
-### Reject Task
-
-Rejects a task.
-
-- **URL**: `POST /api/task/reject`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid",
-    "reason": "Not suitable for this approach"
-  }
-  ```
-- **Response**: `{}`
-
-### Request Changes
-
-Requests changes on a task.
-
-- **URL**: `POST /api/task/request-changes`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid",
-    "feedback": "Please also add unit tests"
-  }
-  ```
-- **Response**: Updated task object with feedback appended to prompt
-
-### Dismiss Approval
-
-Dismisses approval for an approved task, moving it back to `in_review` status.
-
-- **URL**: `POST /api/task/dismiss-approval`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
-
-### Create PR
-
-Creates a pull request for an approved task on the VCS provider.
-
-- **URL**: `POST /api/task/create-pr`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "pr_url": "https://github.com/org/repo/pull/123"
-  }
-  ```
-
-### Commit to Local
-
-Commits an approved task's changes to the local git repository.
-
-- **URL**: `POST /api/task/commit-to-local`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Response:
+- empty
 
 ---
 
-## Session Management
+## TaskService
 
-### Get Log
+### CreateUnitTask
 
-Gets the output log for a session.
+Request:
+- `workspace_id: string`
+- `repository_group_id: string`
+- `title: string`
+- `prompt: string`
+- `branch_name?: string`
 
-- **URL**: `POST /api/session/get-log`
-- **Request Body**:
-  ```json
-  {
-    "session_id": "uuid"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "log": "Session output text..."
-  }
-  ```
+Response:
+- `task: UnitTask`
 
-### Stop Session
+### ListUnitTasks
 
-Stops a running session.
+Request:
+- `workspace_id: string`
+- `statuses?: UnitTaskStatus[]`
+- `action_types?: ActionType[]`
+- `limit: int32`
+- `offset: int32`
 
-- **URL**: `POST /api/session/stop`
-- **Request Body**:
-  ```json
-  {
-    "session_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Response:
+- `tasks: UnitTask[]`
+- `total_count: int32`
 
-### Submit TTY Input
+### GetUnitTask
 
-Submits a response to a TTY input request.
+Request:
+- `task_id: string`
 
-- **URL**: `POST /api/session/submit-tty-input`
-- **Request Body**:
-  ```json
-  {
-    "request_id": "uuid",
-    "response": "yes"
-  }
-  ```
-- **Response**: `{}`
+Response:
+- `task: UnitTask`
 
----
+### UpdateUnitTaskStatus
 
-## Repository Management
+Request:
+- `task_id: string`
+- `status: UnitTaskStatus`
+- `reason?: string`
 
-### Add Repository
+Response:
+- `task: UnitTask`
 
-Adds a new repository.
+### CreateSubTask
 
-- **URL**: `POST /api/repository/add`
-- **Request Body**:
-  ```json
-  {
-    "vcs_type": "git",
-    "vcs_provider_type": "github",
-    "remote_url": "https://github.com/user/repo.git",
-    "name": "my-repo",
-    "default_branch": "main"
-  }
-  ```
-- **Response**: Repository object
+Request:
+- `unit_task_id: string`
+- `type: SubTaskType`
+- `prompt: string`
+- `plan_mode_enabled: bool`
+- `target_action_type?: ActionType`
 
-### List Repositories
+Response:
+- `sub_task: SubTask`
 
-Lists all repositories.
+### ListSubTasks
 
-- **URL**: `POST /api/repository/list`
-- **Response**:
-  ```json
-  {
-    "repositories": [...]
-  }
-  ```
+Request:
+- `unit_task_id: string`
 
-### Get Repository
+Response:
+- `sub_tasks: SubTask[]`
 
-Gets a repository by ID.
+### RetrySubTask
 
-- **URL**: `POST /api/repository/get`
-- **Request Body**:
-  ```json
-  {
-    "repository_id": "uuid"
-  }
-  ```
-- **Response**: Repository object
+Request:
+- `sub_task_id: string`
 
-### Remove Repository
+Response:
+- `sub_task: SubTask`
 
-Removes a repository.
+### CancelSubTask
 
-- **URL**: `POST /api/repository/remove`
-- **Request Body**:
-  ```json
-  {
-    "repository_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Request:
+- `sub_task_id: string`
 
-### Create Repository Group
+Response:
+- `sub_task: SubTask`
 
-Creates a new repository group.
+### SubmitPlanDecision
 
-- **URL**: `POST /api/repository-group/create`
-- **Request Body**:
-  ```json
-  {
-    "workspace_id": "uuid",
-    "name": "My Group",
-    "repository_ids": ["uuid1", "uuid2"]
-  }
-  ```
-- **Response**: Repository group object
+Used when a plan-mode session requests explicit decision.
 
-### List Repository Groups
+Request:
+- `sub_task_id: string`
+- `decision: enum { APPROVE, REVISE, REJECT }`
+- `feedback?: string`
 
-Lists all repository groups.
-
-- **URL**: `POST /api/repository-group/list`
-- **Request Body**:
-  ```json
-  {
-    "workspace_id": "uuid"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "groups": [...]
-  }
-  ```
-
-### Update Repository Group
-
-Updates a repository group.
-
-- **URL**: `POST /api/repository-group/update`
-- **Request Body**:
-  ```json
-  {
-    "group_id": "uuid",
-    "name": "Updated Name",
-    "repository_ids": ["uuid1", "uuid2"]
-  }
-  ```
-- **Response**: Updated repository group object
-
-### Delete Repository Group
-
-Deletes a repository group.
-
-- **URL**: `POST /api/repository-group/delete`
-- **Request Body**:
-  ```json
-  {
-    "group_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Response:
+- `sub_task: SubTask`
 
 ---
 
-## Workspace Management
+## SessionService
 
-### Create Workspace
+### ListAgentSessions
 
-Creates a new workspace.
+Request:
+- `sub_task_id: string`
 
-- **URL**: `POST /api/workspace/create`
-- **Request Body**:
-  ```json
-  {
-    "name": "My Workspace",
-    "description": "A workspace for my projects"
-  }
-  ```
-- **Response**: Workspace object
+Response:
+- `sessions: AgentSession[]`
 
-### List Workspaces
+### GetAgentSessionLog
 
-Lists all workspaces.
+Request:
+- `session_id: string`
+- `cursor?: string`
 
-- **URL**: `POST /api/workspace/list`
-- **Response**:
-  ```json
-  {
-    "workspaces": [...]
-  }
-  ```
+Response:
+- `events: SessionOutputEvent[]`
+- `next_cursor?: string`
 
-### Get Workspace
+### StopAgentSession
 
-Gets a workspace by ID.
+Request:
+- `session_id: string`
 
-- **URL**: `POST /api/workspace/get`
-- **Request Body**:
-  ```json
-  {
-    "workspace_id": "uuid"
-  }
-  ```
-- **Response**: Workspace object
+Response:
+- `session: AgentSession`
 
-### Update Workspace
+### SubmitSessionInput
 
-Updates a workspace.
+Request:
+- `session_id: string`
+- `input: string`
 
-- **URL**: `POST /api/workspace/update`
-- **Request Body**:
-  ```json
-  {
-    "workspace_id": "uuid",
-    "name": "Updated Name",
-    "description": "Updated description"
-  }
-  ```
-- **Response**: Updated workspace object
-
-### Delete Workspace
-
-Deletes a workspace.
-
-- **URL**: `POST /api/workspace/delete`
-- **Request Body**:
-  ```json
-  {
-    "workspace_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Response:
+- empty
 
 ---
 
-## Todo Items
+## PrManagementService
 
-### List Todo Items
+### TrackPullRequest
 
-Lists todo items with filters.
+Request:
+- `unit_task_id: string`
+- `repository_id: string`
+- `provider: enum`
+- `pr_number: int32`
+- `pr_url: string`
 
-- **URL**: `POST /api/todo/list`
-- **Request Body**:
-  ```json
-  {
-    "repository_id": "uuid",
-    "status": "pending",
-    "limit": 20,
-    "offset": 0
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "items": [...],
-    "total_count": 10
-  }
-  ```
+Response:
+- `tracking: PullRequestTracking`
 
-### Get Todo Item
+### ListTrackedPullRequests
 
-Gets a todo item by ID.
+Request:
+- `workspace_id: string`
+- `statuses?: PrStatus[]`
+- `limit: int32`
+- `offset: int32`
 
-- **URL**: `POST /api/todo/get`
-- **Request Body**:
-  ```json
-  {
-    "item_id": "uuid"
-  }
-  ```
-- **Response**: Todo item object
+Response:
+- `items: PullRequestTracking[]`
+- `total_count: int32`
 
-### Update Todo Status
+### RunAutoFixNow
 
-Updates the status of a todo item.
+Manual one-click remediation.
 
-- **URL**: `POST /api/todo/update-status`
-- **Request Body**:
-  ```json
-  {
-    "item_id": "uuid",
-    "status": "completed"
-  }
-  ```
-- **Response**: Updated todo item
+Request:
+- `pr_tracking_id: string`
+- `reason: enum { REVIEW_EVENT, CI_FAILURE, MANUAL }`
 
-### Dismiss Todo
+Response:
+- `sub_task: SubTask`
 
-Dismisses a todo item.
+### SetAutoFixPolicy
 
-- **URL**: `POST /api/todo/dismiss`
-- **Request Body**:
-  ```json
-  {
-    "item_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Request:
+- `pr_tracking_id: string`
+- `auto_fix_enabled: bool`
+- `max_auto_fix_attempts: int32`
+
+Response:
+- `tracking: PullRequestTracking`
 
 ---
 
-## Secrets Management
+## ReviewAssistService
 
-### Send Secrets
+### ListReviewAssistItems
 
-Sends secrets from the client to the server for a specific task.
+Request:
+- `workspace_id: string`
+- `statuses?: ReviewAssistStatus[]`
+- `limit: int32`
+- `offset: int32`
 
-- **URL**: `POST /api/secrets/send`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid",
-    "secrets": [
-      { "key": "ANTHROPIC_API_KEY", "value": "sk-..." }
-    ]
-  }
-  ```
-- **Response**: `{}`
+Response:
+- `items: ReviewAssistItem[]`
+- `total_count: int32`
 
-### Clear Secrets
+### ResolveReviewAssistItem
 
-Clears cached secrets for a task.
+Request:
+- `item_id: string`
+- `status: ReviewAssistStatus`
 
-- **URL**: `POST /api/secrets/clear`
-- **Request Body**:
-  ```json
-  {
-    "task_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
+Response:
+- `item: ReviewAssistItem`
 
 ---
 
-## Worker Management
+## BadgeThemeService
 
-These endpoints are used internally by worker servers.
+### ListBadgeThemes
 
-### Register Worker
+Request:
+- `workspace_id: string`
 
-Registers a worker with the main server.
+Response:
+- `themes: BadgeTheme[]`
 
-- **URL**: `POST /api/worker/register`
-- **Request Body**:
-  ```json
-  {
-    "name": "worker-1",
-    "callback_url": "http://worker-1:54872"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "worker_id": "uuid"
-  }
-  ```
+### UpsertBadgeTheme
 
-### Heartbeat
+Request:
+- `workspace_id: string`
+- `action_type: ActionType`
+- `color_key: BadgeColorKey`
 
-Sends a heartbeat to indicate the worker is alive.
-
-- **URL**: `POST /api/worker/heartbeat`
-- **Request Body**:
-  ```json
-  {
-    "worker_id": "uuid"
-  }
-  ```
-- **Response**: `{}`
-
-### Get Next Task
-
-Gets the next available task for the worker.
-
-- **URL**: `POST /api/worker/get-task`
-- **Request Body**:
-  ```json
-  {
-    "worker_id": "uuid"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "task_id": "uuid",
-    "session_id": "uuid",
-    "prompt": "...",
-    "repository_info": { ... }
-  }
-  ```
-  or `null` if no task available.
-
-### Report Task Status
-
-Reports the status of a task execution.
-
-- **URL**: `POST /api/worker/report-status`
-- **Request Body**:
-  ```json
-  {
-    "worker_id": "uuid",
-    "task_id": "uuid",
-    "status": "completed",
-    "output": "Task output log..."
-  }
-  ```
-- **Response**: `{}`
-
-### Get Secrets
-
-Gets secrets for a task execution.
-
-- **URL**: `POST /api/worker/get-secrets`
-- **Request Body**:
-  ```json
-  {
-    "worker_id": "uuid",
-    "task_id": "uuid"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "secrets": [
-      { "key": "ANTHROPIC_API_KEY", "value": "sk-..." }
-    ]
-  }
-  ```
+Response:
+- `theme: BadgeTheme`
 
 ---
 
-## Webhooks
+## NotificationService
 
-### GitHub Webhook
+### ListNotifications
 
-Handles GitHub webhook events for auto-fix features.
+Request:
+- `workspace_id: string`
+- `limit: int32`
+- `offset: int32`
 
-- **URL**: `POST /webhooks/github`
-- **Headers**:
-  - `X-Hub-Signature-256`: HMAC signature
-  - `X-GitHub-Event`: Event type
-- **Supported Events**:
-  - `pull_request_review_comment`: Triggers auto-fix for review comments
-  - `check_run`: Triggers auto-fix for CI failures
-- **Response**: `200 OK` or `204 No Content`
+Response:
+- `notifications: Notification[]`
+- `total_count: int32`
 
----
+### MarkNotificationRead
 
-## Error Handling
+Request:
+- `notification_id: string`
 
-### Error Response Format
-
-All errors follow a consistent format:
-
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "Task not found"
-  }
-}
-```
-
-### HTTP Status Codes
-
-| Status | Meaning |
-|--------|---------|
-| 200 | Success |
-| 201 | Created |
-| 204 | No Content |
-| 400 | Bad Request - Invalid input |
-| 401 | Unauthorized - Invalid or missing token |
-| 403 | Forbidden - Insufficient permissions |
-| 404 | Not Found - Resource doesn't exist |
-| 409 | Conflict - Resource already exists |
-| 500 | Internal Server Error |
-
-### Error Codes
-
-| Code | Description |
-|------|-------------|
-| `INVALID_REQUEST` | Request body is malformed or missing required fields |
-| `NOT_FOUND` | The requested resource was not found |
-| `ALREADY_EXISTS` | A resource with the same ID already exists |
-| `UNAUTHORIZED` | Authentication required |
-| `FORBIDDEN` | User doesn't have permission |
-| `INTERNAL_ERROR` | An unexpected error occurred |
+Response:
+- `notification: Notification`
 
 ---
 
-## Health Check
+## EventStreamService
 
-### Health Check Endpoint
+### StreamWorkspaceEvents (Server Streaming)
 
-- **URL**: `GET /health`
-- **Response**: `OK` (plain text)
+Request:
+- `workspace_id: string`
+- `from_sequence?: uint64`
 
-Use this endpoint to verify the server is running and healthy.
+Response stream:
+- `WorkspaceEventEnvelope`
+  - `sequence: uint64`
+  - `event_type: StreamEventType`
+  - `emitted_at: timestamp`
+  - `payload: oneof`
+
+Payload variants:
+
+1. `TaskUpdatedEvent`
+2. `SubTaskUpdatedEvent`
+3. `SessionOutputEvent`
+4. `SessionStateChangedEvent`
+5. `PrUpdatedEvent`
+6. `ReviewAssistUpdatedEvent`
+7. `NotificationCreatedEvent`
+
+---
+
+## Errors
+
+Standard Connect error mapping:
+
+1. `INVALID_ARGUMENT`
+2. `UNAUTHENTICATED`
+3. `PERMISSION_DENIED`
+4. `NOT_FOUND`
+5. `FAILED_PRECONDITION`
+6. `RESOURCE_EXHAUSTED`
+7. `INTERNAL`
+8. `UNAVAILABLE`
+
+Error details should include:
+
+- `code`
+- `message`
+- `request_id`
+- optional typed detail payload
+
+---
+
+## Backward Compatibility
+
+1. `CompositeTask` APIs are removed from active contract.
+2. Legacy compatibility (if needed) must be isolated behind migration adapters and excluded from new client code.
+3. New client surfaces must not depend on mode-specific endpoints.
