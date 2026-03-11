@@ -39,7 +39,7 @@ export const useThemeStore = create<ThemeState>()(
         }),
     }),
     {
-      name: "delidev-theme-store",
+      name: "dexdex-theme-store",
     }
   )
 );

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright E2E Test Configuration for DeliDev Tauri App.
+ * Playwright E2E Test Configuration for DexDex Tauri App.
  *
  * @see https://playwright.dev/docs/test-configuration
  */

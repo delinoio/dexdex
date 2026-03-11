@@ -157,7 +157,7 @@ impl BiometricAuth {
     async fn authenticate_android(reason: &str) -> AppResult<bool> {
         // In a real implementation, this would use BiometricPrompt:
         // BiometricPrompt.Builder(activity)
-        //     .setTitle("DeliDev Authentication")
+        //     .setTitle("DexDex Authentication")
         //     .setDescription(reason)
         //     .build()
         //     .authenticate()

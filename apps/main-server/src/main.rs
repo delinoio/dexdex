@@ -1,4 +1,4 @@
-//! DeliDev Main Server binary.
+//! DexDex Main Server binary.
 
 use std::net::SocketAddr;
 
@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(
         single_user_mode = config.single_user_mode,
-        "Starting DeliDev Main Server"
+        "Starting DexDex Main Server"
     );
 
     // Create task store

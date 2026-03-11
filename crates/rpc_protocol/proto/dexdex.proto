@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package delidev;
+package dexdex;
 
 import "google/protobuf/timestamp.proto";
 

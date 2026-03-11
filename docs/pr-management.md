@@ -1,6 +1,6 @@
 # PR Management
 
-DeliDev includes polling-based PR management for PRs created by DeliDev tasks.
+DexDex includes polling-based PR management for PRs created by DexDex tasks.
 
 ## Scope
 

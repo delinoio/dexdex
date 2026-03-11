@@ -196,7 +196,7 @@ target
 .idea/
 
 # Built binary
-/delidev
+/dexdex
 
 # Tauri
 apps/tauri-app/src-tauri/target

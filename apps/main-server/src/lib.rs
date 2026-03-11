@@ -1,6 +1,6 @@
-//! DeliDev Main Server
+//! DexDex Main Server
 //!
-//! The Main Server is the central hub of DeliDev's distributed architecture.
+//! The Main Server is the central hub of DexDex's distributed architecture.
 //! It maintains the task list, coordinates workers, and provides the RPC
 //! interface for clients.
 

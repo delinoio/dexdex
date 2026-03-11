@@ -118,7 +118,7 @@ export function Sidebar() {
     >
       <div className="flex h-14 items-center justify-between border-b border-[hsl(var(--border))] px-4">
         {!sidebarCollapsed && (
-          <span className="text-lg font-bold">DeliDev</span>
+          <span className="text-lg font-bold">DexDex</span>
         )}
         <button
           onClick={toggleSidebar}

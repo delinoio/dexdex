@@ -1,4 +1,4 @@
-//! JWT and OIDC authentication for DeliDev.
+//! JWT and OIDC authentication for DexDex.
 //!
 //! This crate provides:
 //! - JWT token generation and validation
@@ -19,4 +19,4 @@ pub use pkce::*;
 pub const DEFAULT_JWT_EXPIRATION_HOURS: u64 = 24;
 
 /// Default JWT issuer.
-pub const DEFAULT_JWT_ISSUER: &str = "delidev";
+pub const DEFAULT_JWT_ISSUER: &str = "dexdex";

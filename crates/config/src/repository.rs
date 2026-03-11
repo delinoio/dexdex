@@ -1,6 +1,6 @@
 //! Repository-specific configuration settings.
 //!
-//! Location: `.delidev/config.toml` (committed to git)
+//! Location: `.dexdex/config.toml` (committed to git)
 
 use std::path::Path;
 
@@ -10,7 +10,7 @@ use crate::{CompositeTaskSettingsOptional, ConfigError, LearningSettingsOptional
 
 /// Repository-specific configuration.
 ///
-/// Stored at `.delidev/config.toml` in the repository root.
+/// Stored at `.dexdex/config.toml` in the repository root.
 /// These settings are committed to git and shared with the team.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RepositoryConfig {
@@ -317,10 +317,10 @@ autoFixCiFailures = true
     #[test]
     fn test_custom_branch_template() {
         let settings = BranchSettings {
-            template: "delidev/${slug}/${taskId}".to_string(),
+            template: "dexdex/${slug}/${taskId}".to_string(),
         };
         let branch = settings.generate_branch_name("abc", "My Feature");
-        assert_eq!(branch, "delidev/my-feature/abc");
+        assert_eq!(branch, "dexdex/my-feature/abc");
     }
 
     #[test]

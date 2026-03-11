@@ -1,6 +1,6 @@
-# DeliDev Entities
+# DexDex Entities
 
-This document defines the core entity model for DeliDev.
+This document defines the core entity model for DexDex.
 All architecture, API, and UI documents align with this file.
 
 ## Conventions

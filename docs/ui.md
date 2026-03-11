@@ -1,6 +1,6 @@
 # UI Design (Codex Desktop Inspired)
 
-This document defines DeliDev UI and UX structure.
+This document defines DexDex UI and UX structure.
 
 ## UX Goals
 
@@ -45,7 +45,7 @@ Mobile layout:
 
 ## Multi-Tab Workspace
 
-DeliDev provides multi-tab UI for working with multiple items in parallel.
+DexDex provides multi-tab UI for working with multiple items in parallel.
 
 Tab rules:
 
@@ -199,7 +199,7 @@ UnitTask detail shows commit chain metadata per SubTask:
 
 ## Action Badge System
 
-DeliDev highlights UnitTasks requiring user action with badges.
+DexDex highlights UnitTasks requiring user action with badges.
 
 ### Badge Rules
 
@@ -219,7 +219,7 @@ DeliDev highlights UnitTasks requiring user action with badges.
 
 ## PR Management Screen
 
-Purpose: polling-driven operations for PRs created by DeliDev tasks.
+Purpose: polling-driven operations for PRs created by DexDex tasks.
 
 Columns:
 

@@ -118,7 +118,7 @@ pub fn validate_repository_url(url: &str) -> GitResult<()> {
 /// // Valid branch names
 /// assert!(validate_branch_name("main").is_ok());
 /// assert!(validate_branch_name("feature/add-login").is_ok());
-/// assert!(validate_branch_name("delidev/task-123").is_ok());
+/// assert!(validate_branch_name("dexdex/task-123").is_ok());
 ///
 /// // Invalid branch names
 /// assert!(validate_branch_name("../../../etc/passwd").is_err());
@@ -299,7 +299,7 @@ mod tests {
         assert!(validate_branch_name("main").is_ok());
         assert!(validate_branch_name("master").is_ok());
         assert!(validate_branch_name("feature/add-login").is_ok());
-        assert!(validate_branch_name("delidev/task-12345678").is_ok());
+        assert!(validate_branch_name("dexdex/task-12345678").is_ok());
         assert!(validate_branch_name("fix/issue-123").is_ok());
         assert!(validate_branch_name("release-v1.0.0").is_ok());
     }

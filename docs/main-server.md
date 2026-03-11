@@ -1,6 +1,6 @@
 # Main Server (Go)
 
-Main Server is the control plane for DeliDev.
+Main Server is the control plane for DexDex.
 It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 
 ## Responsibilities
@@ -170,26 +170,26 @@ Main server supports both PostgreSQL and SQLite by deployment mode.
 
 | Key | Required | Description |
 |---|---|---|
-| `DELIDEV_DEPLOYMENT_MODE` | Y | `SINGLE_INSTANCE` or `SCALE` |
-| `DELIDEV_HTTP_ADDR` | Y | Connect RPC bind address |
-| `DELIDEV_DATABASE_URL` | Y | SQLite DSN (`SINGLE_INSTANCE`) or PostgreSQL DSN (`SCALE`) |
-| `DELIDEV_REDIS_URL` | N | Redis connection URL (required only in `SCALE`) |
-| `DELIDEV_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace streams (`SCALE` only) |
-| `DELIDEV_WORKER_RPC_TIMEOUT` | N | Worker call timeout |
-| `DELIDEV_PR_POLL_INTERVAL_SEC` | N | PR polling interval |
-| `DELIDEV_AUTH_ISSUER_URL` | N | OIDC issuer |
-| `DELIDEV_AUTH_AUDIENCE` | N | expected token audience |
+| `DEXDEX_DEPLOYMENT_MODE` | Y | `SINGLE_INSTANCE` or `SCALE` |
+| `DEXDEX_HTTP_ADDR` | Y | Connect RPC bind address |
+| `DEXDEX_DATABASE_URL` | Y | SQLite DSN (`SINGLE_INSTANCE`) or PostgreSQL DSN (`SCALE`) |
+| `DEXDEX_REDIS_URL` | N | Redis connection URL (required only in `SCALE`) |
+| `DEXDEX_REDIS_STREAM_PREFIX` | N | Redis key prefix for workspace streams (`SCALE` only) |
+| `DEXDEX_WORKER_RPC_TIMEOUT` | N | Worker call timeout |
+| `DEXDEX_PR_POLL_INTERVAL_SEC` | N | PR polling interval |
+| `DEXDEX_AUTH_ISSUER_URL` | N | OIDC issuer |
+| `DEXDEX_AUTH_AUDIENCE` | N | expected token audience |
 
 Deployment examples:
 
 1. `SINGLE_INSTANCE`:
-- `DELIDEV_DEPLOYMENT_MODE=SINGLE_INSTANCE`
-- `DELIDEV_DATABASE_URL=sqlite:///Users/<user>/.delidev/main-server.db`
+- `DEXDEX_DEPLOYMENT_MODE=SINGLE_INSTANCE`
+- `DEXDEX_DATABASE_URL=sqlite:///Users/<user>/.dexdex/main-server.db`
 
 2. `SCALE`:
-- `DELIDEV_DEPLOYMENT_MODE=SCALE`
-- `DELIDEV_DATABASE_URL=postgres://localhost:5432/delidev`
-- `DELIDEV_REDIS_URL=redis://localhost:6379/0`
+- `DEXDEX_DEPLOYMENT_MODE=SCALE`
+- `DEXDEX_DATABASE_URL=postgres://localhost:5432/dexdex`
+- `DEXDEX_REDIS_URL=redis://localhost:6379/0`
 
 ## Logging and Metrics
 

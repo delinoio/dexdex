@@ -177,7 +177,7 @@ export function Repositories() {
           <DialogHeader>
             <DialogTitle>Add Repository</DialogTitle>
             <DialogDescription>
-              Enter the repository URL to add it to DeliDev.
+              Enter the repository URL to add it to DexDex.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

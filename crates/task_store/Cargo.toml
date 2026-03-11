@@ -3,7 +3,7 @@ name = "task_store"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Task storage abstraction for DeliDev"
+description = "Task storage abstraction for DexDex"
 
 [dependencies]
 entities = { path = "../entities" }

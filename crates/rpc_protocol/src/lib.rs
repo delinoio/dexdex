@@ -1,6 +1,6 @@
-//! RPC protocol definitions for DeliDev.
+//! RPC protocol definitions for DexDex.
 //!
-//! This crate contains the request/response types for DeliDev's RPC API.
+//! This crate contains the request/response types for DexDex's RPC API.
 //! The API is designed to be compatible with Connect RPC protocol.
 
 mod error;
@@ -12,7 +12,7 @@ pub mod responses;
 pub use error::*;
 pub use types::*;
 
-/// RPC error codes used in DeliDev.
+/// RPC error codes used in DexDex.
 pub mod error_codes {
     pub const INVALID_REQUEST: i32 = -32600;
     pub const METHOD_NOT_FOUND: i32 = -32601;

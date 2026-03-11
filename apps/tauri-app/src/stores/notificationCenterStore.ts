@@ -117,7 +117,7 @@ export const useNotificationCenterStore = create<NotificationCenterState>()(
       },
     }),
     {
-      name: "delidev-notification-center",
+      name: "dexdex-notification-center",
       partialize: (state) => ({
         notifications: state.notifications,
       }),

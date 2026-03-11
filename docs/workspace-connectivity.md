@@ -1,6 +1,6 @@
 # Workspace Connectivity
 
-DeliDev uses workspace connectivity profiles.
+DexDex uses workspace connectivity profiles.
 
 ## Connectivity Types
 

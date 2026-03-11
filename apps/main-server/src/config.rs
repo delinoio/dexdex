@@ -34,42 +34,42 @@ pub struct Config {
 impl Config {
     /// Loads configuration from environment variables.
     pub fn from_env() -> anyhow::Result<Self> {
-        let single_user_mode = env::var("DELIDEV_SINGLE_USER_MODE")
+        let single_user_mode = env::var("DEXDEX_SINGLE_USER_MODE")
             .map(|v| v.to_lowercase() == "true" || v == "1")
             .unwrap_or(true);
 
         let database_url = if single_user_mode {
             env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "sqlite:~/.delidev/data.db?mode=rwc".to_string())
+                .unwrap_or_else(|_| "sqlite:~/.dexdex/data.db?mode=rwc".to_string())
         } else {
             env::var("DATABASE_URL")
                 .map_err(|_| anyhow::anyhow!("DATABASE_URL is required in multi-user mode"))?
         };
 
-        let jwt_secret = env::var("DELIDEV_JWT_SECRET").ok();
+        let jwt_secret = env::var("DEXDEX_JWT_SECRET").ok();
         if !single_user_mode && jwt_secret.is_none() {
-            anyhow::bail!("DELIDEV_JWT_SECRET is required in multi-user mode");
+            anyhow::bail!("DEXDEX_JWT_SECRET is required in multi-user mode");
         }
 
         Ok(Self {
-            host: env::var("DELIDEV_SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
-            port: env::var("DELIDEV_SERVER_PORT")
+            host: env::var("DEXDEX_SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            port: env::var("DEXDEX_SERVER_PORT")
                 .unwrap_or_else(|_| "54871".to_string())
                 .parse()
                 .unwrap_or(54871),
             database_url,
             single_user_mode,
             jwt_secret,
-            jwt_expiration_hours: env::var("DELIDEV_JWT_EXPIRATION_HOURS")
+            jwt_expiration_hours: env::var("DEXDEX_JWT_EXPIRATION_HOURS")
                 .unwrap_or_else(|_| "24".to_string())
                 .parse()
                 .unwrap_or(24),
-            oidc_issuer_url: env::var("DELIDEV_OIDC_ISSUER_URL").ok(),
-            oidc_client_id: env::var("DELIDEV_OIDC_CLIENT_ID").ok(),
-            oidc_client_secret: env::var("DELIDEV_OIDC_CLIENT_SECRET").ok(),
-            oidc_redirect_url: env::var("DELIDEV_OIDC_REDIRECT_URL").ok(),
-            log_level: env::var("DELIDEV_LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
-            webhook_secret: env::var("DELIDEV_WEBHOOK_SECRET").ok(),
+            oidc_issuer_url: env::var("DEXDEX_OIDC_ISSUER_URL").ok(),
+            oidc_client_id: env::var("DEXDEX_OIDC_CLIENT_ID").ok(),
+            oidc_client_secret: env::var("DEXDEX_OIDC_CLIENT_SECRET").ok(),
+            oidc_redirect_url: env::var("DEXDEX_OIDC_REDIRECT_URL").ok(),
+            log_level: env::var("DEXDEX_LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
+            webhook_secret: env::var("DEXDEX_WEBHOOK_SECRET").ok(),
         })
     }
 
@@ -100,7 +100,7 @@ mod tests {
         // Clear any existing env vars
         // SAFETY: Tests run serially or in isolation
         unsafe {
-            env::remove_var("DELIDEV_SINGLE_USER_MODE");
+            env::remove_var("DEXDEX_SINGLE_USER_MODE");
             env::remove_var("DATABASE_URL");
         }
 

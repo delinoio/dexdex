@@ -43,7 +43,7 @@ export const useTaskCreationStore = create<TaskCreationState>()(
         set({ lastIsComposite: isComposite }),
     }),
     {
-      name: "delidev-task-creation-store",
+      name: "dexdex-task-creation-store",
     }
   )
 );

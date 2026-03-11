@@ -3,7 +3,7 @@ name = "rpc_protocol"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "RPC protocol definitions for DeliDev"
+description = "RPC protocol definitions for DexDex"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

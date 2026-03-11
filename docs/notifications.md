@@ -1,6 +1,6 @@
 # Notification System
 
-DeliDev uses Web Notification API as the primary desktop and mobile notification channel.
+DexDex uses Web Notification API as the primary desktop and mobile notification channel.
 
 ## Design Rules
 

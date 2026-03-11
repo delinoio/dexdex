@@ -1,6 +1,6 @@
 # Tauri App (Desktop + Mobile)
 
-DeliDev client runs in Tauri across desktop and mobile platforms.
+DexDex client runs in Tauri across desktop and mobile platforms.
 The app is Connect RPC-first.
 
 ## Core Rule

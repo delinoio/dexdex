@@ -1,5 +1,5 @@
 {
-  "name": "delidev-workspace",
+  "name": "dexdex-workspace",
   "private": true,
   "packageManager": "pnpm@10.26.2",
   "scripts": {

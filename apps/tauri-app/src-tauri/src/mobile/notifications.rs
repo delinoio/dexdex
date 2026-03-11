@@ -1,4 +1,4 @@
-//! Mobile push notifications for DeliDev.
+//! Mobile push notifications for DexDex.
 //!
 //! This module provides push notification support for iOS (APNs) and Android
 //! (FCM).
