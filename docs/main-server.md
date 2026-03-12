@@ -1,4 +1,4 @@
-# Main Server (Rust)
+# Main Server (Go)
 
 Main Server is the control plane for DexDex.
 It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
@@ -19,7 +19,7 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Main Server (Rust)                                           │
+│ Main Server (Go)                                             │
 │                                                              │
 │  Connect RPC Handlers                                        │
 │   ├── WorkspaceService                                       │

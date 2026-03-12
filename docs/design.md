@@ -1,7 +1,7 @@
 # DexDex Design
 
 DexDex is a cross-platform orchestration UI for CLI-based coding agents.
-DexDex uses a Connect RPC-first architecture with Tauri clients and Rust servers.
+DexDex uses a Connect RPC-first architecture with Tauri clients and Go servers.
 This document is the primary architecture reference.
 
 ## Product Overview
@@ -21,7 +21,7 @@ Primary outcomes:
 ## Product Goals
 
 1. Use Tauri as the desktop and mobile app container.
-2. Use Rust for `main-server` and `worker-server`.
+2. Use Go for `main-server` and `worker-server`.
 3. Use `Workspace` as the primary connectivity and scope concept.
 4. Use UnitTask-centric workflows with nested SubTask and AgentSession history.
 5. Make PR management and PR review assist first-class workflows.
@@ -58,7 +58,7 @@ Mobile is not a separate business-logic path.
 ```
                         Connect RPC + Event Streams
 ┌───────────────────────┐   https://api endpoint   ┌───────────────────────┐
-│ Tauri Client          │ <----------------------> │ Main Server (Rust)    │
+│ Tauri Client          │ <----------------------> │ Main Server (Go)      │
 │ (Desktop / iOS /      │                          │ - RPC API             │
 │  Android)             │                          │ - Workspace/Task/PR   │
 │ - React UI            │                          │ - Event broker        │
@@ -68,7 +68,7 @@ Mobile is not a separate business-logic path.
             │                                                   │ Connect RPC
             │                                                   │
             │                                         ┌─────────▼──────────┐
-            │                                         │ Worker Server (Rust) │
+            │                                         │ Worker Server (Go)   │
             │                                         │ - Worktree exec    │
             │                                         │ - Agent sessions   │
             │                                         │ - Log stream       │
@@ -83,10 +83,10 @@ Communication rule:
 
 ## Monorepo Structure
 
-- `apps/main-server/` (Rust)
-- `apps/worker-server/` (Rust)
+- `apps/main-server/` (Go)
+- `apps/worker-server/` (Go)
 - `apps/tauri-app/` (Tauri + React)
-- shared Rust crates under `crates/` with Cargo workspace management
+- shared crates and shared packages under `crates/`
 
 ## Deployment Profiles
 

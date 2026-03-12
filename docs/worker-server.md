@@ -1,4 +1,4 @@
-# Worker Server (Rust)
+# Worker Server (Go)
 
 Worker Server executes SubTasks using AI coding agents in isolated worktree environments.
 
@@ -22,7 +22,7 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Worker Server (Rust)                                         │
+│ Worker Server (Go)                                           │
 │                                                              │
 │  Job Receiver (Connect RPC client/server)                    │
 │    └── SubTask Runner                                        │
