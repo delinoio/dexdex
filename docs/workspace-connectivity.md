@@ -48,6 +48,7 @@ A mobile app can connect to local endpoints (same network or tunneled) and remot
 
 Capability rollout is phased:
 
-1. baseline mobile flow focuses on remote monitoring, logs, plan actions, and stop actions
+1. baseline mobile flow supports monitoring, logs, plan actions, stop actions, and core remediation triggers
 2. expanded mobile flow adds broader remediation and review interactions
-3. connectivity contract stays identical across desktop and mobile
+3. rollout phase reflects interaction constraints, not lower product priority
+4. connectivity contract stays identical across desktop and mobile

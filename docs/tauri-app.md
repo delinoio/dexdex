@@ -17,11 +17,11 @@ The app does not use direct client-to-worker business APIs.
 
 ## Capability Rollout
 
-Desktop provides the full authoring workflow.
-Mobile uses phased rollout on the same contracts:
+Desktop and mobile are both first-class product targets on the same contracts.
+Capability rollout is phased by interaction constraints:
 
-1. baseline: task monitoring, log viewing, plan decisions, and stop actions
-2. expansion: broader remediation and review interaction flows
+1. baseline: task monitoring, log viewing, plan decisions, stop actions, and key remediation actions
+2. expansion: broader remediation, review interaction, and deeper authoring parity
 
 ## Client Architecture
 

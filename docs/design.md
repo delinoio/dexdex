@@ -1,6 +1,6 @@
 # DexDex Design
 
-DexDex is a desktop-first orchestration UI for CLI-based coding agents.
+DexDex is a cross-platform orchestration UI for CLI-based coding agents.
 DexDex uses a Connect RPC-first architecture with Tauri clients and Rust servers.
 This document is the primary architecture reference.
 
@@ -26,7 +26,7 @@ Primary outcomes:
 4. Use UnitTask-centric workflows with nested SubTask and AgentSession history.
 5. Make PR management and PR review assist first-class workflows.
 6. Provide real-time event streaming for UI updates and automation.
-7. Support iOS and Android as first-wave platforms with phased capability rollout.
+7. Treat desktop, iOS, and Android as first-class platforms with phased capability rollout.
 
 ## Non-Goals
 
@@ -40,15 +40,16 @@ Primary outcomes:
 
 ### Desktop
 
-Desktop is the primary platform for full authoring and remediation workflows.
+Desktop and mobile are both product-priority platforms.
+Desktop is optimized for dense authoring workflows and keyboard-heavy interaction.
 
 ### Mobile
 
 Mobile uses the same API and data model as desktop.
-Capability rollout is phased:
+Capability rollout is phased by interaction constraints, not platform priority:
 
-1. baseline support: remote task monitoring, log viewing, approval and stop actions
-2. expanded support: broader remediation and review actions as UX matures
+1. baseline support: task monitoring, log viewing, approval and stop actions, and core remediation triggers
+2. expanded support: broader remediation, review interaction, and authoring parity as UX matures
 
 Mobile is not a separate business-logic path.
 
