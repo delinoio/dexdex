@@ -27,6 +27,12 @@ Desktop layout:
 3. Center pane: task and PR list with filters
 4. Right pane: details, timeline, and actions
 
+Focused three-pane variant for detail-heavy workflows:
+
+1. left: task list and workspace switcher
+2. center: active task detail and timeline
+3. right: collapsed history, side activity, and auxiliary context
+
 Mobile layout:
 
 1. top segmented tabs (Tasks, PRs, Review Assist, Notifications)
@@ -103,6 +109,9 @@ Sections:
 3. PR Attention queue
 4. Completed recently
 
+Completed work is retained, not deleted.
+The default behavior is collapsed history that users can expand on demand.
+
 Each card includes:
 
 1. title
@@ -134,6 +143,22 @@ Contains:
 8. commit chain viewer for generated commits
 9. stop controls for in-progress UnitTask and SubTask
 10. inline comment threads anchored to diff lines
+
+## Task Creation UX
+
+Task creation uses a modal flow with keyboard-first submit.
+
+Required inputs:
+
+1. Repository Group
+2. Task Prompt
+
+Optional and policy-driven inputs:
+
+1. execution mode selector (local or remote, workspace policy dependent)
+2. coding agent selection
+3. plan-mode preference when supported by selected agent
+4. suggested task title
 
 ### Stop Controls
 

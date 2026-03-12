@@ -15,6 +15,13 @@ DexDex uses Web Notification API as the primary desktop and mobile notification 
 3. PR review activity requires remediation
 4. PR CI failure
 5. AgentSession failure
+6. Agent session requires human input (`WAITING_FOR_USER_INPUT`)
+7. Authentication/session refresh required for continued workflow
+
+Trigger mapping note:
+
+1. trigger semantics use existing notification enums in `docs/entities.md`
+2. auth-required prompts are represented through action-required notification categories
 
 ## Notification Flow
 

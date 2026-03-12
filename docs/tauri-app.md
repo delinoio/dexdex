@@ -8,11 +8,20 @@ The app is Connect RPC-first.
 Business communication uses Connect RPC as the primary path.
 Tauri-specific APIs are only for platform integration.
 Client consumes normalized coding-agent message contracts only.
+The app does not use direct client-to-worker business APIs.
 
 ## Supported Platforms
 
 1. Desktop: macOS, Windows, Linux
 2. Mobile: iOS, Android
+
+## Capability Rollout
+
+Desktop and mobile are both first-class product targets on the same contracts.
+Capability rollout is phased by interaction constraints:
+
+1. baseline: task monitoring, log viewing, plan decisions, stop actions, and key remediation actions
+2. expansion: broader remediation, review interaction, and deeper authoring parity
 
 ## Client Architecture
 
@@ -164,6 +173,13 @@ Client exposes immediate stop actions:
 2. badge color mapping editor
 3. PR auto-fix preferences
 4. notification permission and display preferences
+5. appearance mode (Light, Dark, System)
+6. shortcut discoverability and keymap preferences
+
+Staged settings with security guardrails:
+
+1. agent credential import/bridge flows
+2. worker environment profile management with scoped secret handling
 
 ## Testing Focus
 

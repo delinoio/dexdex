@@ -1,30 +1,64 @@
 # DexDex Design
 
-DexDex uses a Connect RPC-first architecture with Tauri clients and Rust servers.
+DexDex is a cross-platform orchestration UI for CLI-based coding agents.
+DexDex uses a Connect RPC-first architecture with Tauri clients and Go servers.
 This document is the primary architecture reference.
+
+## Product Overview
+
+DexDex orchestrates coding agents such as Claude Code, OpenCode, and Codex CLI.
+DexDex does not implement model reasoning logic. It coordinates agent execution, stores execution history, and visualizes progress and outcomes.
+
+Primary outcomes:
+
+1. task orchestration with clear action states
+2. multi-repository execution with deterministic repository order
+3. plan approval and revision loop in UI
+4. PR creation and remediation as first-class flows
+5. real-time logs and event streaming
+6. local and remote execution through a unified API contract
 
 ## Product Goals
 
 1. Use Tauri as the desktop and mobile app container.
-2. Use Rust for `main-server` and `worker-server`.
+2. Use Go for `main-server` and `worker-server`.
 3. Use `Workspace` as the primary connectivity and scope concept.
 4. Use UnitTask-centric workflows with nested SubTask and AgentSession history.
 5. Make PR management and PR review assist first-class workflows.
 6. Provide real-time event streaming for UI updates and automation.
-7. Support iOS and Android as first-wave platforms.
+7. Treat desktop, iOS, and Android as first-class platforms with phased capability rollout.
 
 ## Non-Goals
 
 1. Direct local folder execution without worktree.
 2. Tauri-invoke-first business contracts.
 3. Native OS notification plugin as the primary notification channel.
+4. Building a proprietary coding-agent runtime that replaces CLI agents.
+5. Hosting git repositories.
+
+## Platform Strategy
+
+### Desktop
+
+Desktop and mobile are both product-priority platforms.
+Desktop is optimized for dense authoring workflows and keyboard-heavy interaction.
+
+### Mobile
+
+Mobile uses the same API and data model as desktop.
+Capability rollout is phased by interaction constraints, not platform priority:
+
+1. baseline support: task monitoring, log viewing, approval and stop actions, and core remediation triggers
+2. expanded support: broader remediation, review interaction, and authoring parity as UX matures
+
+Mobile is not a separate business-logic path.
 
 ## Top-Level Architecture
 
 ```
                         Connect RPC + Event Streams
 ┌───────────────────────┐   https://api endpoint   ┌───────────────────────┐
-│ Tauri Client          │ <----------------------> │ Main Server (Rust)    │
+│ Tauri Client          │ <----------------------> │ Main Server (Go)      │
 │ (Desktop / iOS /      │                          │ - RPC API             │
 │  Android)             │                          │ - Workspace/Task/PR   │
 │ - React UI            │                          │ - Event broker        │
@@ -34,19 +68,25 @@ This document is the primary architecture reference.
             │                                                   │ Connect RPC
             │                                                   │
             │                                         ┌─────────▼──────────┐
-            │                                         │ Worker Server (Rust) │
+            │                                         │ Worker Server (Go)   │
             │                                         │ - Worktree exec    │
             │                                         │ - Agent sessions   │
             │                                         │ - Log stream       │
             │                                         └────────────────────┘
 ```
 
+Communication rule:
+
+1. client business communication is main-server canonical
+2. client does not open direct business channels to worker server
+3. worker communication is server-to-server through Connect RPC
+
 ## Monorepo Structure
 
-- `apps/main-server/` (Rust)
-- `apps/worker-server/` (Rust)
+- `apps/main-server/` (Go)
+- `apps/worker-server/` (Go)
 - `apps/tauri-app/` (Tauri + React)
-- shared Rust crates under `crates/` with Cargo workspace management
+- shared crates and shared packages under `crates/`
 
 ## Deployment Profiles
 
@@ -97,6 +137,12 @@ Each workspace points to a main server endpoint.
 - endpoint runs on a network-hosted server
 - uses the same RPC and streaming contracts
 
+Workspace contains:
+
+1. repository groups
+2. UnitTasks and SubTasks
+3. workspace-scoped settings and policies
+
 ## Data Model Overview
 
 Detailed model is maintained in `docs/entities.md`.
@@ -130,6 +176,7 @@ SubTask is also used for small operational tasks triggered by UI actions.
 ### AgentSession
 
 Each SubTask can run one or more AI coding agent sessions.
+Only one AgentSession is active at a time for a given SubTask.
 
 ```
 UnitTask
@@ -141,6 +188,28 @@ UnitTask
   └── SubTask #3 (fix CI failure)
         └── AgentSession #4
 ```
+
+Terminology mapping for PRD wording:
+
+1. PRD `Task` maps to `UnitTask`
+2. PRD `Session` maps to `AgentSession` (scoped by `SubTask`)
+
+## Execution Modes
+
+DexDex supports local and remote execution modes with a shared orchestration contract.
+
+### Local Mode
+
+1. execution happens on the user environment through worker runtime
+2. repository handling is worktree-only
+
+### Remote Mode
+
+1. execution happens on remote worker server
+2. repository bootstrap may use clone or cache refresh
+3. execution always runs in task-specific worktrees after bootstrap
+
+This keeps one invariant across both modes: `repo-cache/bootstrap + worktree execution`.
 
 ## Agent Message Normalization Boundary
 
@@ -161,6 +230,8 @@ Worker-produced code changes must be represented as real git commits.
 3. Commit order is preserved and stored as SubTask commit chain metadata.
 4. PR creation and Commit to Local use this commit chain as the source of truth.
 5. Patch artifacts are derived from commits for diff viewing and are not authoritative.
+
+The ghost-commit concept is not used as a storage or orchestration model.
 
 ## Worktree-Only Policy
 
@@ -235,6 +306,8 @@ For coding agents with plan mode:
 3. stream plan updates and rationale
 4. attach plan decisions to SubTask and AgentSession records
 
+Plan semantics remain agent-native. DexDex stores and orchestrates decisions, but does not replace the agent's planning logic.
+
 See `docs/plan-yaml.md`.
 
 ## Event Streaming
@@ -267,25 +340,34 @@ Notification delivery uses Web Notification API.
 
 See `docs/notifications.md`.
 
-## Mobile Strategy
+## UI Shell Strategy
 
-iOS and Android are first-wave platforms.
+DexDex uses a multi-tab triage-first shell as the default.
 
-Design implications:
+1. workspace-oriented navigation and action-required queues
+2. tabbed detail workflows with persistent draft state
+3. keyboard-first operation across primary screens
 
-1. core workflows must be API-driven and mobile-safe
-2. no desktop-only business logic path
-3. notification and streaming strategy must work with mobile runtime constraints
-4. workspace onboarding and PR remediation actions must be touch-friendly
+A focused three-pane detail layout can be used as a screen-level variant:
 
-## Multi-Tab UI Invariant
+1. left: task list or context rail
+2. center: task detail and timeline
+3. right: collapsed history or side activity
 
-The client provides multi-tab UI so users can work on multiple items concurrently.
+## Settings Scope
 
-1. detail views and workflow pages open as tabs in the app shell
-2. tab state is persisted per workspace
-3. tab switching does not discard running context or unsaved draft input
-4. tab state indicators surface running/action-required/unread-update signals
+Settings cover both currently implemented controls and staged integrations.
+
+Immediate scope:
+
+1. appearance mode (Light, Dark, System)
+2. keyboard shortcut settings and discoverability
+3. workspace and notification preferences
+
+Staged scope with security guardrails:
+
+1. agent credential import flows (for example OAuth token bridging)
+2. worker environment variable profiles with least-privilege handling, scoped exposure, and audit logs
 
 ## Keyboard Input Rule
 
@@ -303,6 +385,12 @@ Every screen includes appropriate keyboard shortcuts for its primary items and a
 4. all primary screens are covered: Workspace Home, UnitTask Detail, PR Management, PR Review Assist, Settings, Notifications Center
 5. shortcut matching uses physical key codes and modifiers so behavior is stable across input language modes
 6. tab management shortcuts are required (`new`, `close`, `previous`, `next`)
+
+## Task Status Presentation Model
+
+Storage status uses three-level enums (`UnitTaskStatus`, `SubTaskStatus`, `AgentSessionStatus`).
+UI may present simplified derived labels (for example Draft, PlanReady, Building) that map to underlying entity states.
+The persisted source of truth remains the three-level enum model in `docs/entities.md`.
 
 ## Observability and Logging
 
@@ -327,6 +415,12 @@ Client-side logging is required for:
 2. token-based auth for shared remote workspaces
 3. scoped secret usage with minimal runtime lifetime
 4. strict validation for repository URLs, branch names, prompts, and review payloads
+5. guarded handling for staged credential-transfer and worker-env settings
+
+## Documentation Alignment Scope
+
+This revision aligns architecture and product docs as the source of truth.
+Code and proto contract synchronization is tracked as follow-up work and is not part of this document-only integration.
 
 ## Related Docs
 
