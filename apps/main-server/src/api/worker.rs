@@ -1,295 +1,222 @@
-//! Worker management API endpoints (internal).
-
-use std::sync::Arc;
+//! WorkerService handlers (internal — used by worker-server).
 
 use axum::{Json, extract::State};
-use rpc_protocol::{UnitTaskStatus, WorkerStatus as RpcWorkerStatus, requests::*, responses::*};
-use task_store::TaskStore;
-use uuid::Uuid;
+use entities::{SubTaskStatus, UnitTaskStatus};
+use rpc_protocol::{StreamEvent, StreamEventType, requests::*, responses::*};
 
 use crate::{
-    error::{ServerError, ServerResult},
-    services::worker_registry::WorkerStatus,
-    state::AppState,
+    error::{AppError, AppResult},
+    state::SharedState,
 };
 
-/// Converts RPC WorkerStatus to registry WorkerStatus.
-fn to_registry_status(status: RpcWorkerStatus) -> WorkerStatus {
-    match status {
-        RpcWorkerStatus::Unspecified | RpcWorkerStatus::Idle => WorkerStatus::Idle,
-        RpcWorkerStatus::Busy => WorkerStatus::Busy,
-        RpcWorkerStatus::Unhealthy => WorkerStatus::Unhealthy,
-    }
-}
-
-/// Registers a new worker.
-pub async fn register_worker<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<RegisterWorkerRequest>,
-) -> ServerResult<Json<RegisterWorkerResponse>> {
-    let mut registry = state.worker_registry.write().await;
-    let worker_id = registry.register(&request.name, &request.endpoint_url);
+pub async fn register(
+    State(state): State<SharedState>,
+    Json(req): Json<RegisterWorkerRequest>,
+) -> AppResult<Json<RegisterWorkerResponse>> {
+    let worker_id = state
+        .worker_registry
+        .write()
+        .await
+        .register(req.name.clone(), req.endpoint_url.clone());
 
     tracing::info!(
         worker_id = %worker_id,
-        name = %request.name,
-        endpoint = %request.endpoint_url,
+        name = %req.name,
+        endpoint = %req.endpoint_url,
         "Worker registered"
     );
 
-    Ok(Json(RegisterWorkerResponse {
-        worker_id: worker_id.to_string(),
-    }))
+    Ok(Json(RegisterWorkerResponse { worker_id }))
 }
 
-/// Handles worker heartbeat.
-pub async fn heartbeat<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<HeartbeatRequest>,
-) -> ServerResult<Json<HeartbeatResponse>> {
-    let worker_id: Uuid = request
-        .worker_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid worker_id".to_string()))?;
+pub async fn heartbeat(
+    State(state): State<SharedState>,
+    Json(req): Json<HeartbeatRequest>,
+) -> AppResult<Json<HeartbeatResponse>> {
+    let found = state
+        .worker_registry
+        .write()
+        .await
+        .heartbeat(req.worker_id, req.current_sub_task_id);
 
-    let current_task_id = request
-        .current_task_id
-        .as_ref()
-        .and_then(|id| id.parse().ok());
-
-    let mut registry = state.worker_registry.write().await;
-    let success = registry.heartbeat(
-        worker_id,
-        to_registry_status(request.status),
-        current_task_id,
-    );
-
-    if !success {
-        return Err(ServerError::NotFound("Worker not found".to_string()));
+    if !found {
+        return Err(AppError::NotFound(format!(
+            "Worker {} not found",
+            req.worker_id
+        )));
     }
 
     Ok(Json(HeartbeatResponse {}))
 }
 
-/// Unregisters a worker.
-pub async fn unregister_worker<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<UnregisterWorkerRequest>,
-) -> ServerResult<Json<UnregisterWorkerResponse>> {
-    let worker_id: Uuid = request
-        .worker_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid worker_id".to_string()))?;
-
-    let mut registry = state.worker_registry.write().await;
-    registry.unregister(worker_id);
-
-    tracing::info!(worker_id = %worker_id, "Worker unregistered");
-
+pub async fn unregister(
+    State(state): State<SharedState>,
+    Json(req): Json<UnregisterWorkerRequest>,
+) -> AppResult<Json<UnregisterWorkerResponse>> {
+    state
+        .worker_registry
+        .write()
+        .await
+        .unregister(req.worker_id);
+    tracing::info!(worker_id = %req.worker_id, "Worker unregistered");
     Ok(Json(UnregisterWorkerResponse {}))
 }
 
-/// Gets the next task for a worker to execute.
-pub async fn get_next_task<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<GetNextTaskRequest>,
-) -> ServerResult<Json<GetNextTaskResponse>> {
-    let worker_id: Uuid = request
-        .worker_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid worker_id".to_string()))?;
+pub async fn get_next_sub_task(
+    State(state): State<SharedState>,
+    Json(_req): Json<GetNextSubTaskRequest>,
+) -> AppResult<Json<GetNextSubTaskResponse>> {
+    let maybe_subtask = state.store.get_next_queued_sub_task().await?;
 
-    // Verify worker exists
-    {
-        let registry = state.worker_registry.read().await;
-        if registry.get(worker_id).is_none() {
-            return Err(ServerError::NotFound("Worker not found".to_string()));
+    if let Some(ref subtask) = maybe_subtask {
+        // Mark it as in-progress immediately.
+        let mut subtask_mut = subtask.clone();
+        subtask_mut.status = SubTaskStatus::InProgress;
+        subtask_mut.updated_at = chrono::Utc::now();
+        let subtask_mut = state.store.update_sub_task(subtask_mut).await?;
+
+        // Fetch the parent unit task.
+        let unit_task = state
+            .store
+            .get_unit_task(subtask_mut.unit_task_id)
+            .await?
+            .map(|mut t| {
+                t.status = UnitTaskStatus::InProgress;
+                t.updated_at = chrono::Utc::now();
+                t
+            });
+
+        // Update unit task status if found.
+        if let Some(ref task) = unit_task {
+            let updated_task = state.store.update_unit_task(task.clone()).await?;
+            state.broker.publish(StreamEvent {
+                event_type: StreamEventType::TaskUpdated,
+                workspace_id: updated_task.workspace_id.to_string(),
+                payload: serde_json::to_value(&updated_task).unwrap_or_default(),
+            });
         }
+
+        state.broker.publish(StreamEvent {
+            event_type: StreamEventType::SubtaskUpdated,
+            workspace_id: unit_task
+                .as_ref()
+                .map(|t| t.workspace_id.to_string())
+                .unwrap_or_default(),
+            payload: serde_json::to_value(&subtask_mut).unwrap_or_default(),
+        });
+
+        return Ok(Json(GetNextSubTaskResponse {
+            sub_task: Some(subtask_mut),
+            unit_task,
+        }));
     }
 
-    // Find a task that needs execution (status = in_progress but no active session)
-    let filter = task_store::TaskFilter {
-        unit_status: Some(entities::UnitTaskStatus::InProgress),
-        ..Default::default()
-    };
-
-    let (tasks, _) = state.store.list_unit_tasks(filter).await?;
-
-    // Find a task that isn't already assigned to a worker
-    for task in tasks {
-        // Check if task is already assigned
-        let registry = state.worker_registry.read().await;
-        let already_assigned = registry
-            .all_workers()
-            .any(|w| w.current_task_id == Some(task.id));
-
-        if !already_assigned {
-            // Assign task to worker
-            drop(registry);
-            let mut registry = state.worker_registry.write().await;
-            if registry.assign_task(worker_id, task.id) {
-                // Get agent task
-                let agent_task = state.store.get_agent_task(task.agent_task_id).await?;
-
-                let rpc_task = rpc_protocol::UnitTask {
-                    id: task.id.to_string(),
-                    repository_group_id: task.repository_group_id.to_string(),
-                    agent_task_id: task.agent_task_id.to_string(),
-                    prompt: task.prompt.clone(),
-                    title: task.title.clone(),
-                    branch_name: task.branch_name.clone(),
-                    linked_pr_url: task.linked_pr_url.clone(),
-                    base_commit: task.base_commit.clone(),
-                    end_commit: task.end_commit.clone(),
-                    git_patch: task.git_patch.clone(),
-                    auto_fix_task_ids: task
-                        .auto_fix_task_ids
-                        .iter()
-                        .map(|id| id.to_string())
-                        .collect(),
-                    status: UnitTaskStatus::InProgress,
-                    created_at: task.created_at,
-                    updated_at: task.updated_at,
-                };
-
-                let rpc_agent_task = agent_task.map(|at| rpc_protocol::AgentTask {
-                    id: at.id.to_string(),
-                    base_remotes: at
-                        .base_remotes
-                        .iter()
-                        .map(|br| rpc_protocol::BaseRemote {
-                            git_remote_url: br.git_remote_url.clone(),
-                            git_branch_name: br.git_branch_name.clone(),
-                        })
-                        .collect(),
-                    agent_sessions: vec![],
-                    ai_agent_type: at.ai_agent_type.map(|t| match t {
-                        entities::AiAgentType::ClaudeCode => rpc_protocol::AiAgentType::ClaudeCode,
-                        entities::AiAgentType::OpenCode => rpc_protocol::AiAgentType::OpenCode,
-                        entities::AiAgentType::GeminiCli => rpc_protocol::AiAgentType::GeminiCli,
-                        entities::AiAgentType::CodexCli => rpc_protocol::AiAgentType::CodexCli,
-                        entities::AiAgentType::Aider => rpc_protocol::AiAgentType::Aider,
-                        entities::AiAgentType::Amp => rpc_protocol::AiAgentType::Amp,
-                    }),
-                    ai_agent_model: at.ai_agent_model,
-                    created_at: at.created_at,
-                });
-
-                tracing::info!(worker_id = %worker_id, task_id = %task.id, "Task assigned to worker");
-
-                return Ok(Json(GetNextTaskResponse {
-                    task: Some(rpc_task),
-                    agent_task: rpc_agent_task,
-                }));
-            }
-        }
-    }
-
-    // No tasks available
-    Ok(Json(GetNextTaskResponse {
-        task: None,
-        agent_task: None,
+    Ok(Json(GetNextSubTaskResponse {
+        sub_task: None,
+        unit_task: None,
     }))
 }
 
-/// Reports task execution status from a worker.
-pub async fn report_task_status<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<ReportTaskStatusRequest>,
-) -> ServerResult<Json<ReportTaskStatusResponse>> {
-    let worker_id: Uuid = request
-        .worker_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid worker_id".to_string()))?;
-
-    let task_id: Uuid = request
-        .task_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
-
-    // Update task status
-    let mut task = state
+pub async fn report_sub_task_status(
+    State(state): State<SharedState>,
+    Json(req): Json<ReportSubTaskStatusRequest>,
+) -> AppResult<Json<ReportSubTaskStatusResponse>> {
+    let mut subtask = state
         .store
-        .get_unit_task(task_id)
+        .get_sub_task(req.sub_task_id)
         .await?
-        .ok_or_else(|| ServerError::NotFound("Task not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(format!("SubTask {} not found", req.sub_task_id)))?;
 
-    task.status = match request.status {
-        UnitTaskStatus::InProgress => entities::UnitTaskStatus::InProgress,
-        UnitTaskStatus::InReview => entities::UnitTaskStatus::InReview,
-        UnitTaskStatus::Approved => entities::UnitTaskStatus::Approved,
-        UnitTaskStatus::PrOpen => entities::UnitTaskStatus::PrOpen,
-        UnitTaskStatus::Done => entities::UnitTaskStatus::Done,
-        UnitTaskStatus::Rejected => entities::UnitTaskStatus::Rejected,
-        _ => entities::UnitTaskStatus::InProgress,
-    };
-    task.updated_at = chrono::Utc::now();
+    subtask.status = req.status;
+    subtask.generated_commits = req.generated_commits;
+    subtask.updated_at = chrono::Utc::now();
 
-    // Persist git patch if provided by the worker
-    if let Some(git_patch) = request.git_patch {
-        task.git_patch = Some(git_patch);
+    // Update head commit if there are generated commits.
+    if let Some(last_commit) = subtask.generated_commits.last() {
+        subtask.head_commit_sha = Some(last_commit.sha.clone());
     }
 
-    state.store.update_unit_task(task).await?;
-
-    // Mark worker as idle if task is completed
-    if matches!(
-        request.status,
-        UnitTaskStatus::InReview | UnitTaskStatus::Done | UnitTaskStatus::Rejected
-    ) {
-        let mut registry = state.worker_registry.write().await;
-        registry.complete_task(worker_id);
-    }
-
+    let subtask = state.store.update_sub_task(subtask).await?;
     tracing::info!(
-        worker_id = %worker_id,
-        task_id = %task_id,
-        status = ?request.status,
-        "Task status reported"
+        subtask_id = %subtask.id,
+        status = ?subtask.status,
+        "SubTask status reported"
     );
 
-    Ok(Json(ReportTaskStatusResponse {}))
-}
+    // Update the parent unit task status based on subtask outcome.
+    let unit_task_update = state.store.get_unit_task(subtask.unit_task_id).await?;
+    if let Some(mut task) = unit_task_update {
+        let new_task_status = match subtask.status {
+            SubTaskStatus::Completed => UnitTaskStatus::Completed,
+            SubTaskStatus::Failed => UnitTaskStatus::Failed,
+            SubTaskStatus::Cancelled => UnitTaskStatus::Cancelled,
+            SubTaskStatus::WaitingForPlanApproval | SubTaskStatus::WaitingForUserInput => {
+                UnitTaskStatus::ActionRequired
+            }
+            _ => task.status,
+        };
 
-/// Gets secrets for a task (called by worker when task starts).
-pub async fn get_secrets<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<GetSecretsRequest>,
-) -> ServerResult<Json<GetSecretsResponse>> {
-    let worker_id: Uuid = request
-        .worker_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid worker_id".to_string()))?;
+        if task.status != new_task_status {
+            task.status = new_task_status;
+            task.updated_at = chrono::Utc::now();
 
-    let task_id: Uuid = request
-        .task_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
+            // Update the latest commit SHA on the task.
+            if let Some(sha) = &subtask.head_commit_sha {
+                task.latest_commit_sha = Some(sha.clone());
+                task.generated_commit_count += subtask.generated_commits.len() as u32;
+            }
 
-    // Verify worker exists and is assigned this task
-    {
-        let registry = state.worker_registry.read().await;
-        let worker = registry
-            .get(worker_id)
-            .ok_or_else(|| ServerError::NotFound("Worker not found".to_string()))?;
-
-        if worker.current_task_id != Some(task_id) {
-            return Err(ServerError::PermissionDenied(
-                "Worker is not assigned to this task".to_string(),
-            ));
+            let task = state.store.update_unit_task(task).await?;
+            state.broker.publish(StreamEvent {
+                event_type: StreamEventType::TaskUpdated,
+                workspace_id: task.workspace_id.to_string(),
+                payload: serde_json::to_value(&task).unwrap_or_default(),
+            });
         }
     }
 
-    // Get secrets from cache
-    let cache = state.secrets_cache.read().await;
-    let secrets = cache.get(&task_id).cloned().unwrap_or_default();
+    state.broker.publish(StreamEvent {
+        event_type: StreamEventType::SubtaskUpdated,
+        workspace_id: String::new(),
+        payload: serde_json::to_value(&subtask).unwrap_or_default(),
+    });
 
-    tracing::info!(
-        worker_id = %worker_id,
-        task_id = %task_id,
-        secret_count = secrets.len(),
-        "Secrets retrieved for task"
+    Ok(Json(ReportSubTaskStatusResponse {}))
+}
+
+pub async fn emit_session_event(
+    State(state): State<SharedState>,
+    Json(req): Json<EmitSessionEventRequest>,
+) -> AppResult<Json<EmitSessionEventResponse>> {
+    // Ensure the session exists; if not, create it lazily.
+    let session_exists = state
+        .store
+        .get_agent_session(req.event.session_id)
+        .await?
+        .is_some();
+
+    if !session_exists {
+        // This should not normally happen — worker should have registered the session
+        // first.
+        tracing::warn!(
+            session_id = %req.event.session_id,
+            "Received event for unknown session — ignoring"
+        );
+        return Ok(Json(EmitSessionEventResponse {}));
+    }
+
+    let event = state.store.append_session_output(req.event).await?;
+    tracing::debug!(
+        session_id = %event.session_id,
+        sequence = %event.sequence,
+        "Session output event stored"
     );
 
-    Ok(Json(GetSecretsResponse { secrets }))
+    state.broker.publish(StreamEvent {
+        event_type: StreamEventType::SessionOutput,
+        workspace_id: String::new(),
+        payload: serde_json::to_value(&event).unwrap_or_default(),
+    });
+
+    Ok(Json(EmitSessionEventResponse {}))
 }

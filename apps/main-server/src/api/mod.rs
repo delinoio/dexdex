@@ -1,116 +1,143 @@
-//! API endpoints.
+//! API route registration.
 
-pub mod auth;
+pub mod badge;
+pub mod events;
+pub mod notification;
+pub mod pr;
 pub mod repository;
+pub mod review;
 pub mod secrets;
 pub mod session;
+pub mod subtask;
 pub mod task;
-pub mod todo;
 pub mod worker;
 pub mod workspace;
 
-use std::sync::Arc;
+use axum::{Router, routing::post};
 
-use axum::{
-    Router,
-    routing::{get, post},
-};
-use task_store::TaskStore;
+use crate::state::SharedState;
 
-use crate::state::AppState;
-
-/// Creates the API router with all endpoints.
-pub fn create_router<S: TaskStore + 'static>() -> Router<Arc<AppState<S>>> {
+/// Creates and returns the router with all API routes.
+pub fn create_router() -> Router<SharedState> {
     Router::new()
-        // Task management endpoints
-        .route("/api/task/create-unit", post(task::create_unit_task))
+        // WorkspaceService
+        .route("/WorkspaceService/Create", post(workspace::create))
+        .route("/WorkspaceService/List", post(workspace::list))
+        .route("/WorkspaceService/Get", post(workspace::get))
+        .route("/WorkspaceService/Update", post(workspace::update))
+        .route("/WorkspaceService/Delete", post(workspace::delete))
+        // RepositoryService
+        .route("/RepositoryService/Add", post(repository::add))
+        .route("/RepositoryService/List", post(repository::list))
+        .route("/RepositoryService/Get", post(repository::get))
+        .route("/RepositoryService/Remove", post(repository::remove))
         .route(
-            "/api/task/create-composite",
-            post(task::create_composite_task),
-        )
-        .route("/api/task/get", post(task::get_task))
-        .route("/api/task/list", post(task::list_tasks))
-        .route("/api/task/update-status", post(task::update_task_status))
-        .route("/api/task/delete", post(task::delete_task))
-        .route("/api/task/retry", post(task::retry_task))
-        .route("/api/task/approve", post(task::approve_task))
-        .route("/api/task/reject", post(task::reject_task))
-        .route("/api/task/request-changes", post(task::request_changes))
-        .route("/api/task/update-plan", post(task::update_plan))
-        // Session endpoints
-        .route("/api/session/get-log", post(session::get_log))
-        .route("/api/session/stop", post(session::stop_session))
-        .route(
-            "/api/session/submit-tty-input",
-            post(session::submit_tty_input),
+            "/RepositoryService/CreateGroup",
+            post(repository::create_group),
         )
         .route(
-            "/api/session/wait-tty-response",
-            post(session::wait_tty_response),
-        )
-        // Repository endpoints
-        .route("/api/repository/add", post(repository::add_repository))
-        .route("/api/repository/list", post(repository::list_repositories))
-        .route("/api/repository/get", post(repository::get_repository))
-        .route(
-            "/api/repository/remove",
-            post(repository::remove_repository),
+            "/RepositoryService/ListGroups",
+            post(repository::list_groups),
         )
         .route(
-            "/api/repository-group/create",
-            post(repository::create_repository_group),
+            "/RepositoryService/UpdateGroup",
+            post(repository::update_group),
         )
         .route(
-            "/api/repository-group/get",
-            post(repository::get_repository_group),
+            "/RepositoryService/DeleteGroup",
+            post(repository::delete_group),
+        )
+        // TaskService
+        .route("/TaskService/Create", post(task::create))
+        .route("/TaskService/List", post(task::list))
+        .route("/TaskService/Get", post(task::get))
+        .route("/TaskService/Cancel", post(task::cancel))
+        .route("/TaskService/Delete", post(task::delete))
+        // SubTaskService
+        .route("/SubTaskService/List", post(subtask::list))
+        .route("/SubTaskService/Get", post(subtask::get))
+        .route("/SubTaskService/Approve", post(subtask::approve))
+        .route("/SubTaskService/ApprovePlan", post(subtask::approve_plan))
+        .route("/SubTaskService/RevisePlan", post(subtask::revise_plan))
+        .route("/SubTaskService/Retry", post(subtask::retry))
+        // SessionService
+        .route("/SessionService/List", post(session::list))
+        .route("/SessionService/Get", post(session::get))
+        .route("/SessionService/GetOutput", post(session::get_output))
+        .route("/SessionService/Stop", post(session::stop))
+        // PrManagementService
+        .route(
+            "/PrManagementService/CreateTracking",
+            post(pr::create_tracking),
+        )
+        .route("/PrManagementService/GetTracking", post(pr::get_tracking))
+        .route(
+            "/PrManagementService/ListTrackings",
+            post(pr::list_trackings),
         )
         .route(
-            "/api/repository-group/list",
-            post(repository::list_repository_groups),
+            "/PrManagementService/TriggerAutoFix",
+            post(pr::trigger_auto_fix),
+        )
+        // ReviewAssistService
+        .route(
+            "/ReviewAssistService/ListItems",
+            post(review::list_assist_items),
         )
         .route(
-            "/api/repository-group/update",
-            post(repository::update_repository_group),
+            "/ReviewAssistService/Acknowledge",
+            post(review::acknowledge_assist_item),
         )
         .route(
-            "/api/repository-group/delete",
-            post(repository::delete_repository_group),
+            "/ReviewAssistService/Dismiss",
+            post(review::dismiss_assist_item),
         )
-        // Workspace endpoints
-        .route("/api/workspace/create", post(workspace::create_workspace))
-        .route("/api/workspace/list", post(workspace::list_workspaces))
-        .route("/api/workspace/get", post(workspace::get_workspace))
-        .route("/api/workspace/update", post(workspace::update_workspace))
-        .route("/api/workspace/delete", post(workspace::delete_workspace))
-        // Todo endpoints
-        .route("/api/todo/list", post(todo::list_todo_items))
-        .route("/api/todo/get", post(todo::get_todo_item))
-        .route("/api/todo/update-status", post(todo::update_todo_status))
-        .route("/api/todo/dismiss", post(todo::dismiss_todo))
-        // Secrets endpoints
-        .route("/api/secrets/send", post(secrets::send_secrets))
-        .route("/api/secrets/clear", post(secrets::clear_secrets))
-        // Auth endpoints
-        .route("/api/auth/get-login-url", post(auth::get_login_url))
-        .route("/api/auth/callback", get(auth::handle_callback))
-        .route("/api/auth/refresh", post(auth::refresh_token))
-        .route("/api/auth/me", get(auth::get_current_user))
-        .route("/api/auth/logout", post(auth::logout))
-        // Worker endpoints (internal)
-        .route("/api/worker/register", post(worker::register_worker))
-        .route("/api/worker/heartbeat", post(worker::heartbeat))
-        .route("/api/worker/unregister", post(worker::unregister_worker))
-        .route("/api/worker/get-task", post(worker::get_next_task))
+        // ReviewCommentService
         .route(
-            "/api/worker/report-status",
-            post(worker::report_task_status),
+            "/ReviewCommentService/List",
+            post(review::list_inline_comments),
         )
-        .route("/api/worker/get-secrets", post(worker::get_secrets))
-        // Health check
-        .route("/health", get(health_check))
-}
-
-/// Health check endpoint.
-async fn health_check() -> &'static str {
-    "OK"
+        .route(
+            "/ReviewCommentService/Create",
+            post(review::create_inline_comment),
+        )
+        .route(
+            "/ReviewCommentService/Resolve",
+            post(review::resolve_inline_comment),
+        )
+        // BadgeThemeService
+        .route("/BadgeThemeService/List", post(badge::list))
+        .route("/BadgeThemeService/Upsert", post(badge::upsert))
+        // NotificationService
+        .route("/NotificationService/List", post(notification::list))
+        .route(
+            "/NotificationService/MarkRead",
+            post(notification::mark_read),
+        )
+        .route(
+            "/NotificationService/MarkAllRead",
+            post(notification::mark_all_read),
+        )
+        // EventStreamService (SSE)
+        .route("/EventStreamService/Subscribe", post(events::subscribe))
+        // WorkerService
+        .route("/WorkerService/Register", post(worker::register))
+        .route("/WorkerService/Heartbeat", post(worker::heartbeat))
+        .route("/WorkerService/Unregister", post(worker::unregister))
+        .route(
+            "/WorkerService/GetNextSubTask",
+            post(worker::get_next_sub_task),
+        )
+        .route(
+            "/WorkerService/ReportSubTaskStatus",
+            post(worker::report_sub_task_status),
+        )
+        .route(
+            "/WorkerService/EmitSessionEvent",
+            post(worker::emit_session_event),
+        )
+        // SecretsService
+        .route("/SecretsService/Send", post(secrets::send))
+        .route("/SecretsService/Clear", post(secrets::clear))
+        .route("/SecretsService/Get", post(secrets::get))
 }

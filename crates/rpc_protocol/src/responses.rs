@@ -1,96 +1,40 @@
 //! RPC response types.
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::types::*;
 
 // ============================================================================
-// Task Service Responses
+// WorkspaceService Responses
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateUnitTaskResponse {
-    pub task: UnitTask,
+pub struct CreateWorkspaceResponse {
+    pub workspace: Workspace,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateCompositeTaskResponse {
-    pub task: CompositeTask,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GetTaskResponse {
-    UnitTask { unit_task: UnitTask },
-    CompositeTask { composite_task: CompositeTask },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListTasksResponse {
-    pub unit_tasks: Vec<UnitTask>,
-    pub composite_tasks: Vec<CompositeTask>,
+pub struct ListWorkspacesResponse {
+    pub workspaces: Vec<Workspace>,
     pub total_count: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum UpdateTaskStatusResponse {
-    UnitTask { unit_task: UnitTask },
-    CompositeTask { composite_task: CompositeTask },
+pub struct GetWorkspaceResponse {
+    pub workspace: Workspace,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteTaskResponse {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RetryTaskResponse {
-    pub task: UnitTask,
+pub struct UpdateWorkspaceResponse {
+    pub workspace: Workspace,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApproveTaskResponse {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RejectTaskResponse {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestChangesResponse {
-    pub task: UnitTask,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdatePlanResponse {
-    pub task: CompositeTask,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DismissApprovalResponse {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreatePrResponse {
-    pub pr_url: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitToLocalResponse {}
+pub struct DeleteWorkspaceResponse {}
 
 // ============================================================================
-// Session Service Responses
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLogResponse {
-    pub log: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopSessionResponse {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubmitTtyInputResponse {}
-
-// ============================================================================
-// Repository Service Responses
+// RepositoryService Responses
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,105 +81,187 @@ pub struct UpdateRepositoryGroupResponse {
 pub struct DeleteRepositoryGroupResponse {}
 
 // ============================================================================
-// Workspace Service Responses
+// TaskService Responses
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateWorkspaceResponse {
-    pub workspace: Workspace,
+pub struct CreateTaskResponse {
+    pub task: UnitTask,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListWorkspacesResponse {
-    pub workspaces: Vec<Workspace>,
+pub struct GetTaskResponse {
+    pub task: UnitTask,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListTasksResponse {
+    pub tasks: Vec<UnitTask>,
     pub total_count: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetWorkspaceResponse {
-    pub workspace: Workspace,
-}
+pub struct CancelTaskResponse {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateWorkspaceResponse {
-    pub workspace: Workspace,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteWorkspaceResponse {}
+pub struct DeleteTaskResponse {}
 
 // ============================================================================
-// Todo Service Responses
+// SubTaskService Responses
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListTodoItemsResponse {
-    pub items: Vec<TodoItem>,
+pub struct GetSubTaskResponse {
+    pub sub_task: SubTask,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSubTasksResponse {
+    pub sub_tasks: Vec<SubTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApproveSubTaskResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovePlanResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevisePlanResponse {
+    pub sub_task: SubTask,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrySubTaskResponse {
+    pub sub_task: SubTask,
+}
+
+// ============================================================================
+// SessionService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSessionResponse {
+    pub session: AgentSession,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSessionsResponse {
+    pub sessions: Vec<AgentSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSessionOutputResponse {
+    pub events: Vec<SessionOutputEvent>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StopSessionResponse {}
+
+// ============================================================================
+// PrManagementService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePrTrackingResponse {
+    pub pr_tracking: PullRequestTracking,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetPrTrackingResponse {
+    pub pr_tracking: PullRequestTracking,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPrTrackingsResponse {
+    pub pr_trackings: Vec<PullRequestTracking>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggerAutoFixResponse {}
+
+// ============================================================================
+// ReviewAssistService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListReviewAssistItemsResponse {
+    pub items: Vec<ReviewAssistItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcknowledgeReviewAssistItemResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DismissReviewAssistItemResponse {}
+
+// ============================================================================
+// ReviewCommentService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListReviewInlineCommentsResponse {
+    pub comments: Vec<ReviewInlineComment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReviewInlineCommentResponse {
+    pub comment: ReviewInlineComment,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveReviewInlineCommentResponse {}
+
+// ============================================================================
+// BadgeThemeService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListBadgeThemesResponse {
+    pub themes: Vec<BadgeTheme>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertBadgeThemeResponse {
+    pub theme: BadgeTheme,
+}
+
+// ============================================================================
+// NotificationService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListNotificationsResponse {
+    pub notifications: Vec<Notification>,
     pub total_count: i32,
+    pub unread_count: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetTodoItemResponse {
-    pub item: TodoItem,
-}
+pub struct MarkNotificationReadResponse {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateTodoStatusResponse {
-    pub item: TodoItem,
+pub struct MarkAllNotificationsReadResponse {
+    pub marked_count: i32,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DismissTodoResponse {}
 
 // ============================================================================
-// Secrets Service Responses
+// EventStreamService Responses
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SendSecretsResponse {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClearSecretsResponse {}
+pub struct SubscribeResponse {
+    pub event: StreamEvent,
+}
 
 // ============================================================================
-// Auth Service Responses
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLoginUrlResponse {
-    pub login_url: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandleCallbackResponse {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_in: i64,
-    pub user: User,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RefreshTokenResponse {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_in: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetCurrentUserResponse {
-    pub user: User,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogoutResponse {}
-
-// ============================================================================
-// Worker Service Responses
+// WorkerService Responses
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterWorkerResponse {
-    pub worker_id: String,
+    pub worker_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,13 +271,26 @@ pub struct HeartbeatResponse {}
 pub struct UnregisterWorkerResponse {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetNextTaskResponse {
-    pub task: Option<UnitTask>,
-    pub agent_task: Option<AgentTask>,
+pub struct GetNextSubTaskResponse {
+    pub sub_task: Option<SubTask>,
+    pub unit_task: Option<UnitTask>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReportTaskStatusResponse {}
+pub struct ReportSubTaskStatusResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmitSessionEventResponse {}
+
+// ============================================================================
+// SecretsService Responses
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendSecretsResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClearSecretsResponse {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetSecretsResponse {

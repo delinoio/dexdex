@@ -1,49 +1,30 @@
 //! Worker server configuration.
 
-use serde::{Deserialize, Serialize};
+use entities::AiAgentType;
 
 /// Worker server configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct WorkerConfig {
     /// Main server URL to connect to.
     pub main_server_url: String,
     /// Worker name/identifier.
     pub worker_name: String,
-    /// Worker port for callbacks.
-    pub worker_port: u16,
-    /// Docker socket path.
-    pub docker_socket: String,
-    /// Container memory limit.
-    pub container_memory_limit: String,
-    /// Container CPU limit (empty string means no limit).
-    pub container_cpu_limit: String,
     /// Log level.
     pub log_level: String,
-    /// Heartbeat interval in seconds.
-    pub heartbeat_interval_secs: u64,
-    /// Default Docker image to use.
-    pub default_docker_image: String,
-    /// Working directory for worktrees.
-    pub workdir: String,
+    /// Poll interval in milliseconds.
+    pub poll_interval_ms: u64,
+    /// Default AI agent type.
+    pub agent_type: AiAgentType,
 }
 
 impl Default for WorkerConfig {
     fn default() -> Self {
         Self {
             main_server_url: "http://localhost:54871".to_string(),
-            worker_name: hostname::get()
-                .ok()
-                .and_then(|h| h.into_string().ok())
-                .unwrap_or_else(|| "worker".to_string()),
-            worker_port: 54872,
-            docker_socket: "/var/run/docker.sock".to_string(),
-            container_memory_limit: "8g".to_string(),
-            container_cpu_limit: String::new(),
+            worker_name: hostname(),
             log_level: "info".to_string(),
-            heartbeat_interval_secs: 30,
-            default_docker_image: "node:20-slim".to_string(),
-            workdir: std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
-                + "/.dexdex/worktrees",
+            poll_interval_ms: 2000,
+            agent_type: AiAgentType::ClaudeCode,
         }
     }
 }
@@ -53,33 +34,44 @@ impl WorkerConfig {
     pub fn from_env() -> Self {
         let default = Self::default();
 
+        let agent_type = std::env::var("DEXDEX_AGENT_TYPE")
+            .ok()
+            .and_then(|s| parse_agent_type(&s))
+            .unwrap_or(default.agent_type);
+
         Self {
             main_server_url: std::env::var("DEXDEX_MAIN_SERVER_URL")
                 .unwrap_or(default.main_server_url),
             worker_name: std::env::var("DEXDEX_WORKER_NAME").unwrap_or(default.worker_name),
-            worker_port: std::env::var("DEXDEX_WORKER_PORT")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(default.worker_port),
-            docker_socket: std::env::var("DEXDEX_DOCKER_SOCKET").unwrap_or(default.docker_socket),
-            container_memory_limit: std::env::var("DEXDEX_CONTAINER_MEMORY_LIMIT")
-                .unwrap_or(default.container_memory_limit),
-            container_cpu_limit: std::env::var("DEXDEX_CONTAINER_CPU_LIMIT")
-                .unwrap_or(default.container_cpu_limit),
             log_level: std::env::var("DEXDEX_LOG_LEVEL").unwrap_or(default.log_level),
-            heartbeat_interval_secs: std::env::var("DEXDEX_HEARTBEAT_INTERVAL")
+            poll_interval_ms: std::env::var("DEXDEX_POLL_INTERVAL_MS")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(default.heartbeat_interval_secs),
-            default_docker_image: std::env::var("DEXDEX_DEFAULT_DOCKER_IMAGE")
-                .unwrap_or(default.default_docker_image),
-            workdir: std::env::var("DEXDEX_WORKDIR").unwrap_or(default.workdir),
+                .unwrap_or(default.poll_interval_ms),
+            agent_type,
         }
     }
+}
 
-    /// Returns the worker's callback endpoint URL.
-    pub fn callback_url(&self) -> String {
-        format!("http://{}:{}", self.worker_name, self.worker_port)
+/// Returns the hostname of the current machine.
+fn hostname() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "worker".to_string())
+}
+
+/// Parses an agent type string.
+fn parse_agent_type(s: &str) -> Option<AiAgentType> {
+    match s.to_lowercase().as_str() {
+        "claude_code" | "claudecode" => Some(AiAgentType::ClaudeCode),
+        "open_code" | "opencode" => Some(AiAgentType::OpenCode),
+        "gemini_cli" | "geminicli" => Some(AiAgentType::GeminiCli),
+        "codex_cli" | "codexcli" => Some(AiAgentType::CodexCli),
+        "aider" => Some(AiAgentType::Aider),
+        "amp" => Some(AiAgentType::Amp),
+        _ => None,
     }
 }
 
@@ -91,8 +83,21 @@ mod tests {
     fn test_default_config() {
         let config = WorkerConfig::default();
         assert_eq!(config.main_server_url, "http://localhost:54871");
-        assert_eq!(config.worker_port, 54872);
-        assert_eq!(config.heartbeat_interval_secs, 30);
-        assert_eq!(config.default_docker_image, "node:20-slim");
+        assert_eq!(config.poll_interval_ms, 2000);
+        assert_eq!(config.agent_type, AiAgentType::ClaudeCode);
+    }
+
+    #[test]
+    fn test_parse_agent_type() {
+        assert_eq!(
+            parse_agent_type("claude_code"),
+            Some(AiAgentType::ClaudeCode)
+        );
+        assert_eq!(
+            parse_agent_type("ClaudeCode"),
+            Some(AiAgentType::ClaudeCode)
+        );
+        assert_eq!(parse_agent_type("aider"), Some(AiAgentType::Aider));
+        assert_eq!(parse_agent_type("unknown"), None);
     }
 }

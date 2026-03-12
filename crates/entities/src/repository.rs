@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{VcsProviderType, VcsType};
+use crate::VcsProviderType;
 
 /// A repository tracked by DexDex.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,10 +20,8 @@ pub struct Repository {
     pub remote_url: String,
     /// Default branch name.
     pub default_branch: String,
-    /// Version control system type.
-    pub vcs_type: VcsType,
     /// VCS provider type.
-    pub vcs_provider_type: VcsProviderType,
+    pub vcs_provider: VcsProviderType,
     /// When this record was created.
     pub created_at: DateTime<Utc>,
     /// When this record was last updated.
@@ -36,7 +34,7 @@ impl Repository {
         workspace_id: Uuid,
         name: impl Into<String>,
         remote_url: impl Into<String>,
-        vcs_provider_type: VcsProviderType,
+        vcs_provider: VcsProviderType,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -45,8 +43,7 @@ impl Repository {
             name: name.into(),
             remote_url: remote_url.into(),
             default_branch: "main".to_string(),
-            vcs_type: VcsType::Git,
-            vcs_provider_type,
+            vcs_provider,
             created_at: now,
             updated_at: now,
         }
@@ -148,8 +145,7 @@ mod tests {
         assert_eq!(repo.name, "my-repo");
         assert_eq!(repo.remote_url, "https://github.com/user/my-repo");
         assert_eq!(repo.default_branch, "develop");
-        assert_eq!(repo.vcs_type, VcsType::Git);
-        assert_eq!(repo.vcs_provider_type, VcsProviderType::Github);
+        assert_eq!(repo.vcs_provider, VcsProviderType::Github);
     }
 
     #[test]

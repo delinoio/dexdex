@@ -5,20 +5,8 @@ package dexdex;
 import "google/protobuf/timestamp.proto";
 
 // ============================================================================
-// Common Types
+// Common Enums
 // ============================================================================
-
-enum VcsType {
-  VCS_TYPE_UNSPECIFIED = 0;
-  VCS_TYPE_GIT = 1;
-}
-
-enum VcsProviderType {
-  VCS_PROVIDER_TYPE_UNSPECIFIED = 0;
-  VCS_PROVIDER_TYPE_GITHUB = 1;
-  VCS_PROVIDER_TYPE_GITLAB = 2;
-  VCS_PROVIDER_TYPE_BITBUCKET = 3;
-}
 
 enum AiAgentType {
   AI_AGENT_TYPE_UNSPECIFIED = 0;
@@ -32,39 +20,107 @@ enum AiAgentType {
 
 enum UnitTaskStatus {
   UNIT_TASK_STATUS_UNSPECIFIED = 0;
-  UNIT_TASK_STATUS_IN_PROGRESS = 1;
-  UNIT_TASK_STATUS_IN_REVIEW = 2;
-  UNIT_TASK_STATUS_APPROVED = 3;
-  UNIT_TASK_STATUS_PR_OPEN = 4;
-  UNIT_TASK_STATUS_DONE = 5;
-  UNIT_TASK_STATUS_REJECTED = 6;
-  UNIT_TASK_STATUS_FAILED = 7;
-  UNIT_TASK_STATUS_CANCELLED = 8;
+  UNIT_TASK_STATUS_QUEUED = 1;
+  UNIT_TASK_STATUS_IN_PROGRESS = 2;
+  UNIT_TASK_STATUS_ACTION_REQUIRED = 3;
+  UNIT_TASK_STATUS_BLOCKED = 4;
+  UNIT_TASK_STATUS_COMPLETED = 5;
+  UNIT_TASK_STATUS_FAILED = 6;
+  UNIT_TASK_STATUS_CANCELLED = 7;
 }
 
-enum CompositeTaskStatus {
-  COMPOSITE_TASK_STATUS_UNSPECIFIED = 0;
-  COMPOSITE_TASK_STATUS_PLANNING = 1;
-  COMPOSITE_TASK_STATUS_PENDING_APPROVAL = 2;
-  COMPOSITE_TASK_STATUS_IN_PROGRESS = 3;
-  COMPOSITE_TASK_STATUS_DONE = 4;
-  COMPOSITE_TASK_STATUS_REJECTED = 5;
+enum SubTaskType {
+  SUB_TASK_TYPE_UNSPECIFIED = 0;
+  SUB_TASK_TYPE_INITIAL_IMPLEMENTATION = 1;
+  SUB_TASK_TYPE_REQUEST_CHANGES = 2;
+  SUB_TASK_TYPE_PR_CREATE = 3;
+  SUB_TASK_TYPE_PR_REVIEW_FIX = 4;
+  SUB_TASK_TYPE_PR_CI_FIX = 5;
+  SUB_TASK_TYPE_MANUAL_RETRY = 6;
 }
 
-enum TtyInputType {
-  TTY_INPUT_TYPE_UNSPECIFIED = 0;
-  TTY_INPUT_TYPE_TEXT = 1;
-  TTY_INPUT_TYPE_SELECT = 2;
-  TTY_INPUT_TYPE_CONFIRM = 3;
-  TTY_INPUT_TYPE_PASSWORD = 4;
+enum SubTaskStatus {
+  SUB_TASK_STATUS_UNSPECIFIED = 0;
+  SUB_TASK_STATUS_QUEUED = 1;
+  SUB_TASK_STATUS_IN_PROGRESS = 2;
+  SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL = 3;
+  SUB_TASK_STATUS_WAITING_FOR_USER_INPUT = 4;
+  SUB_TASK_STATUS_COMPLETED = 5;
+  SUB_TASK_STATUS_FAILED = 6;
+  SUB_TASK_STATUS_CANCELLED = 7;
 }
 
-enum TtyInputStatus {
-  TTY_INPUT_STATUS_UNSPECIFIED = 0;
-  TTY_INPUT_STATUS_PENDING = 1;
-  TTY_INPUT_STATUS_RESPONDED = 2;
-  TTY_INPUT_STATUS_TIMEOUT = 3;
-  TTY_INPUT_STATUS_CANCELLED = 4;
+enum AgentSessionStatus {
+  AGENT_SESSION_STATUS_UNSPECIFIED = 0;
+  AGENT_SESSION_STATUS_STARTING = 1;
+  AGENT_SESSION_STATUS_RUNNING = 2;
+  AGENT_SESSION_STATUS_WAITING_FOR_INPUT = 3;
+  AGENT_SESSION_STATUS_COMPLETED = 4;
+  AGENT_SESSION_STATUS_FAILED = 5;
+  AGENT_SESSION_STATUS_CANCELLED = 6;
+}
+
+enum SessionOutputKind {
+  SESSION_OUTPUT_KIND_UNSPECIFIED = 0;
+  SESSION_OUTPUT_KIND_TEXT = 1;
+  SESSION_OUTPUT_KIND_PLAN_UPDATE = 2;
+  SESSION_OUTPUT_KIND_TOOL_CALL = 3;
+  SESSION_OUTPUT_KIND_TOOL_RESULT = 4;
+  SESSION_OUTPUT_KIND_PROGRESS = 5;
+  SESSION_OUTPUT_KIND_WARNING = 6;
+  SESSION_OUTPUT_KIND_ERROR = 7;
+}
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  ACTION_TYPE_REVIEW_REQUESTED = 1;
+  ACTION_TYPE_PR_CREATION_READY = 2;
+  ACTION_TYPE_PLAN_APPROVAL_REQUIRED = 3;
+  ACTION_TYPE_CI_FAILED = 4;
+  ACTION_TYPE_MERGE_CONFLICT = 5;
+  ACTION_TYPE_SECURITY_ALERT = 6;
+  ACTION_TYPE_USER_INPUT_REQUIRED = 7;
+}
+
+enum PrStatus {
+  PR_STATUS_UNSPECIFIED = 0;
+  PR_STATUS_OPEN = 1;
+  PR_STATUS_APPROVED = 2;
+  PR_STATUS_CHANGES_REQUESTED = 3;
+  PR_STATUS_MERGED = 4;
+  PR_STATUS_CLOSED = 5;
+  PR_STATUS_CI_FAILED = 6;
+}
+
+enum BadgeColorKey {
+  BADGE_COLOR_KEY_UNSPECIFIED = 0;
+  BADGE_COLOR_KEY_BLUE = 1;
+  BADGE_COLOR_KEY_GREEN = 2;
+  BADGE_COLOR_KEY_YELLOW = 3;
+  BADGE_COLOR_KEY_ORANGE = 4;
+  BADGE_COLOR_KEY_RED = 5;
+  BADGE_COLOR_KEY_GRAY = 6;
+}
+
+enum StreamEventType {
+  STREAM_EVENT_TYPE_UNSPECIFIED = 0;
+  STREAM_EVENT_TYPE_TASK_UPDATED = 1;
+  STREAM_EVENT_TYPE_SUBTASK_UPDATED = 2;
+  STREAM_EVENT_TYPE_SESSION_OUTPUT = 3;
+  STREAM_EVENT_TYPE_SESSION_STATE_CHANGED = 4;
+  STREAM_EVENT_TYPE_PR_UPDATED = 5;
+  STREAM_EVENT_TYPE_REVIEW_ASSIST_UPDATED = 6;
+  STREAM_EVENT_TYPE_INLINE_COMMENT_UPDATED = 7;
+  STREAM_EVENT_TYPE_NOTIFICATION_CREATED = 8;
+}
+
+enum NotificationType {
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  NOTIFICATION_TYPE_TASK_ACTION_REQUIRED = 1;
+  NOTIFICATION_TYPE_PLAN_ACTION_REQUIRED = 2;
+  NOTIFICATION_TYPE_PR_REVIEW_ACTIVITY = 3;
+  NOTIFICATION_TYPE_PR_CI_FAILURE = 4;
+  NOTIFICATION_TYPE_AGENT_SESSION_FAILED = 5;
 }
 
 enum WorkerStatus {
@@ -74,122 +130,191 @@ enum WorkerStatus {
   WORKER_STATUS_UNHEALTHY = 3;
 }
 
-// ============================================================================
-// Entity Messages
-// ============================================================================
-
-message BaseRemote {
-  string git_remote_url = 1;
-  string git_branch_name = 2;
+enum ReviewAssistItemStatus {
+  REVIEW_ASSIST_ITEM_STATUS_UNSPECIFIED = 0;
+  REVIEW_ASSIST_ITEM_STATUS_PENDING = 1;
+  REVIEW_ASSIST_ITEM_STATUS_ACKNOWLEDGED = 2;
+  REVIEW_ASSIST_ITEM_STATUS_DISMISSED = 3;
 }
 
-message AgentSession {
-  string id = 1;
-  string agent_task_id = 2;
-  AiAgentType ai_agent_type = 3;
-  optional string ai_agent_model = 4;
-  optional google.protobuf.Timestamp started_at = 5;
-  optional google.protobuf.Timestamp completed_at = 6;
-  optional string output_log = 7;
-  google.protobuf.Timestamp created_at = 8;
+enum ReviewInlineCommentStatus {
+  REVIEW_INLINE_COMMENT_STATUS_UNSPECIFIED = 0;
+  REVIEW_INLINE_COMMENT_STATUS_OPEN = 1;
+  REVIEW_INLINE_COMMENT_STATUS_RESOLVED = 2;
 }
 
-message AgentTask {
-  string id = 1;
-  repeated BaseRemote base_remotes = 2;
-  repeated AgentSession agent_sessions = 3;
-  optional AiAgentType ai_agent_type = 4;
-  optional string ai_agent_model = 5;
-  google.protobuf.Timestamp created_at = 6;
+enum VcsProviderType {
+  VCS_PROVIDER_TYPE_UNSPECIFIED = 0;
+  VCS_PROVIDER_TYPE_GITHUB = 1;
+  VCS_PROVIDER_TYPE_GITLAB = 2;
+  VCS_PROVIDER_TYPE_BITBUCKET = 3;
+}
+
+// ============================================================================
+// Core Messages
+// ============================================================================
+
+message GeneratedCommit {
+  string sha = 1;
+  repeated string parent_shas = 2;
+  string title = 3;
+  optional string body = 4;
+  google.protobuf.Timestamp authored_at = 5;
+}
+
+message TokenUsageMetrics {
+  string provider = 1;
+  string model = 2;
+  uint64 input_tokens = 3;
+  uint64 output_tokens = 4;
+  uint64 cache_read_tokens = 5;
+  uint64 cache_write_tokens = 6;
+  uint64 total_tokens = 7;
+  double total_cost_usd = 8;
 }
 
 message UnitTask {
   string id = 1;
-  string repository_group_id = 2;
-  string agent_task_id = 3;
-  string prompt = 4;
-  optional string title = 5;
+  string workspace_id = 2;
+  string repository_group_id = 3;
+  string title = 4;
+  string prompt = 5;
   optional string branch_name = 6;
-  optional string linked_pr_url = 7;
-  optional string base_commit = 8;
-  optional string end_commit = 9;
-  repeated string auto_fix_task_ids = 10;
-  UnitTaskStatus status = 11;
+  UnitTaskStatus status = 7;
+  repeated ActionType action_types = 8;
+  repeated string pr_tracking_ids = 9;
+  optional string latest_commit_sha = 10;
+  uint32 generated_commit_count = 11;
+  optional string latest_patch_ref = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message SubTask {
+  string id = 1;
+  string unit_task_id = 2;
+  SubTaskType type = 3;
+  string prompt = 4;
+  SubTaskStatus status = 5;
+  bool plan_mode_enabled = 6;
+  optional ActionType target_action_type = 7;
+  optional string base_commit_sha = 8;
+  optional string head_commit_sha = 9;
+  repeated GeneratedCommit generated_commits = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message AgentSession {
+  string id = 1;
+  string sub_task_id = 2;
+  AiAgentType agent_type = 3;
+  optional string model = 4;
+  AgentSessionStatus status = 5;
+  optional TokenUsageMetrics token_usage = 6;
+  optional google.protobuf.Timestamp started_at = 7;
+  optional google.protobuf.Timestamp completed_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message SessionOutputEvent {
+  string id = 1;
+  string session_id = 2;
+  uint64 sequence = 3;
+  SessionOutputKind kind = 4;
+  string message = 5;
+  map<string, string> attributes = 6;
+  google.protobuf.Timestamp emitted_at = 7;
+}
+
+message PullRequestTracking {
+  string id = 1;
+  string unit_task_id = 2;
+  VcsProviderType provider = 3;
+  string repository_id = 4;
+  uint32 pr_number = 5;
+  string pr_url = 6;
+  PrStatus status = 7;
+  optional google.protobuf.Timestamp last_polled_at = 8;
+  bool auto_fix_enabled = 9;
+  uint32 max_auto_fix_attempts = 10;
+  uint32 auto_fix_attempts_used = 11;
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
-  optional string git_patch = 14;
 }
 
-message CompositeTaskNode {
+message ReviewAssistItem {
   string id = 1;
-  string composite_task_id = 2;
-  string unit_task_id = 3;
-  repeated string depends_on_ids = 4;
-  google.protobuf.Timestamp created_at = 5;
-}
-
-message CompositeTask {
-  string id = 1;
-  string repository_group_id = 2;
-  string planning_task_id = 3;
-  string prompt = 4;
-  optional string title = 5;
-  repeated string node_ids = 6;
-  CompositeTaskStatus status = 7;
-  optional AiAgentType execution_agent_type = 8;
-  google.protobuf.Timestamp created_at = 9;
-  google.protobuf.Timestamp updated_at = 10;
-}
-
-message Repository {
-  string id = 1;
-  string workspace_id = 2;
-  string name = 3;
-  string remote_url = 4;
-  string default_branch = 5;
-  VcsType vcs_type = 6;
-  VcsProviderType vcs_provider_type = 7;
+  string unit_task_id = 2;
+  string pr_tracking_id = 3;
+  string source_type = 4;
+  string title = 5;
+  optional string details = 6;
+  ReviewAssistItemStatus status = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
 }
 
-message RepositoryGroup {
+message ReviewInlineComment {
+  string id = 1;
+  string unit_task_id = 2;
+  optional string sub_task_id = 3;
+  string file_path = 4;
+  string side = 5;
+  uint32 line_number = 6;
+  string body = 7;
+  ReviewInlineCommentStatus status = 8;
+  optional string author_user_id = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message BadgeTheme {
   string id = 1;
   string workspace_id = 2;
-  optional string name = 3;
-  repeated string repository_ids = 4;
+  ActionType action_type = 3;
+  BadgeColorKey color_key = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
+}
+
+message Notification {
+  string id = 1;
+  string workspace_id = 2;
+  NotificationType type = 3;
+  string title = 4;
+  string body = 5;
+  optional string deep_link = 6;
+  optional google.protobuf.Timestamp read_at = 7;
+  google.protobuf.Timestamp created_at = 8;
 }
 
 message Workspace {
   string id = 1;
   string name = 2;
-  optional string description = 3;
-  optional string user_id = 4;
+  optional string endpoint_url = 3;
+  optional string auth_profile_id = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
 }
 
-message User {
+message Repository {
   string id = 1;
-  string email = 2;
-  optional string name = 3;
-  google.protobuf.Timestamp created_at = 4;
-  google.protobuf.Timestamp updated_at = 5;
+  string workspace_id = 2;
+  string remote_url = 3;
+  string default_branch = 4;
+  VcsProviderType vcs_provider = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
 }
 
-message TtyInputRequest {
+message RepositoryGroup {
   string id = 1;
-  string task_id = 2;
-  string session_id = 3;
-  string prompt = 4;
-  TtyInputType input_type = 5;
-  repeated string options = 6;
-  TtyInputStatus status = 7;
-  optional string response = 8;
-  google.protobuf.Timestamp created_at = 9;
-  optional google.protobuf.Timestamp responded_at = 10;
+  string workspace_id = 2;
+  string name = 3;
+  repeated string repository_ids = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
 }
 
 message Worker {
@@ -198,168 +323,83 @@ message Worker {
   string endpoint_url = 3;
   WorkerStatus status = 4;
   google.protobuf.Timestamp last_heartbeat = 5;
-  optional string current_task_id = 6;
+  optional string current_sub_task_id = 6;
   google.protobuf.Timestamp registered_at = 7;
 }
 
 // ============================================================================
-// Task Service
+// Stream Events
 // ============================================================================
 
-message CreateUnitTaskRequest {
-  string repository_group_id = 1;
-  string prompt = 2;
-  optional string title = 3;
-  optional string branch_name = 4;
-  optional AiAgentType ai_agent_type = 5;
-  optional string ai_agent_model = 6;
-}
-
-message CreateUnitTaskResponse {
-  UnitTask task = 1;
-}
-
-message CreateCompositeTaskRequest {
-  string repository_group_id = 1;
-  string prompt = 2;
-  optional string title = 3;
-  optional AiAgentType execution_agent_type = 4;
-  optional AiAgentType planning_agent_type = 5;
-}
-
-message CreateCompositeTaskResponse {
-  CompositeTask task = 1;
-}
-
-message GetTaskRequest {
-  string task_id = 1;
-}
-
-message GetTaskResponse {
-  oneof task {
-    UnitTask unit_task = 1;
-    CompositeTask composite_task = 2;
-  }
-}
-
-message ListTasksRequest {
-  optional string repository_group_id = 1;
-  optional UnitTaskStatus unit_status = 2;
-  optional CompositeTaskStatus composite_status = 3;
-  int32 limit = 4;
-  int32 offset = 5;
-}
-
-message ListTasksResponse {
-  repeated UnitTask unit_tasks = 1;
-  repeated CompositeTask composite_tasks = 2;
-  int32 total_count = 3;
-}
-
-message UpdateTaskStatusRequest {
-  string task_id = 1;
-  oneof status {
-    UnitTaskStatus unit_status = 2;
-    CompositeTaskStatus composite_status = 3;
-  }
-}
-
-message UpdateTaskStatusResponse {
-  oneof task {
-    UnitTask unit_task = 1;
-    CompositeTask composite_task = 2;
-  }
-}
-
-message DeleteTaskRequest {
-  string task_id = 1;
-}
-
-message DeleteTaskResponse {}
-
-message RetryTaskRequest {
-  string task_id = 1;
-}
-
-message RetryTaskResponse {
-  UnitTask task = 1;
-}
-
-message ApproveTaskRequest {
-  string task_id = 1;
-}
-
-message ApproveTaskResponse {}
-
-message RejectTaskRequest {
-  string task_id = 1;
-  optional string reason = 2;
-}
-
-message RejectTaskResponse {}
-
-message RequestChangesRequest {
-  string task_id = 1;
-  string feedback = 2;
-}
-
-message RequestChangesResponse {
-  UnitTask task = 1;
-}
-
-service TaskService {
-  rpc CreateUnit(CreateUnitTaskRequest) returns (CreateUnitTaskResponse);
-  rpc CreateComposite(CreateCompositeTaskRequest) returns (CreateCompositeTaskResponse);
-  rpc Get(GetTaskRequest) returns (GetTaskResponse);
-  rpc List(ListTasksRequest) returns (ListTasksResponse);
-  rpc UpdateStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
-  rpc Delete(DeleteTaskRequest) returns (DeleteTaskResponse);
-  rpc Retry(RetryTaskRequest) returns (RetryTaskResponse);
-  rpc Approve(ApproveTaskRequest) returns (ApproveTaskResponse);
-  rpc Reject(RejectTaskRequest) returns (RejectTaskResponse);
-  rpc RequestChanges(RequestChangesRequest) returns (RequestChangesResponse);
+message StreamEvent {
+  StreamEventType type = 1;
+  string workspace_id = 2;
+  optional string payload_json = 3;
 }
 
 // ============================================================================
-// Session Service
+// WorkspaceService
 // ============================================================================
 
-message GetLogRequest {
-  string session_id = 1;
+message CreateWorkspaceRequest {
+  string name = 1;
+  optional string endpoint_url = 2;
 }
 
-message GetLogResponse {
-  string log = 1;
+message CreateWorkspaceResponse {
+  Workspace workspace = 1;
 }
 
-message StopSessionRequest {
-  string session_id = 1;
+message ListWorkspacesRequest {
+  int32 limit = 1;
+  int32 offset = 2;
 }
 
-message StopSessionResponse {}
-
-message SubmitTtyInputRequest {
-  string request_id = 1;
-  string response = 2;
+message ListWorkspacesResponse {
+  repeated Workspace workspaces = 1;
+  int32 total_count = 2;
 }
 
-message SubmitTtyInputResponse {}
+message GetWorkspaceRequest {
+  string workspace_id = 1;
+}
 
-service SessionService {
-  rpc GetLog(GetLogRequest) returns (GetLogResponse);
-  rpc Stop(StopSessionRequest) returns (StopSessionResponse);
-  rpc SubmitTtyInput(SubmitTtyInputRequest) returns (SubmitTtyInputResponse);
+message GetWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+message UpdateWorkspaceRequest {
+  string workspace_id = 1;
+  optional string name = 2;
+  optional string endpoint_url = 3;
+}
+
+message UpdateWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+message DeleteWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message DeleteWorkspaceResponse {}
+
+service WorkspaceService {
+  rpc Create(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  rpc List(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc Get(GetWorkspaceRequest) returns (GetWorkspaceResponse);
+  rpc Update(UpdateWorkspaceRequest) returns (UpdateWorkspaceResponse);
+  rpc Delete(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
 }
 
 // ============================================================================
-// Repository Service
+// RepositoryService
 // ============================================================================
 
 message AddRepositoryRequest {
   string workspace_id = 1;
   string remote_url = 2;
-  optional string name = 3;
-  optional string default_branch = 4;
+  optional string default_branch = 3;
 }
 
 message AddRepositoryResponse {
@@ -393,7 +433,7 @@ message RemoveRepositoryResponse {}
 
 message CreateRepositoryGroupRequest {
   string workspace_id = 1;
-  optional string name = 2;
+  string name = 2;
   repeated string repository_ids = 3;
 }
 
@@ -440,228 +480,452 @@ service RepositoryService {
 }
 
 // ============================================================================
-// Workspace Service
+// TaskService
 // ============================================================================
 
-message CreateWorkspaceRequest {
-  string name = 1;
-  optional string description = 2;
+message CreateTaskRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+  string title = 3;
+  string prompt = 4;
+  optional string branch_name = 5;
+  optional AiAgentType agent_type = 6;
+  optional string model = 7;
+  bool plan_mode_enabled = 8;
 }
 
-message CreateWorkspaceResponse {
-  Workspace workspace = 1;
+message CreateTaskResponse {
+  UnitTask task = 1;
 }
 
-message ListWorkspacesRequest {
-  int32 limit = 1;
-  int32 offset = 2;
+message ListTasksRequest {
+  optional string workspace_id = 1;
+  optional string repository_group_id = 2;
+  optional UnitTaskStatus status = 3;
+  int32 limit = 4;
+  int32 offset = 5;
 }
 
-message ListWorkspacesResponse {
-  repeated Workspace workspaces = 1;
+message ListTasksResponse {
+  repeated UnitTask tasks = 1;
   int32 total_count = 2;
 }
 
-message GetWorkspaceRequest {
-  string workspace_id = 1;
+message GetTaskRequest {
+  string task_id = 1;
 }
 
-message GetWorkspaceResponse {
-  Workspace workspace = 1;
+message GetTaskResponse {
+  UnitTask task = 1;
 }
 
-message UpdateWorkspaceRequest {
-  string workspace_id = 1;
-  optional string name = 2;
-  optional string description = 3;
+message DeleteTaskRequest {
+  string task_id = 1;
 }
 
-message UpdateWorkspaceResponse {
-  Workspace workspace = 1;
+message DeleteTaskResponse {}
+
+message ApproveSubTaskRequest {
+  string sub_task_id = 1;
 }
 
-message DeleteWorkspaceRequest {
-  string workspace_id = 1;
+message ApproveSubTaskResponse {
+  SubTask sub_task = 1;
 }
 
-message DeleteWorkspaceResponse {}
+message RequestChangesRequest {
+  string task_id = 1;
+  string feedback = 2;
+}
 
-service WorkspaceService {
-  rpc Create(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
-  rpc List(ListWorkspacesRequest) returns (ListWorkspacesResponse);
-  rpc Get(GetWorkspaceRequest) returns (GetWorkspaceResponse);
-  rpc Update(UpdateWorkspaceRequest) returns (UpdateWorkspaceResponse);
-  rpc Delete(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
+message RequestChangesResponse {
+  UnitTask task = 1;
+}
+
+message RejectSubTaskRequest {
+  string sub_task_id = 1;
+  optional string reason = 2;
+}
+
+message RejectSubTaskResponse {}
+
+message ApprovePlanRequest {
+  string sub_task_id = 1;
+}
+
+message ApprovePlanResponse {
+  SubTask sub_task = 1;
+}
+
+message RevisePlanRequest {
+  string sub_task_id = 1;
+  string feedback = 2;
+}
+
+message RevisePlanResponse {
+  SubTask sub_task = 1;
+}
+
+message RejectPlanRequest {
+  string sub_task_id = 1;
+  optional string reason = 2;
+}
+
+message RejectPlanResponse {}
+
+message SubmitUserInputRequest {
+  string session_id = 1;
+  string input = 2;
+}
+
+message SubmitUserInputResponse {}
+
+message CreatePrRequest {
+  string task_id = 1;
+}
+
+message CreatePrResponse {
+  UnitTask task = 1;
+}
+
+message CommitToLocalRequest {
+  string task_id = 1;
+}
+
+message CommitToLocalResponse {}
+
+message StopTaskRequest {
+  string task_id = 1;
+}
+
+message StopTaskResponse {}
+
+message RetrySubTaskRequest {
+  string sub_task_id = 1;
+}
+
+message RetrySubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+service TaskService {
+  rpc Create(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc List(ListTasksRequest) returns (ListTasksResponse);
+  rpc Get(GetTaskRequest) returns (GetTaskResponse);
+  rpc Delete(DeleteTaskRequest) returns (DeleteTaskResponse);
+  rpc ApproveSubTask(ApproveSubTaskRequest) returns (ApproveSubTaskResponse);
+  rpc RequestChanges(RequestChangesRequest) returns (RequestChangesResponse);
+  rpc RejectSubTask(RejectSubTaskRequest) returns (RejectSubTaskResponse);
+  rpc ApprovePlan(ApprovePlanRequest) returns (ApprovePlanResponse);
+  rpc RevisePlan(RevisePlanRequest) returns (RevisePlanResponse);
+  rpc RejectPlan(RejectPlanRequest) returns (RejectPlanResponse);
+  rpc SubmitUserInput(SubmitUserInputRequest) returns (SubmitUserInputResponse);
+  rpc CreatePr(CreatePrRequest) returns (CreatePrResponse);
+  rpc CommitToLocal(CommitToLocalRequest) returns (CommitToLocalResponse);
+  rpc Stop(StopTaskRequest) returns (StopTaskResponse);
+  rpc RetrySubTask(RetrySubTaskRequest) returns (RetrySubTaskResponse);
 }
 
 // ============================================================================
-// Todo Service
+// SubTaskService
 // ============================================================================
 
-enum TodoItemType {
-  TODO_ITEM_TYPE_UNSPECIFIED = 0;
-  TODO_ITEM_TYPE_ISSUE_TRIAGE = 1;
-  TODO_ITEM_TYPE_PR_REVIEW = 2;
+message ListSubTasksRequest {
+  string unit_task_id = 1;
 }
 
-enum TodoItemStatus {
-  TODO_ITEM_STATUS_UNSPECIFIED = 0;
-  TODO_ITEM_STATUS_PENDING = 1;
-  TODO_ITEM_STATUS_IN_PROGRESS = 2;
-  TODO_ITEM_STATUS_COMPLETED = 3;
-  TODO_ITEM_STATUS_DISMISSED = 4;
+message ListSubTasksResponse {
+  repeated SubTask sub_tasks = 1;
 }
 
-message IssueTriageData {
-  string issue_url = 1;
-  string issue_title = 2;
-  repeated string suggested_labels = 3;
-  repeated string suggested_assignees = 4;
+message GetSubTaskRequest {
+  string sub_task_id = 1;
 }
 
-message PrReviewData {
-  string pr_url = 1;
-  string pr_title = 2;
-  int32 changed_files_count = 3;
-  optional string ai_summary = 4;
+message GetSubTaskResponse {
+  SubTask sub_task = 1;
 }
 
-message TodoItem {
-  string id = 1;
-  TodoItemType item_type = 2;
-  TodoItemStatus status = 3;
-  string repository_id = 4;
-  oneof data {
-    IssueTriageData issue_triage = 5;
-    PrReviewData pr_review = 6;
-  }
-  google.protobuf.Timestamp created_at = 7;
-  google.protobuf.Timestamp updated_at = 8;
+service SubTaskService {
+  rpc List(ListSubTasksRequest) returns (ListSubTasksResponse);
+  rpc Get(GetSubTaskRequest) returns (GetSubTaskResponse);
 }
 
-message ListTodoItemsRequest {
-  optional string repository_id = 1;
-  optional TodoItemStatus status = 2;
+// ============================================================================
+// SessionService
+// ============================================================================
+
+message ListSessionsRequest {
+  string sub_task_id = 1;
+}
+
+message ListSessionsResponse {
+  repeated AgentSession sessions = 1;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+message GetSessionResponse {
+  AgentSession session = 1;
+}
+
+message GetSessionLogRequest {
+  string session_id = 1;
+  optional uint64 since_sequence = 2;
+}
+
+message GetSessionLogResponse {
+  repeated SessionOutputEvent events = 1;
+}
+
+message StopSessionRequest {
+  string session_id = 1;
+}
+
+message StopSessionResponse {}
+
+message SubmitInputRequest {
+  string session_id = 1;
+  string input = 2;
+}
+
+message SubmitInputResponse {}
+
+service SessionService {
+  rpc List(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc Get(GetSessionRequest) returns (GetSessionResponse);
+  rpc GetLog(GetSessionLogRequest) returns (GetSessionLogResponse);
+  rpc Stop(StopSessionRequest) returns (StopSessionResponse);
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+}
+
+// ============================================================================
+// PrManagementService
+// ============================================================================
+
+message ListPrTrackingsRequest {
+  optional string unit_task_id = 1;
+  optional PrStatus status = 2;
   int32 limit = 3;
   int32 offset = 4;
 }
 
-message ListTodoItemsResponse {
-  repeated TodoItem items = 1;
+message ListPrTrackingsResponse {
+  repeated PullRequestTracking pr_trackings = 1;
   int32 total_count = 2;
 }
 
-message GetTodoItemRequest {
+message GetPrTrackingRequest {
+  string pr_tracking_id = 1;
+}
+
+message GetPrTrackingResponse {
+  PullRequestTracking pr_tracking = 1;
+}
+
+message UpdateAutoFixPolicyRequest {
+  string pr_tracking_id = 1;
+  bool auto_fix_enabled = 2;
+  optional uint32 max_auto_fix_attempts = 3;
+}
+
+message UpdateAutoFixPolicyResponse {
+  PullRequestTracking pr_tracking = 1;
+}
+
+service PrManagementService {
+  rpc List(ListPrTrackingsRequest) returns (ListPrTrackingsResponse);
+  rpc Get(GetPrTrackingRequest) returns (GetPrTrackingResponse);
+  rpc UpdateAutoFixPolicy(UpdateAutoFixPolicyRequest) returns (UpdateAutoFixPolicyResponse);
+}
+
+// ============================================================================
+// ReviewAssistService
+// ============================================================================
+
+message ListReviewAssistItemsRequest {
+  optional string unit_task_id = 1;
+  optional string pr_tracking_id = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListReviewAssistItemsResponse {
+  repeated ReviewAssistItem items = 1;
+  int32 total_count = 2;
+}
+
+message GetReviewAssistItemRequest {
   string item_id = 1;
 }
 
-message GetTodoItemResponse {
-  TodoItem item = 1;
+message GetReviewAssistItemResponse {
+  ReviewAssistItem item = 1;
 }
 
-message UpdateTodoStatusRequest {
-  string item_id = 1;
-  TodoItemStatus status = 2;
-}
-
-message UpdateTodoStatusResponse {
-  TodoItem item = 1;
-}
-
-message DismissTodoRequest {
+message AcknowledgeReviewAssistItemRequest {
   string item_id = 1;
 }
 
-message DismissTodoResponse {}
+message AcknowledgeReviewAssistItemResponse {
+  ReviewAssistItem item = 1;
+}
 
-service TodoService {
-  rpc List(ListTodoItemsRequest) returns (ListTodoItemsResponse);
-  rpc Get(GetTodoItemRequest) returns (GetTodoItemResponse);
-  rpc UpdateStatus(UpdateTodoStatusRequest) returns (UpdateTodoStatusResponse);
-  rpc Dismiss(DismissTodoRequest) returns (DismissTodoResponse);
+message DismissReviewAssistItemRequest {
+  string item_id = 1;
+}
+
+message DismissReviewAssistItemResponse {}
+
+service ReviewAssistService {
+  rpc List(ListReviewAssistItemsRequest) returns (ListReviewAssistItemsResponse);
+  rpc Get(GetReviewAssistItemRequest) returns (GetReviewAssistItemResponse);
+  rpc Acknowledge(AcknowledgeReviewAssistItemRequest) returns (AcknowledgeReviewAssistItemResponse);
+  rpc Dismiss(DismissReviewAssistItemRequest) returns (DismissReviewAssistItemResponse);
 }
 
 // ============================================================================
-// Secrets Service
+// ReviewCommentService
 // ============================================================================
 
-message Secret {
-  string key = 1;
-  string value = 2;
+message CreateReviewCommentRequest {
+  string unit_task_id = 1;
+  optional string sub_task_id = 2;
+  string file_path = 3;
+  string side = 4;
+  uint32 line_number = 5;
+  string body = 6;
 }
 
-message SendSecretsRequest {
-  string task_id = 1;
-  repeated Secret secrets = 2;
+message CreateReviewCommentResponse {
+  ReviewInlineComment comment = 1;
 }
 
-message SendSecretsResponse {}
-
-message ClearSecretsRequest {
-  string task_id = 1;
+message ListReviewCommentsRequest {
+  string unit_task_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
 }
 
-message ClearSecretsResponse {}
-
-service SecretsService {
-  rpc Send(SendSecretsRequest) returns (SendSecretsResponse);
-  rpc Clear(ClearSecretsRequest) returns (ClearSecretsResponse);
+message ListReviewCommentsResponse {
+  repeated ReviewInlineComment comments = 1;
+  int32 total_count = 2;
 }
 
-// ============================================================================
-// Auth Service
-// ============================================================================
-
-message GetLoginUrlRequest {
-  string redirect_uri = 1;
+message UpdateReviewCommentRequest {
+  string comment_id = 1;
+  string body = 2;
 }
 
-message GetLoginUrlResponse {
-  string login_url = 1;
+message UpdateReviewCommentResponse {
+  ReviewInlineComment comment = 1;
 }
 
-message HandleCallbackRequest {
-  string code = 1;
-  string state = 2;
+message ResolveReviewCommentRequest {
+  string comment_id = 1;
 }
 
-message HandleCallbackResponse {
-  string access_token = 1;
-  string refresh_token = 2;
-  int64 expires_in = 3;
-  User user = 4;
+message ResolveReviewCommentResponse {}
+
+message ReopenReviewCommentRequest {
+  string comment_id = 1;
 }
 
-message RefreshTokenRequest {
-  string refresh_token = 1;
+message ReopenReviewCommentResponse {}
+
+message DeleteReviewCommentRequest {
+  string comment_id = 1;
 }
 
-message RefreshTokenResponse {
-  string access_token = 1;
-  string refresh_token = 2;
-  int64 expires_in = 3;
-}
+message DeleteReviewCommentResponse {}
 
-message GetCurrentUserRequest {}
-
-message GetCurrentUserResponse {
-  User user = 1;
-}
-
-message LogoutRequest {}
-
-message LogoutResponse {}
-
-service AuthService {
-  rpc GetLoginUrl(GetLoginUrlRequest) returns (GetLoginUrlResponse);
-  rpc HandleCallback(HandleCallbackRequest) returns (HandleCallbackResponse);
-  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
-  rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
-  rpc Logout(LogoutRequest) returns (LogoutResponse);
+service ReviewCommentService {
+  rpc Create(CreateReviewCommentRequest) returns (CreateReviewCommentResponse);
+  rpc List(ListReviewCommentsRequest) returns (ListReviewCommentsResponse);
+  rpc Update(UpdateReviewCommentRequest) returns (UpdateReviewCommentResponse);
+  rpc Resolve(ResolveReviewCommentRequest) returns (ResolveReviewCommentResponse);
+  rpc Reopen(ReopenReviewCommentRequest) returns (ReopenReviewCommentResponse);
+  rpc Delete(DeleteReviewCommentRequest) returns (DeleteReviewCommentResponse);
 }
 
 // ============================================================================
-// Worker Service (Internal)
+// BadgeThemeService
+// ============================================================================
+
+message ListBadgeThemesRequest {
+  string workspace_id = 1;
+}
+
+message ListBadgeThemesResponse {
+  repeated BadgeTheme themes = 1;
+}
+
+message UpdateBadgeThemeRequest {
+  string workspace_id = 1;
+  ActionType action_type = 2;
+  BadgeColorKey color_key = 3;
+}
+
+message UpdateBadgeThemeResponse {
+  BadgeTheme theme = 1;
+}
+
+service BadgeThemeService {
+  rpc List(ListBadgeThemesRequest) returns (ListBadgeThemesResponse);
+  rpc Update(UpdateBadgeThemeRequest) returns (UpdateBadgeThemeResponse);
+}
+
+// ============================================================================
+// NotificationService
+// ============================================================================
+
+message ListNotificationsRequest {
+  optional string workspace_id = 1;
+  optional bool unread_only = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  int32 total_count = 2;
+  uint32 unread_count = 3;
+}
+
+message MarkNotificationReadRequest {
+  string notification_id = 1;
+}
+
+message MarkNotificationReadResponse {}
+
+message MarkAllNotificationsReadRequest {
+  string workspace_id = 1;
+}
+
+message MarkAllNotificationsReadResponse {}
+
+service NotificationService {
+  rpc List(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc MarkRead(MarkNotificationReadRequest) returns (MarkNotificationReadResponse);
+  rpc MarkAllRead(MarkAllNotificationsReadRequest) returns (MarkAllNotificationsReadResponse);
+}
+
+// ============================================================================
+// EventStreamService
+// ============================================================================
+
+message SubscribeRequest {
+  string workspace_id = 1;
+}
+
+service EventStreamService {
+  rpc Subscribe(SubscribeRequest) returns (stream StreamEvent);
+}
+
+// ============================================================================
+// WorkerService (Internal)
 // ============================================================================
 
 message RegisterWorkerRequest {
@@ -676,7 +940,7 @@ message RegisterWorkerResponse {
 message HeartbeatRequest {
   string worker_id = 1;
   WorkerStatus status = 2;
-  optional string current_task_id = 3;
+  optional string current_sub_task_id = 3;
 }
 
 message HeartbeatResponse {}
@@ -687,40 +951,64 @@ message UnregisterWorkerRequest {
 
 message UnregisterWorkerResponse {}
 
-message GetNextTaskRequest {
+message GetNextSubTaskRequest {
   string worker_id = 1;
 }
 
-message GetNextTaskResponse {
-  optional UnitTask task = 1;
-  optional AgentTask agent_task = 2;
+message GetNextSubTaskResponse {
+  optional SubTask sub_task = 1;
+  optional UnitTask unit_task = 2;
 }
 
-message ReportTaskStatusRequest {
+message ReportSubTaskStatusRequest {
   string worker_id = 1;
-  string task_id = 2;
-  UnitTaskStatus status = 3;
-  optional string output_log = 4;
+  string sub_task_id = 2;
+  SubTaskStatus status = 3;
+  repeated GeneratedCommit generated_commits = 4;
   optional string error = 5;
-  optional string git_patch = 6;
 }
 
-message ReportTaskStatusResponse {}
+message ReportSubTaskStatusResponse {}
 
-message GetSecretsRequest {
+message EmitSessionEventRequest {
   string worker_id = 1;
-  string task_id = 2;
+  SessionOutputEvent event = 2;
 }
 
-message GetSecretsResponse {
-  repeated Secret secrets = 1;
-}
+message EmitSessionEventResponse {}
 
 service WorkerService {
   rpc Register(RegisterWorkerRequest) returns (RegisterWorkerResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
   rpc Unregister(UnregisterWorkerRequest) returns (UnregisterWorkerResponse);
-  rpc GetNextTask(GetNextTaskRequest) returns (GetNextTaskResponse);
-  rpc ReportTaskStatus(ReportTaskStatusRequest) returns (ReportTaskStatusResponse);
-  rpc GetSecrets(GetSecretsRequest) returns (GetSecretsResponse);
+  rpc GetNextSubTask(GetNextSubTaskRequest) returns (GetNextSubTaskResponse);
+  rpc ReportSubTaskStatus(ReportSubTaskStatusRequest) returns (ReportSubTaskStatusResponse);
+  rpc EmitSessionEvent(EmitSessionEventRequest) returns (EmitSessionEventResponse);
+}
+
+// ============================================================================
+// SecretsService
+// ============================================================================
+
+message Secret {
+  string key = 1;
+  string value = 2;
+}
+
+message SendSecretsRequest {
+  string sub_task_id = 1;
+  repeated Secret secrets = 2;
+}
+
+message SendSecretsResponse {}
+
+message ClearSecretsRequest {
+  string sub_task_id = 1;
+}
+
+message ClearSecretsResponse {}
+
+service SecretsService {
+  rpc Send(SendSecretsRequest) returns (SendSecretsResponse);
+  rpc Clear(ClearSecretsRequest) returns (ClearSecretsResponse);
 }

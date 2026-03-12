@@ -122,6 +122,7 @@ pub async fn create_workspace(
         let request = requests::CreateWorkspaceRequest {
             name: params.name,
             description: params.description,
+            endpoint_url: None,
         };
 
         let response = client.create_workspace(request).await?;
@@ -152,6 +153,8 @@ pub async fn create_workspace(
             user_id: None,
             name: sanitized_name,
             description: sanitized_description,
+            endpoint_url: None,
+            auth_profile_id: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
@@ -206,7 +209,6 @@ pub async fn list_workspaces(
             .ok_or_else(|| AppError::Internal("Local runtime not initialized".to_string()))?;
 
         let filter = WorkspaceFilter {
-            user_id: None,
             limit: params.limit.map(|l| l as u32),
             offset: params.offset.map(|o| o as u32),
         };
@@ -239,9 +241,10 @@ pub async fn get_workspace(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
-        let request = requests::GetWorkspaceRequest {
-            workspace_id: workspace_id.clone(),
-        };
+        let id = Uuid::parse_str(&workspace_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
+        let request = requests::GetWorkspaceRequest { workspace_id: id };
 
         let response = client.get_workspace(request).await?;
         return rpc_to_entity_workspace(response.workspace);
@@ -287,10 +290,15 @@ pub async fn update_workspace(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let id = Uuid::parse_str(&workspace_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
         let request = requests::UpdateWorkspaceRequest {
-            workspace_id: workspace_id.clone(),
+            workspace_id: id,
             name: params.name,
             description: params.description,
+            endpoint_url: None,
+            auth_profile_id: None,
         };
 
         let response = client.update_workspace(request).await?;
@@ -351,9 +359,10 @@ pub async fn delete_workspace(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
-        let request = requests::DeleteWorkspaceRequest {
-            workspace_id: workspace_id.clone(),
-        };
+        let id = Uuid::parse_str(&workspace_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
+        let request = requests::DeleteWorkspaceRequest { workspace_id: id };
 
         client.delete_workspace(request).await?;
         info!("Deleted workspace via remote: {}", workspace_id);
@@ -401,16 +410,17 @@ pub async fn get_default_workspace_id(
 
         let response = client.list_workspaces(request).await?;
         if let Some(workspace) = response.workspaces.into_iter().next() {
-            return Ok(workspace.id);
+            return Ok(workspace.id.to_string());
         }
 
         // No workspace exists yet, create a default one
         let create_request = requests::CreateWorkspaceRequest {
             name: "Default Workspace".to_string(),
             description: Some("Default workspace created automatically".to_string()),
+            endpoint_url: None,
         };
         let create_response = client.create_workspace(create_request).await?;
-        return Ok(create_response.workspace.id);
+        return Ok(create_response.workspace.id.to_string());
     }
 
     #[cfg(desktop)]

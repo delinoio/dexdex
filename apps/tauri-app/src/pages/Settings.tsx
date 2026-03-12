@@ -1,45 +1,50 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
-import { useMode, useSetMode } from "@/hooks/useMode";
-import { AiAgentType } from "@/api/types";
-import { notify } from "@/stores/notificationStore";
 import { useTheme } from "@/hooks/useTheme";
 import { ThemeMode } from "@/stores/themeStore";
+import { useWorkspaces, useCreateWorkspace, useUpdateWorkspace } from "@/api/hooks/useWorkspaces";
+import { useUiStore } from "@/stores/uiStore";
 
 export function Settings() {
-  const navigate = useNavigate();
-  const { data: currentMode } = useMode();
-  const setModeMutation = useSetMode();
-
-  const [mode, setMode] = useState<"local" | "remote">(() => {
-    // Validate that currentMode is a valid mode value
-    if (currentMode === "local" || currentMode === "remote") {
-      return currentMode;
-    }
-    return "local";
-  });
-  const [serverUrl, setServerUrl] = useState("");
+  const { data: workspacesData, isLoading: workspacesLoading } = useWorkspaces();
+  const createWorkspace = useCreateWorkspace();
+  const updateWorkspace = useUpdateWorkspace();
+  const currentWorkspaceId = useUiStore((s) => s.currentWorkspaceId);
+  const setCurrentWorkspaceId = useUiStore((s) => s.setCurrentWorkspaceId);
   const { mode: themeMode, setMode: setThemeMode, resolvedTheme } = useTheme();
-  const [hotkey, setHotkey] = useState("Option+Z");
-  const [planningAgent, setPlanningAgent] = useState(AiAgentType.ClaudeCode);
-  const [executionAgent, setExecutionAgent] = useState(AiAgentType.ClaudeCode);
-  const [chatAgent, setChatAgent] = useState(AiAgentType.ClaudeCode);
 
-  const handleSave = async () => {
-    try {
-      await setModeMutation.mutateAsync({
-        mode,
-        serverUrl: mode === "remote" ? serverUrl : undefined,
-      });
-      notify.success("Settings saved", "Your settings have been saved successfully.");
-    } catch {
-      notify.error("Failed to save settings", "Please try again.");
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newEndpointUrl, setNewEndpointUrl] = useState("");
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEndpointUrl, setEditEndpointUrl] = useState("");
+
+  const workspaces = workspacesData?.workspaces ?? [];
+
+  const handleCreateWorkspace = async () => {
+    if (!newWorkspaceName.trim()) return;
+    const result = await createWorkspace.mutateAsync({
+      name: newWorkspaceName.trim(),
+      endpointUrl: newEndpointUrl.trim() || undefined,
+    });
+    setNewWorkspaceName("");
+    setNewEndpointUrl("");
+    if (result.workspace && !currentWorkspaceId) {
+      setCurrentWorkspaceId(result.workspace.id);
     }
+  };
+
+  const handleSaveWorkspace = async () => {
+    if (!editingWorkspaceId) return;
+    await updateWorkspace.mutateAsync({
+      workspaceId: editingWorkspaceId,
+      name: editName.trim() || undefined,
+      endpointUrl: editEndpointUrl.trim() || undefined,
+    });
+    setEditingWorkspaceId(null);
   };
 
   return (
@@ -49,298 +54,162 @@ export function Settings() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-2xl">
-          <Tabs defaultValue="global">
+        <div className="mx-auto max-w-2xl space-y-6">
+          <Tabs defaultValue="appearance">
             <TabsList className="mb-6">
-              <TabsTrigger value="global">Global</TabsTrigger>
-              <TabsTrigger value="workspace">Workspace</TabsTrigger>
-              <TabsTrigger value="connection">Connection</TabsTrigger>
+              <TabsTrigger value="appearance">Appearance</TabsTrigger>
+              <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="global" className="space-y-6">
+            <TabsContent value="appearance" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Appearance</CardTitle>
+                  <CardTitle>Theme</CardTitle>
                   <CardDescription>
-                    Customize the look and feel of the application
+                    Choose your preferred color theme.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Theme</label>
-                    <div className="flex gap-3">
-                      {[
-                        { value: ThemeMode.Light, label: "Light", icon: (
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="4" />
-                            <path d="M12 2v2" /><path d="M12 20v2" />
-                            <path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" />
-                            <path d="M2 12h2" /><path d="M20 12h2" />
-                            <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
-                          </svg>
-                        )},
-                        { value: ThemeMode.Dark, label: "Dark", icon: (
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-                          </svg>
-                        )},
-                        { value: ThemeMode.System, label: "System", icon: (
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect width="20" height="14" x="2" y="3" rx="2" />
-                            <line x1="8" x2="16" y1="21" y2="21" />
-                            <line x1="12" x2="12" y1="17" y2="21" />
-                          </svg>
-                        )},
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          onClick={() => setThemeMode(option.value)}
-                          className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
-                            themeMode === option.value
-                              ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                              : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
-                          }`}
-                        >
-                          {option.icon}
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                      Currently using {resolvedTheme} theme{themeMode === ThemeMode.System ? " (based on system preference)" : ""}
-                    </p>
+                  <div className="flex gap-3">
+                    {[
+                      { value: ThemeMode.Light, label: "Light" },
+                      { value: ThemeMode.Dark, label: "Dark" },
+                      { value: ThemeMode.System, label: "System" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => setThemeMode(option.value)}
+                        className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                          themeMode === option.value
+                            ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                            : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Hotkey</CardTitle>
-                  <CardDescription>
-                    Configure keyboard shortcuts
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Open Chat</label>
-                    <Input
-                      value={hotkey}
-                      onChange={(e) => setHotkey(e.target.value)}
-                      placeholder="Option+Z"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Agent - Planning</CardTitle>
-                  <CardDescription>
-                    Configure the AI agent used for task planning
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Agent Type</label>
-                    <Select
-                      value={planningAgent}
-                      onChange={(e) =>
-                        setPlanningAgent(e.target.value as AiAgentType)
-                      }
-                    >
-                      <option value={AiAgentType.ClaudeCode}>Claude Code</option>
-                      <option value={AiAgentType.OpenCode}>OpenCode</option>
-                      <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
-                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
-                      <option value={AiAgentType.Aider}>Aider</option>
-                      <option value={AiAgentType.Amp}>Amp</option>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Agent - Execution</CardTitle>
-                  <CardDescription>
-                    Configure the AI agent used for task execution
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Agent Type</label>
-                    <Select
-                      value={executionAgent}
-                      onChange={(e) =>
-                        setExecutionAgent(e.target.value as AiAgentType)
-                      }
-                    >
-                      <option value={AiAgentType.ClaudeCode}>Claude Code</option>
-                      <option value={AiAgentType.OpenCode}>OpenCode</option>
-                      <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
-                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
-                      <option value={AiAgentType.Aider}>Aider</option>
-                      <option value={AiAgentType.Amp}>Amp</option>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Agent - Chat</CardTitle>
-                  <CardDescription>
-                    Configure the AI agent used for chat interactions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Agent Type</label>
-                    <Select
-                      value={chatAgent}
-                      onChange={(e) =>
-                        setChatAgent(e.target.value as AiAgentType)
-                      }
-                    >
-                      <option value={AiAgentType.ClaudeCode}>Claude Code</option>
-                      <option value={AiAgentType.OpenCode}>OpenCode</option>
-                      <option value={AiAgentType.GeminiCli}>Gemini CLI</option>
-                      <option value={AiAgentType.CodexCli}>Codex CLI</option>
-                      <option value={AiAgentType.Aider}>Aider</option>
-                      <option value={AiAgentType.Amp}>Amp</option>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="workspace" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Branch Template</CardTitle>
-                  <CardDescription>
-                    Template for auto-generated branch names
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Input
-                    defaultValue="feature/${taskId}-${slug}"
-                    placeholder="feature/${taskId}-${slug}"
-                  />
                   <p className="mt-2 text-xs text-[hsl(var(--muted-foreground))]">
-                    Available variables: {"{taskId}"}, {"{slug}"}
+                    Currently using {resolvedTheme} theme
+                    {themeMode === ThemeMode.System ? " (based on system preference)" : ""}
                   </p>
                 </CardContent>
               </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Automation</CardTitle>
-                  <CardDescription>
-                    Configure automatic task behaviors
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Auto-fix review comments</p>
-                      <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                        Automatically create tasks to address review feedback
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="h-4 w-4 rounded border-[hsl(var(--input))]"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Auto-fix CI failures</p>
-                      <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                        Automatically create tasks to fix CI issues
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="h-4 w-4 rounded border-[hsl(var(--input))]"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      Max auto-fix attempts
-                    </label>
-                    <Input type="number" defaultValue={3} min={1} max={10} />
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
 
-            <TabsContent value="connection" className="space-y-6">
+            <TabsContent value="workspaces" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Mode</CardTitle>
+                  <CardTitle>Workspaces</CardTitle>
                   <CardDescription>
-                    Choose between local and remote execution
+                    Manage workspaces and server connections.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="mode"
-                        checked={mode === "local"}
-                        onChange={() => setMode("local")}
-                        className="h-4 w-4"
-                      />
-                      <span className="text-sm font-medium">Local Mode</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="mode"
-                        checked={mode === "remote"}
-                        onChange={() => setMode("remote")}
-                        className="h-4 w-4"
-                      />
-                      <span className="text-sm font-medium">Remote Mode</span>
-                    </label>
-                  </div>
-
-                  {mode === "remote" && (
+                  {workspacesLoading ? (
+                    <p className="text-sm text-[hsl(var(--muted-foreground))]">Loading...</p>
+                  ) : (
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Server URL</label>
-                      <div className="flex gap-2">
-                        <Input
-                          value={serverUrl}
-                          onChange={(e) => setServerUrl(e.target.value)}
-                          placeholder="https://your-server.com"
-                        />
-                        <Button variant="outline">Test Connection</Button>
-                      </div>
+                      {workspaces.map((ws) =>
+                        editingWorkspaceId === ws.id ? (
+                          <div
+                            key={ws.id}
+                            className="rounded-md border border-[hsl(var(--border))] p-3 space-y-2"
+                          >
+                            <Input
+                              placeholder="Workspace name"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                            />
+                            <Input
+                              placeholder="Endpoint URL (e.g. http://localhost:3000)"
+                              value={editEndpointUrl}
+                              onChange={(e) => setEditEndpointUrl(e.target.value)}
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={handleSaveWorkspace}
+                                disabled={updateWorkspace.isPending}
+                              >
+                                {updateWorkspace.isPending ? "Saving..." : "Save"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditingWorkspaceId(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            key={ws.id}
+                            className="flex items-center justify-between rounded-md border border-[hsl(var(--border))] p-3"
+                          >
+                            <div>
+                              <p className="text-sm font-medium">{ws.name}</p>
+                              {ws.endpointUrl && (
+                                <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                                  {ws.endpointUrl}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {currentWorkspaceId === ws.id ? (
+                                <span className="text-xs text-[hsl(var(--primary))]">Active</span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setCurrentWorkspaceId(ws.id)}
+                                >
+                                  Select
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingWorkspaceId(ws.id);
+                                  setEditName(ws.name);
+                                  setEditEndpointUrl(ws.endpointUrl ?? "");
+                                }}
+                              >
+                                Edit
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      )}
                     </div>
                   )}
 
-                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                    Note: Changing mode requires restarting the application.
-                  </p>
+                  <div className="space-y-2 rounded-md border border-dashed border-[hsl(var(--border))] p-3">
+                    <p className="text-sm font-medium">Add Workspace</p>
+                    <Input
+                      placeholder="Workspace name"
+                      value={newWorkspaceName}
+                      onChange={(e) => setNewWorkspaceName(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Endpoint URL (e.g. http://localhost:3000)"
+                      value={newEndpointUrl}
+                      onChange={(e) => setNewEndpointUrl(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleCreateWorkspace}
+                      disabled={!newWorkspaceName.trim() || createWorkspace.isPending}
+                    >
+                      {createWorkspace.isPending ? "Creating..." : "Add Workspace"}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
-
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => navigate(-1)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={setModeMutation.isPending}>
-              {setModeMutation.isPending ? "Saving..." : "Save"}
-            </Button>
-          </div>
         </div>
       </div>
     </div>

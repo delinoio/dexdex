@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { parsePlanYamlToNodes } from "../planYaml";
-import { UnitTaskStatus } from "@/api/types";
 
 describe("parsePlanYamlToNodes", () => {
   it("parses a simple PLAN.yaml with one task", () => {
@@ -13,11 +12,10 @@ tasks:
 
     expect(nodes).toHaveLength(1);
     expect(nodes[0].node.id).toBe("task-1");
-    expect(nodes[0].node.compositeTaskId).toBe("composite-123");
     expect(nodes[0].node.dependsOnIds).toEqual([]);
     expect(nodes[0].unitTask.prompt).toBe("Do something");
     expect(nodes[0].unitTask.title).toBe("task-1");
-    expect(nodes[0].unitTask.status).toBe(UnitTaskStatus.Unspecified);
+    expect(nodes[0].unitTask.status).toBe("queued");
   });
 
   it("parses tasks with titles, branches, and dependencies", () => {
@@ -61,7 +59,7 @@ tasks:
     expect(nodes).toEqual([]);
   });
 
-  it("sets all task statuses to Unspecified", () => {
+  it("sets all task statuses to queued", () => {
     const yaml = `
 tasks:
   - id: "a"
@@ -73,7 +71,7 @@ tasks:
 `;
     const nodes = parsePlanYamlToNodes(yaml, "comp-111");
     for (const node of nodes) {
-      expect(node.unitTask.status).toBe(UnitTaskStatus.Unspecified);
+      expect(node.unitTask.status).toBe("queued");
     }
   });
 });

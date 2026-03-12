@@ -16,6 +16,10 @@ pub struct Workspace {
     pub description: Option<String>,
     /// Associated user ID (None in single-user mode).
     pub user_id: Option<Uuid>,
+    /// Optional custom endpoint URL for connecting to a self-hosted server.
+    pub endpoint_url: Option<String>,
+    /// Optional auth profile ID for authentication configuration.
+    pub auth_profile_id: Option<Uuid>,
     /// When this record was created.
     pub created_at: DateTime<Utc>,
     /// When this record was last updated.
@@ -31,6 +35,8 @@ impl Workspace {
             name: name.into(),
             description: None,
             user_id: None,
+            endpoint_url: None,
+            auth_profile_id: None,
             created_at: now,
             updated_at: now,
         }
@@ -45,6 +51,18 @@ impl Workspace {
     /// Sets the user ID for this workspace.
     pub fn with_user_id(mut self, user_id: Uuid) -> Self {
         self.user_id = Some(user_id);
+        self
+    }
+
+    /// Sets the endpoint URL for this workspace.
+    pub fn with_endpoint_url(mut self, endpoint_url: impl Into<String>) -> Self {
+        self.endpoint_url = Some(endpoint_url.into());
+        self
+    }
+
+    /// Sets the auth profile ID for this workspace.
+    pub fn with_auth_profile_id(mut self, auth_profile_id: Uuid) -> Self {
+        self.auth_profile_id = Some(auth_profile_id);
         self
     }
 }
@@ -64,6 +82,8 @@ mod tests {
             Some("A workspace for my projects".to_string())
         );
         assert!(workspace.user_id.is_none());
+        assert!(workspace.endpoint_url.is_none());
+        assert!(workspace.auth_profile_id.is_none());
     }
 
     #[test]
@@ -72,5 +92,16 @@ mod tests {
         let workspace = Workspace::new("Team Workspace").with_user_id(user_id);
 
         assert_eq!(workspace.user_id, Some(user_id));
+    }
+
+    #[test]
+    fn test_workspace_with_endpoint() {
+        let workspace =
+            Workspace::new("Cloud Workspace").with_endpoint_url("https://api.example.com");
+
+        assert_eq!(
+            workspace.endpoint_url,
+            Some("https://api.example.com".to_string())
+        );
     }
 }

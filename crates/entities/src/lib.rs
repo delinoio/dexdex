@@ -5,21 +5,19 @@
 //! more.
 
 mod agent;
+mod notification;
+mod pr;
 mod repository;
 mod sanitize;
+mod session;
 mod task;
-mod todo;
-mod token_usage;
-mod tty;
-mod user;
 mod workspace;
 
 pub use agent::*;
+pub use notification::*;
+pub use pr::*;
 pub use repository::*;
 pub use sanitize::*;
+pub use session::*;
 pub use task::*;
-pub use todo::*;
-pub use token_usage::*;
-pub use tty::*;
-pub use user::*;
 pub use workspace::*;

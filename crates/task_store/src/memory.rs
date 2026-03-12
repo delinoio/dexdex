@@ -3,32 +3,46 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
+use chrono::Utc;
 use entities::{
-    AgentSession, AgentTask, CompositeTask, CompositeTaskNode, Repository, RepositoryGroup,
-    TodoItem, TtyInputRequest, UnitTask, User, Workspace,
+    ActionType, AgentSession, BadgeTheme, Notification, PullRequestTracking, Repository,
+    RepositoryGroup, ReviewAssistItem, ReviewInlineComment, SessionOutputEvent, SubTask,
+    SubTaskStatus, UnitTask, Workspace,
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
     RepositoryFilter, RepositoryGroupFilter, TaskFilter, TaskStore, TaskStoreError,
-    TaskStoreResult, TodoFilter, TtyInputFilter, WorkspaceFilter,
+    TaskStoreResult, WorkspaceFilter,
 };
 
-/// In-memory task store for testing purposes.
+/// Internal storage for the in-memory task store.
 #[derive(Debug, Default)]
+struct StoreInner {
+    workspaces: HashMap<Uuid, Workspace>,
+    repositories: HashMap<Uuid, Repository>,
+    repository_groups: HashMap<Uuid, RepositoryGroup>,
+    unit_tasks: HashMap<Uuid, UnitTask>,
+    sub_tasks: HashMap<Uuid, SubTask>,
+    agent_sessions: HashMap<Uuid, AgentSession>,
+    session_outputs: Vec<SessionOutputEvent>,
+    pr_trackings: HashMap<Uuid, PullRequestTracking>,
+    review_assist_items: HashMap<Uuid, ReviewAssistItem>,
+    review_inline_comments: HashMap<Uuid, ReviewInlineComment>,
+    /// Key: (workspace_id, action_type discriminant string)
+    badge_themes: HashMap<(Uuid, String), BadgeTheme>,
+    notifications: HashMap<Uuid, Notification>,
+}
+
+fn action_type_key(action_type: ActionType) -> String {
+    format!("{:?}", action_type)
+}
+
+/// In-memory task store for testing purposes.
+#[derive(Debug, Default, Clone)]
 pub struct MemoryTaskStore {
-    users: Arc<RwLock<HashMap<Uuid, User>>>,
-    workspaces: Arc<RwLock<HashMap<Uuid, Workspace>>>,
-    repositories: Arc<RwLock<HashMap<Uuid, Repository>>>,
-    repository_groups: Arc<RwLock<HashMap<Uuid, RepositoryGroup>>>,
-    agent_tasks: Arc<RwLock<HashMap<Uuid, AgentTask>>>,
-    agent_sessions: Arc<RwLock<HashMap<Uuid, AgentSession>>>,
-    unit_tasks: Arc<RwLock<HashMap<Uuid, UnitTask>>>,
-    composite_tasks: Arc<RwLock<HashMap<Uuid, CompositeTask>>>,
-    composite_task_nodes: Arc<RwLock<HashMap<Uuid, CompositeTaskNode>>>,
-    todo_items: Arc<RwLock<HashMap<Uuid, TodoItem>>>,
-    tty_input_requests: Arc<RwLock<HashMap<Uuid, TtyInputRequest>>>,
+    inner: Arc<RwLock<StoreInner>>,
 }
 
 impl MemoryTaskStore {
@@ -41,82 +55,32 @@ impl MemoryTaskStore {
 #[async_trait]
 impl TaskStore for MemoryTaskStore {
     // =========================================================================
-    // User operations
-    // =========================================================================
-
-    async fn create_user(&self, user: User) -> TaskStoreResult<User> {
-        let mut users = self.users.write().await;
-        if users.contains_key(&user.id) {
-            return Err(TaskStoreError::already_exists("User", user.id.to_string()));
-        }
-        users.insert(user.id, user.clone());
-        Ok(user)
-    }
-
-    async fn get_user(&self, id: Uuid) -> TaskStoreResult<Option<User>> {
-        let users = self.users.read().await;
-        Ok(users.get(&id).cloned())
-    }
-
-    async fn get_user_by_email(&self, email: &str) -> TaskStoreResult<Option<User>> {
-        let users = self.users.read().await;
-        Ok(users.values().find(|u| u.email == email).cloned())
-    }
-
-    async fn update_user(&self, user: User) -> TaskStoreResult<User> {
-        let mut users = self.users.write().await;
-        if !users.contains_key(&user.id) {
-            return Err(TaskStoreError::not_found("User", user.id.to_string()));
-        }
-        users.insert(user.id, user.clone());
-        Ok(user)
-    }
-
-    async fn delete_user(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut users = self.users.write().await;
-        if users.remove(&id).is_none() {
-            return Err(TaskStoreError::not_found("User", id.to_string()));
-        }
-        Ok(())
-    }
-
-    // =========================================================================
     // Workspace operations
     // =========================================================================
 
     async fn create_workspace(&self, workspace: Workspace) -> TaskStoreResult<Workspace> {
-        let mut workspaces = self.workspaces.write().await;
-        if workspaces.contains_key(&workspace.id) {
+        let mut inner = self.inner.write().await;
+        if inner.workspaces.contains_key(&workspace.id) {
             return Err(TaskStoreError::already_exists(
                 "Workspace",
                 workspace.id.to_string(),
             ));
         }
-        workspaces.insert(workspace.id, workspace.clone());
+        inner.workspaces.insert(workspace.id, workspace.clone());
         Ok(workspace)
     }
 
     async fn get_workspace(&self, id: Uuid) -> TaskStoreResult<Option<Workspace>> {
-        let workspaces = self.workspaces.read().await;
-        Ok(workspaces.get(&id).cloned())
+        let inner = self.inner.read().await;
+        Ok(inner.workspaces.get(&id).cloned())
     }
 
     async fn list_workspaces(
         &self,
         filter: WorkspaceFilter,
     ) -> TaskStoreResult<(Vec<Workspace>, u32)> {
-        let workspaces = self.workspaces.read().await;
-        let mut result: Vec<Workspace> = workspaces
-            .values()
-            .filter(|w| {
-                if let Some(user_id) = filter.user_id {
-                    w.user_id == Some(user_id)
-                } else {
-                    true
-                }
-            })
-            .cloned()
-            .collect();
+        let inner = self.inner.read().await;
+        let mut result: Vec<Workspace> = inner.workspaces.values().cloned().collect();
 
         let total = result.len() as u32;
 
@@ -131,20 +95,20 @@ impl TaskStore for MemoryTaskStore {
     }
 
     async fn update_workspace(&self, workspace: Workspace) -> TaskStoreResult<Workspace> {
-        let mut workspaces = self.workspaces.write().await;
-        if !workspaces.contains_key(&workspace.id) {
+        let mut inner = self.inner.write().await;
+        if !inner.workspaces.contains_key(&workspace.id) {
             return Err(TaskStoreError::not_found(
                 "Workspace",
                 workspace.id.to_string(),
             ));
         }
-        workspaces.insert(workspace.id, workspace.clone());
+        inner.workspaces.insert(workspace.id, workspace.clone());
         Ok(workspace)
     }
 
     async fn delete_workspace(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut workspaces = self.workspaces.write().await;
-        if workspaces.remove(&id).is_none() {
+        let mut inner = self.inner.write().await;
+        if inner.workspaces.remove(&id).is_none() {
             return Err(TaskStoreError::not_found("Workspace", id.to_string()));
         }
         Ok(())
@@ -154,29 +118,30 @@ impl TaskStore for MemoryTaskStore {
     // Repository operations
     // =========================================================================
 
-    async fn create_repository(&self, repository: Repository) -> TaskStoreResult<Repository> {
-        let mut repositories = self.repositories.write().await;
-        if repositories.contains_key(&repository.id) {
+    async fn create_repository(&self, repo: Repository) -> TaskStoreResult<Repository> {
+        let mut inner = self.inner.write().await;
+        if inner.repositories.contains_key(&repo.id) {
             return Err(TaskStoreError::already_exists(
                 "Repository",
-                repository.id.to_string(),
+                repo.id.to_string(),
             ));
         }
-        repositories.insert(repository.id, repository.clone());
-        Ok(repository)
+        inner.repositories.insert(repo.id, repo.clone());
+        Ok(repo)
     }
 
     async fn get_repository(&self, id: Uuid) -> TaskStoreResult<Option<Repository>> {
-        let repositories = self.repositories.read().await;
-        Ok(repositories.get(&id).cloned())
+        let inner = self.inner.read().await;
+        Ok(inner.repositories.get(&id).cloned())
     }
 
     async fn list_repositories(
         &self,
         filter: RepositoryFilter,
     ) -> TaskStoreResult<(Vec<Repository>, u32)> {
-        let repositories = self.repositories.read().await;
-        let mut result: Vec<Repository> = repositories
+        let inner = self.inner.read().await;
+        let mut result: Vec<Repository> = inner
+            .repositories
             .values()
             .filter(|r| {
                 if let Some(workspace_id) = filter.workspace_id {
@@ -200,31 +165,26 @@ impl TaskStore for MemoryTaskStore {
         Ok((result, total))
     }
 
-    async fn update_repository(&self, repository: Repository) -> TaskStoreResult<Repository> {
-        let mut repositories = self.repositories.write().await;
-        if !repositories.contains_key(&repository.id) {
-            return Err(TaskStoreError::not_found(
-                "Repository",
-                repository.id.to_string(),
-            ));
+    async fn update_repository(&self, repo: Repository) -> TaskStoreResult<Repository> {
+        let mut inner = self.inner.write().await;
+        if !inner.repositories.contains_key(&repo.id) {
+            return Err(TaskStoreError::not_found("Repository", repo.id.to_string()));
         }
-        repositories.insert(repository.id, repository.clone());
-        Ok(repository)
+        inner.repositories.insert(repo.id, repo.clone());
+        Ok(repo)
     }
 
     async fn delete_repository(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut repositories = self.repositories.write().await;
-        if repositories.remove(&id).is_none() {
+        let mut inner = self.inner.write().await;
+        if inner.repositories.remove(&id).is_none() {
             return Err(TaskStoreError::not_found("Repository", id.to_string()));
         }
-        drop(repositories);
 
         // Remove the deleted repository from all repository groups
-        let mut groups = self.repository_groups.write().await;
-        for group in groups.values_mut() {
+        for group in inner.repository_groups.values_mut() {
             if group.repository_ids.contains(&id) {
                 group.repository_ids.retain(|&r| r != id);
-                group.updated_at = chrono::Utc::now();
+                group.updated_at = Utc::now();
             }
         }
 
@@ -232,35 +192,36 @@ impl TaskStore for MemoryTaskStore {
     }
 
     // =========================================================================
-    // Repository Group operations
+    // RepositoryGroup operations
     // =========================================================================
 
     async fn create_repository_group(
         &self,
         group: RepositoryGroup,
     ) -> TaskStoreResult<RepositoryGroup> {
-        let mut groups = self.repository_groups.write().await;
-        if groups.contains_key(&group.id) {
+        let mut inner = self.inner.write().await;
+        if inner.repository_groups.contains_key(&group.id) {
             return Err(TaskStoreError::already_exists(
                 "RepositoryGroup",
                 group.id.to_string(),
             ));
         }
-        groups.insert(group.id, group.clone());
+        inner.repository_groups.insert(group.id, group.clone());
         Ok(group)
     }
 
     async fn get_repository_group(&self, id: Uuid) -> TaskStoreResult<Option<RepositoryGroup>> {
-        let groups = self.repository_groups.read().await;
-        Ok(groups.get(&id).cloned())
+        let inner = self.inner.read().await;
+        Ok(inner.repository_groups.get(&id).cloned())
     }
 
     async fn list_repository_groups(
         &self,
         filter: RepositoryGroupFilter,
     ) -> TaskStoreResult<(Vec<RepositoryGroup>, u32)> {
-        let groups = self.repository_groups.read().await;
-        let mut result: Vec<RepositoryGroup> = groups
+        let inner = self.inner.read().await;
+        let mut result: Vec<RepositoryGroup> = inner
+            .repository_groups
             .values()
             .filter(|g| {
                 if let Some(ws_id) = filter.workspace_id {
@@ -288,144 +249,60 @@ impl TaskStore for MemoryTaskStore {
         &self,
         group: RepositoryGroup,
     ) -> TaskStoreResult<RepositoryGroup> {
-        let mut groups = self.repository_groups.write().await;
-        if !groups.contains_key(&group.id) {
+        let mut inner = self.inner.write().await;
+        if !inner.repository_groups.contains_key(&group.id) {
             return Err(TaskStoreError::not_found(
                 "RepositoryGroup",
                 group.id.to_string(),
             ));
         }
-        groups.insert(group.id, group.clone());
+        inner.repository_groups.insert(group.id, group.clone());
         Ok(group)
     }
 
     async fn delete_repository_group(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut groups = self.repository_groups.write().await;
-        if groups.remove(&id).is_none() {
+        let mut inner = self.inner.write().await;
+        if inner.repository_groups.remove(&id).is_none() {
             return Err(TaskStoreError::not_found("RepositoryGroup", id.to_string()));
         }
         Ok(())
     }
 
     // =========================================================================
-    // Agent Task operations
-    // =========================================================================
-
-    async fn create_agent_task(&self, task: AgentTask) -> TaskStoreResult<AgentTask> {
-        let mut tasks = self.agent_tasks.write().await;
-        if tasks.contains_key(&task.id) {
-            return Err(TaskStoreError::already_exists(
-                "AgentTask",
-                task.id.to_string(),
-            ));
-        }
-        tasks.insert(task.id, task.clone());
-        Ok(task)
-    }
-
-    async fn get_agent_task(&self, id: Uuid) -> TaskStoreResult<Option<AgentTask>> {
-        let tasks = self.agent_tasks.read().await;
-        Ok(tasks.get(&id).cloned())
-    }
-
-    async fn update_agent_task(&self, task: AgentTask) -> TaskStoreResult<AgentTask> {
-        let mut tasks = self.agent_tasks.write().await;
-        if !tasks.contains_key(&task.id) {
-            return Err(TaskStoreError::not_found("AgentTask", task.id.to_string()));
-        }
-        tasks.insert(task.id, task.clone());
-        Ok(task)
-    }
-
-    async fn delete_agent_task(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut tasks = self.agent_tasks.write().await;
-        if tasks.remove(&id).is_none() {
-            return Err(TaskStoreError::not_found("AgentTask", id.to_string()));
-        }
-        Ok(())
-    }
-
-    // =========================================================================
-    // Agent Session operations
-    // =========================================================================
-
-    async fn create_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
-        let mut sessions = self.agent_sessions.write().await;
-        if sessions.contains_key(&session.id) {
-            return Err(TaskStoreError::already_exists(
-                "AgentSession",
-                session.id.to_string(),
-            ));
-        }
-        sessions.insert(session.id, session.clone());
-        Ok(session)
-    }
-
-    async fn get_agent_session(&self, id: Uuid) -> TaskStoreResult<Option<AgentSession>> {
-        let sessions = self.agent_sessions.read().await;
-        Ok(sessions.get(&id).cloned())
-    }
-
-    async fn list_agent_sessions(&self, agent_task_id: Uuid) -> TaskStoreResult<Vec<AgentSession>> {
-        let sessions = self.agent_sessions.read().await;
-        Ok(sessions
-            .values()
-            .filter(|s| s.agent_task_id == agent_task_id)
-            .cloned()
-            .collect())
-    }
-
-    async fn update_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
-        let mut sessions = self.agent_sessions.write().await;
-        if !sessions.contains_key(&session.id) {
-            return Err(TaskStoreError::not_found(
-                "AgentSession",
-                session.id.to_string(),
-            ));
-        }
-        sessions.insert(session.id, session.clone());
-        Ok(session)
-    }
-
-    async fn delete_agent_session(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut sessions = self.agent_sessions.write().await;
-        if sessions.remove(&id).is_none() {
-            return Err(TaskStoreError::not_found("AgentSession", id.to_string()));
-        }
-        Ok(())
-    }
-
-    // =========================================================================
-    // Unit Task operations
+    // UnitTask operations
     // =========================================================================
 
     async fn create_unit_task(&self, task: UnitTask) -> TaskStoreResult<UnitTask> {
-        let mut tasks = self.unit_tasks.write().await;
-        if tasks.contains_key(&task.id) {
+        let mut inner = self.inner.write().await;
+        if inner.unit_tasks.contains_key(&task.id) {
             return Err(TaskStoreError::already_exists(
                 "UnitTask",
                 task.id.to_string(),
             ));
         }
-        tasks.insert(task.id, task.clone());
+        inner.unit_tasks.insert(task.id, task.clone());
         Ok(task)
     }
 
     async fn get_unit_task(&self, id: Uuid) -> TaskStoreResult<Option<UnitTask>> {
-        let tasks = self.unit_tasks.read().await;
-        Ok(tasks.get(&id).cloned())
+        let inner = self.inner.read().await;
+        Ok(inner.unit_tasks.get(&id).cloned())
     }
 
     async fn list_unit_tasks(&self, filter: TaskFilter) -> TaskStoreResult<(Vec<UnitTask>, u32)> {
-        let tasks = self.unit_tasks.read().await;
-        let mut result: Vec<UnitTask> = tasks
+        let inner = self.inner.read().await;
+        let mut result: Vec<UnitTask> = inner
+            .unit_tasks
             .values()
             .filter(|t| {
                 let mut matches = true;
+                if let Some(ws_id) = filter.workspace_id {
+                    matches = matches && t.workspace_id == ws_id;
+                }
                 if let Some(group_id) = filter.repository_group_id {
                     matches = matches && t.repository_group_id == group_id;
                 }
-                if let Some(status) = filter.unit_status {
+                if let Some(status) = filter.status {
                     matches = matches && t.status == status;
                 }
                 matches
@@ -446,165 +323,229 @@ impl TaskStore for MemoryTaskStore {
     }
 
     async fn update_unit_task(&self, task: UnitTask) -> TaskStoreResult<UnitTask> {
-        let mut tasks = self.unit_tasks.write().await;
-        if !tasks.contains_key(&task.id) {
+        let mut inner = self.inner.write().await;
+        if !inner.unit_tasks.contains_key(&task.id) {
             return Err(TaskStoreError::not_found("UnitTask", task.id.to_string()));
         }
-        tasks.insert(task.id, task.clone());
+        inner.unit_tasks.insert(task.id, task.clone());
         Ok(task)
     }
 
     async fn delete_unit_task(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut tasks = self.unit_tasks.write().await;
-        if tasks.remove(&id).is_none() {
+        let mut inner = self.inner.write().await;
+        if inner.unit_tasks.remove(&id).is_none() {
             return Err(TaskStoreError::not_found("UnitTask", id.to_string()));
         }
         Ok(())
     }
 
     // =========================================================================
-    // Composite Task operations
+    // SubTask operations
     // =========================================================================
 
-    async fn create_composite_task(&self, task: CompositeTask) -> TaskStoreResult<CompositeTask> {
-        let mut tasks = self.composite_tasks.write().await;
-        if tasks.contains_key(&task.id) {
+    async fn create_sub_task(&self, sub_task: SubTask) -> TaskStoreResult<SubTask> {
+        let mut inner = self.inner.write().await;
+        if inner.sub_tasks.contains_key(&sub_task.id) {
             return Err(TaskStoreError::already_exists(
-                "CompositeTask",
-                task.id.to_string(),
+                "SubTask",
+                sub_task.id.to_string(),
             ));
         }
-        tasks.insert(task.id, task.clone());
-        Ok(task)
+        inner.sub_tasks.insert(sub_task.id, sub_task.clone());
+        Ok(sub_task)
     }
 
-    async fn get_composite_task(&self, id: Uuid) -> TaskStoreResult<Option<CompositeTask>> {
-        let tasks = self.composite_tasks.read().await;
-        Ok(tasks.get(&id).cloned())
+    async fn get_sub_task(&self, id: Uuid) -> TaskStoreResult<Option<SubTask>> {
+        let inner = self.inner.read().await;
+        Ok(inner.sub_tasks.get(&id).cloned())
     }
 
-    async fn list_composite_tasks(
-        &self,
-        filter: TaskFilter,
-    ) -> TaskStoreResult<(Vec<CompositeTask>, u32)> {
-        let tasks = self.composite_tasks.read().await;
-        let mut result: Vec<CompositeTask> = tasks
+    async fn list_sub_tasks(&self, unit_task_id: Uuid) -> TaskStoreResult<Vec<SubTask>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .sub_tasks
             .values()
-            .filter(|t| {
-                let mut matches = true;
-                if let Some(group_id) = filter.repository_group_id {
-                    matches = matches && t.repository_group_id == group_id;
-                }
-                if let Some(status) = filter.composite_status {
-                    matches = matches && t.status == status;
-                }
-                matches
-            })
+            .filter(|s| s.unit_task_id == unit_task_id)
             .cloned()
-            .collect();
-
-        let total = result.len() as u32;
-
-        if let Some(offset) = filter.offset {
-            result = result.into_iter().skip(offset as usize).collect();
-        }
-        if let Some(limit) = filter.limit {
-            result = result.into_iter().take(limit as usize).collect();
-        }
-
-        Ok((result, total))
+            .collect())
     }
 
-    async fn update_composite_task(&self, task: CompositeTask) -> TaskStoreResult<CompositeTask> {
-        let mut tasks = self.composite_tasks.write().await;
-        if !tasks.contains_key(&task.id) {
+    async fn update_sub_task(&self, sub_task: SubTask) -> TaskStoreResult<SubTask> {
+        let mut inner = self.inner.write().await;
+        if !inner.sub_tasks.contains_key(&sub_task.id) {
             return Err(TaskStoreError::not_found(
-                "CompositeTask",
-                task.id.to_string(),
+                "SubTask",
+                sub_task.id.to_string(),
             ));
         }
-        tasks.insert(task.id, task.clone());
-        Ok(task)
+        inner.sub_tasks.insert(sub_task.id, sub_task.clone());
+        Ok(sub_task)
     }
 
-    async fn delete_composite_task(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut tasks = self.composite_tasks.write().await;
-        if tasks.remove(&id).is_none() {
-            return Err(TaskStoreError::not_found("CompositeTask", id.to_string()));
+    async fn delete_sub_task(&self, id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        if inner.sub_tasks.remove(&id).is_none() {
+            return Err(TaskStoreError::not_found("SubTask", id.to_string()));
+        }
+        Ok(())
+    }
+
+    async fn get_next_queued_sub_task(&self) -> TaskStoreResult<Option<SubTask>> {
+        let inner = self.inner.read().await;
+        // Return the oldest subtask with status=Queued
+        let mut queued: Vec<&SubTask> = inner
+            .sub_tasks
+            .values()
+            .filter(|s| s.status == SubTaskStatus::Queued)
+            .collect();
+        queued.sort_by_key(|s| s.created_at);
+        Ok(queued.into_iter().next().cloned())
+    }
+
+    // =========================================================================
+    // AgentSession operations
+    // =========================================================================
+
+    async fn create_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
+        let mut inner = self.inner.write().await;
+        if inner.agent_sessions.contains_key(&session.id) {
+            return Err(TaskStoreError::already_exists(
+                "AgentSession",
+                session.id.to_string(),
+            ));
+        }
+        inner.agent_sessions.insert(session.id, session.clone());
+        Ok(session)
+    }
+
+    async fn get_agent_session(&self, id: Uuid) -> TaskStoreResult<Option<AgentSession>> {
+        let inner = self.inner.read().await;
+        Ok(inner.agent_sessions.get(&id).cloned())
+    }
+
+    async fn list_agent_sessions(&self, sub_task_id: Uuid) -> TaskStoreResult<Vec<AgentSession>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .agent_sessions
+            .values()
+            .filter(|s| s.sub_task_id == sub_task_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn update_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession> {
+        let mut inner = self.inner.write().await;
+        if !inner.agent_sessions.contains_key(&session.id) {
+            return Err(TaskStoreError::not_found(
+                "AgentSession",
+                session.id.to_string(),
+            ));
+        }
+        inner.agent_sessions.insert(session.id, session.clone());
+        Ok(session)
+    }
+
+    async fn delete_agent_session(&self, id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        if inner.agent_sessions.remove(&id).is_none() {
+            return Err(TaskStoreError::not_found("AgentSession", id.to_string()));
         }
         Ok(())
     }
 
     // =========================================================================
-    // Composite Task Node operations
+    // SessionOutputEvent operations
     // =========================================================================
 
-    async fn create_composite_task_node(
+    async fn append_session_output(
         &self,
-        node: CompositeTaskNode,
-    ) -> TaskStoreResult<CompositeTaskNode> {
-        let mut nodes = self.composite_task_nodes.write().await;
-        if nodes.contains_key(&node.id) {
+        event: SessionOutputEvent,
+    ) -> TaskStoreResult<SessionOutputEvent> {
+        let mut inner = self.inner.write().await;
+        inner.session_outputs.push(event.clone());
+        Ok(event)
+    }
+
+    async fn list_session_outputs(
+        &self,
+        session_id: Uuid,
+        since_sequence: Option<u64>,
+    ) -> TaskStoreResult<Vec<SessionOutputEvent>> {
+        let inner = self.inner.read().await;
+        let result = inner
+            .session_outputs
+            .iter()
+            .filter(|e| {
+                e.session_id == session_id && since_sequence.map_or(true, |seq| e.sequence > seq)
+            })
+            .cloned()
+            .collect();
+        Ok(result)
+    }
+
+    // =========================================================================
+    // PullRequestTracking operations
+    // =========================================================================
+
+    async fn create_pr_tracking(
+        &self,
+        pr: PullRequestTracking,
+    ) -> TaskStoreResult<PullRequestTracking> {
+        let mut inner = self.inner.write().await;
+        if inner.pr_trackings.contains_key(&pr.id) {
             return Err(TaskStoreError::already_exists(
-                "CompositeTaskNode",
-                node.id.to_string(),
+                "PullRequestTracking",
+                pr.id.to_string(),
             ));
         }
-        nodes.insert(node.id, node.clone());
-        Ok(node)
+        inner.pr_trackings.insert(pr.id, pr.clone());
+        Ok(pr)
     }
 
-    async fn get_composite_task_node(
-        &self,
-        id: Uuid,
-    ) -> TaskStoreResult<Option<CompositeTaskNode>> {
-        let nodes = self.composite_task_nodes.read().await;
-        Ok(nodes.get(&id).cloned())
+    async fn get_pr_tracking(&self, id: Uuid) -> TaskStoreResult<Option<PullRequestTracking>> {
+        let inner = self.inner.read().await;
+        Ok(inner.pr_trackings.get(&id).cloned())
     }
 
-    async fn list_composite_task_nodes(
+    async fn list_pr_trackings(
         &self,
-        composite_task_id: Uuid,
-    ) -> TaskStoreResult<Vec<CompositeTaskNode>> {
-        let nodes = self.composite_task_nodes.read().await;
-        Ok(nodes
+        unit_task_id: Option<Uuid>,
+    ) -> TaskStoreResult<Vec<PullRequestTracking>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .pr_trackings
             .values()
-            .filter(|n| n.composite_task_id == composite_task_id)
+            .filter(|p| {
+                if let Some(task_id) = unit_task_id {
+                    p.unit_task_id == task_id
+                } else {
+                    true
+                }
+            })
             .cloned()
             .collect())
     }
 
-    async fn find_composite_task_id_by_unit_task_id(
+    async fn update_pr_tracking(
         &self,
-        unit_task_id: Uuid,
-    ) -> TaskStoreResult<Option<Uuid>> {
-        let nodes = self.composite_task_nodes.read().await;
-        Ok(nodes
-            .values()
-            .find(|n| n.unit_task_id == unit_task_id)
-            .map(|n| n.composite_task_id))
-    }
-
-    async fn update_composite_task_node(
-        &self,
-        node: CompositeTaskNode,
-    ) -> TaskStoreResult<CompositeTaskNode> {
-        let mut nodes = self.composite_task_nodes.write().await;
-        if !nodes.contains_key(&node.id) {
+        pr: PullRequestTracking,
+    ) -> TaskStoreResult<PullRequestTracking> {
+        let mut inner = self.inner.write().await;
+        if !inner.pr_trackings.contains_key(&pr.id) {
             return Err(TaskStoreError::not_found(
-                "CompositeTaskNode",
-                node.id.to_string(),
+                "PullRequestTracking",
+                pr.id.to_string(),
             ));
         }
-        nodes.insert(node.id, node.clone());
-        Ok(node)
+        inner.pr_trackings.insert(pr.id, pr.clone());
+        Ok(pr)
     }
 
-    async fn delete_composite_task_node(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut nodes = self.composite_task_nodes.write().await;
-        if nodes.remove(&id).is_none() {
+    async fn delete_pr_tracking(&self, id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        if inner.pr_trackings.remove(&id).is_none() {
             return Err(TaskStoreError::not_found(
-                "CompositeTaskNode",
+                "PullRequestTracking",
                 id.to_string(),
             ));
         }
@@ -612,148 +553,226 @@ impl TaskStore for MemoryTaskStore {
     }
 
     // =========================================================================
-    // Todo Item operations
+    // ReviewAssistItem operations
     // =========================================================================
 
-    async fn create_todo_item(&self, item: TodoItem) -> TaskStoreResult<TodoItem> {
-        let mut items = self.todo_items.write().await;
-        if items.contains_key(&item.id) {
+    async fn create_review_assist_item(
+        &self,
+        item: ReviewAssistItem,
+    ) -> TaskStoreResult<ReviewAssistItem> {
+        let mut inner = self.inner.write().await;
+        if inner.review_assist_items.contains_key(&item.id) {
             return Err(TaskStoreError::already_exists(
-                "TodoItem",
+                "ReviewAssistItem",
                 item.id.to_string(),
             ));
         }
-        items.insert(item.id, item.clone());
+        inner.review_assist_items.insert(item.id, item.clone());
         Ok(item)
     }
 
-    async fn get_todo_item(&self, id: Uuid) -> TaskStoreResult<Option<TodoItem>> {
-        let items = self.todo_items.read().await;
-        Ok(items.get(&id).cloned())
+    async fn get_review_assist_item(&self, id: Uuid) -> TaskStoreResult<Option<ReviewAssistItem>> {
+        let inner = self.inner.read().await;
+        Ok(inner.review_assist_items.get(&id).cloned())
     }
 
-    async fn list_todo_items(&self, filter: TodoFilter) -> TaskStoreResult<(Vec<TodoItem>, u32)> {
-        let items = self.todo_items.read().await;
-        let mut result: Vec<TodoItem> = items
+    async fn list_review_assist_items(
+        &self,
+        unit_task_id: Option<Uuid>,
+    ) -> TaskStoreResult<Vec<ReviewAssistItem>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .review_assist_items
             .values()
             .filter(|i| {
-                let mut matches = true;
-                if let Some(repo_id) = filter.repository_id {
-                    matches = matches && i.repository_id == repo_id;
+                if let Some(task_id) = unit_task_id {
+                    i.unit_task_id == task_id
+                } else {
+                    true
                 }
-                if let Some(status) = filter.status {
-                    matches = matches && i.status == status;
-                }
-                matches
             })
             .cloned()
-            .collect();
-
-        let total = result.len() as u32;
-
-        if let Some(offset) = filter.offset {
-            result = result.into_iter().skip(offset as usize).collect();
-        }
-        if let Some(limit) = filter.limit {
-            result = result.into_iter().take(limit as usize).collect();
-        }
-
-        Ok((result, total))
+            .collect())
     }
 
-    async fn update_todo_item(&self, item: TodoItem) -> TaskStoreResult<TodoItem> {
-        let mut items = self.todo_items.write().await;
-        if !items.contains_key(&item.id) {
-            return Err(TaskStoreError::not_found("TodoItem", item.id.to_string()));
+    async fn update_review_assist_item(
+        &self,
+        item: ReviewAssistItem,
+    ) -> TaskStoreResult<ReviewAssistItem> {
+        let mut inner = self.inner.write().await;
+        if !inner.review_assist_items.contains_key(&item.id) {
+            return Err(TaskStoreError::not_found(
+                "ReviewAssistItem",
+                item.id.to_string(),
+            ));
         }
-        items.insert(item.id, item.clone());
+        inner.review_assist_items.insert(item.id, item.clone());
         Ok(item)
     }
 
-    async fn delete_todo_item(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut items = self.todo_items.write().await;
-        if items.remove(&id).is_none() {
-            return Err(TaskStoreError::not_found("TodoItem", id.to_string()));
+    async fn delete_review_assist_item(&self, id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        if inner.review_assist_items.remove(&id).is_none() {
+            return Err(TaskStoreError::not_found(
+                "ReviewAssistItem",
+                id.to_string(),
+            ));
         }
         Ok(())
     }
 
     // =========================================================================
-    // TTY Input Request operations
+    // ReviewInlineComment operations
     // =========================================================================
 
-    async fn create_tty_input_request(
+    async fn create_review_inline_comment(
         &self,
-        request: TtyInputRequest,
-    ) -> TaskStoreResult<TtyInputRequest> {
-        let mut requests = self.tty_input_requests.write().await;
-        if requests.contains_key(&request.id) {
+        comment: ReviewInlineComment,
+    ) -> TaskStoreResult<ReviewInlineComment> {
+        let mut inner = self.inner.write().await;
+        if inner.review_inline_comments.contains_key(&comment.id) {
             return Err(TaskStoreError::already_exists(
-                "TtyInputRequest",
-                request.id.to_string(),
+                "ReviewInlineComment",
+                comment.id.to_string(),
             ));
         }
-        requests.insert(request.id, request.clone());
-        Ok(request)
+        inner
+            .review_inline_comments
+            .insert(comment.id, comment.clone());
+        Ok(comment)
     }
 
-    async fn get_tty_input_request(&self, id: Uuid) -> TaskStoreResult<Option<TtyInputRequest>> {
-        let requests = self.tty_input_requests.read().await;
-        Ok(requests.get(&id).cloned())
-    }
-
-    async fn list_tty_input_requests(
+    async fn get_review_inline_comment(
         &self,
-        filter: TtyInputFilter,
-    ) -> TaskStoreResult<Vec<TtyInputRequest>> {
-        let requests = self.tty_input_requests.read().await;
-        let mut result: Vec<TtyInputRequest> = requests
+        id: Uuid,
+    ) -> TaskStoreResult<Option<ReviewInlineComment>> {
+        let inner = self.inner.read().await;
+        Ok(inner.review_inline_comments.get(&id).cloned())
+    }
+
+    async fn list_review_inline_comments(
+        &self,
+        unit_task_id: Uuid,
+    ) -> TaskStoreResult<Vec<ReviewInlineComment>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .review_inline_comments
             .values()
-            .filter(|r| {
-                let mut matches = true;
-                if let Some(task_id) = filter.task_id {
-                    matches = matches && r.task_id == task_id;
-                }
-                if let Some(session_id) = filter.session_id {
-                    matches = matches && r.session_id == session_id;
-                }
-                if let Some(status) = filter.status {
-                    matches = matches && r.status == status;
-                }
-                matches
+            .filter(|c| c.unit_task_id == unit_task_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn update_review_inline_comment(
+        &self,
+        comment: ReviewInlineComment,
+    ) -> TaskStoreResult<ReviewInlineComment> {
+        let mut inner = self.inner.write().await;
+        if !inner.review_inline_comments.contains_key(&comment.id) {
+            return Err(TaskStoreError::not_found(
+                "ReviewInlineComment",
+                comment.id.to_string(),
+            ));
+        }
+        inner
+            .review_inline_comments
+            .insert(comment.id, comment.clone());
+        Ok(comment)
+    }
+
+    async fn delete_review_inline_comment(&self, id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        if inner.review_inline_comments.remove(&id).is_none() {
+            return Err(TaskStoreError::not_found(
+                "ReviewInlineComment",
+                id.to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    // =========================================================================
+    // BadgeTheme operations
+    // =========================================================================
+
+    async fn list_badge_themes(&self, workspace_id: Uuid) -> TaskStoreResult<Vec<BadgeTheme>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .badge_themes
+            .iter()
+            .filter(|((ws_id, _), _)| *ws_id == workspace_id)
+            .map(|(_, theme)| theme.clone())
+            .collect())
+    }
+
+    async fn upsert_badge_theme(&self, theme: BadgeTheme) -> TaskStoreResult<BadgeTheme> {
+        let mut inner = self.inner.write().await;
+        let key = (theme.workspace_id, action_type_key(theme.action_type));
+        inner.badge_themes.insert(key, theme.clone());
+        Ok(theme)
+    }
+
+    // =========================================================================
+    // Notification operations
+    // =========================================================================
+
+    async fn create_notification(
+        &self,
+        notification: Notification,
+    ) -> TaskStoreResult<Notification> {
+        let mut inner = self.inner.write().await;
+        if inner.notifications.contains_key(&notification.id) {
+            return Err(TaskStoreError::already_exists(
+                "Notification",
+                notification.id.to_string(),
+            ));
+        }
+        inner
+            .notifications
+            .insert(notification.id, notification.clone());
+        Ok(notification)
+    }
+
+    async fn get_notification(&self, id: Uuid) -> TaskStoreResult<Option<Notification>> {
+        let inner = self.inner.read().await;
+        Ok(inner.notifications.get(&id).cloned())
+    }
+
+    async fn list_notifications(
+        &self,
+        workspace_id: Option<Uuid>,
+        unread_only: bool,
+    ) -> TaskStoreResult<Vec<Notification>> {
+        let inner = self.inner.read().await;
+        Ok(inner
+            .notifications
+            .values()
+            .filter(|n| {
+                let ws_match = workspace_id.map_or(true, |ws_id| n.workspace_id == ws_id);
+                let read_match = !unread_only || n.read_at.is_none();
+                ws_match && read_match
             })
             .cloned()
-            .collect();
-
-        if let Some(offset) = filter.offset {
-            result = result.into_iter().skip(offset as usize).collect();
-        }
-        if let Some(limit) = filter.limit {
-            result = result.into_iter().take(limit as usize).collect();
-        }
-
-        Ok(result)
+            .collect())
     }
 
-    async fn update_tty_input_request(
-        &self,
-        request: TtyInputRequest,
-    ) -> TaskStoreResult<TtyInputRequest> {
-        let mut requests = self.tty_input_requests.write().await;
-        if !requests.contains_key(&request.id) {
-            return Err(TaskStoreError::not_found(
-                "TtyInputRequest",
-                request.id.to_string(),
-            ));
-        }
-        requests.insert(request.id, request.clone());
-        Ok(request)
+    async fn mark_notification_read(&self, id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        let notification = inner
+            .notifications
+            .get_mut(&id)
+            .ok_or_else(|| TaskStoreError::not_found("Notification", id.to_string()))?;
+        notification.read_at = Some(Utc::now());
+        Ok(())
     }
 
-    async fn delete_tty_input_request(&self, id: Uuid) -> TaskStoreResult<()> {
-        let mut requests = self.tty_input_requests.write().await;
-        if requests.remove(&id).is_none() {
-            return Err(TaskStoreError::not_found("TtyInputRequest", id.to_string()));
+    async fn mark_all_notifications_read(&self, workspace_id: Uuid) -> TaskStoreResult<()> {
+        let mut inner = self.inner.write().await;
+        let now = Utc::now();
+        for notification in inner.notifications.values_mut() {
+            if notification.workspace_id == workspace_id && notification.read_at.is_none() {
+                notification.read_at = Some(now);
+            }
         }
         Ok(())
     }
@@ -761,7 +780,10 @@ impl TaskStore for MemoryTaskStore {
 
 #[cfg(test)]
 mod tests {
-    use entities::VcsProviderType;
+    use entities::{
+        ActionType, AiAgentType, BadgeColorKey, NotificationType, Repository, RepositoryGroup,
+        SubTaskType, UnitTask, VcsProviderType, Workspace,
+    };
 
     use super::*;
 
@@ -769,16 +791,13 @@ mod tests {
     async fn test_workspace_crud() {
         let store = MemoryTaskStore::new();
 
-        // Create
         let workspace = Workspace::new("Test Workspace");
         let created = store.create_workspace(workspace.clone()).await.unwrap();
         assert_eq!(created.name, "Test Workspace");
 
-        // Get
         let fetched = store.get_workspace(created.id).await.unwrap().unwrap();
         assert_eq!(fetched.name, "Test Workspace");
 
-        // List
         let (workspaces, count) = store
             .list_workspaces(WorkspaceFilter::default())
             .await
@@ -786,7 +805,6 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(workspaces.len(), 1);
 
-        // Delete
         store.delete_workspace(created.id).await.unwrap();
         assert!(store.get_workspace(created.id).await.unwrap().is_none());
     }
@@ -795,11 +813,9 @@ mod tests {
     async fn test_repository_crud() {
         let store = MemoryTaskStore::new();
 
-        // Create workspace first
         let workspace = Workspace::new("Test Workspace");
         let workspace = store.create_workspace(workspace).await.unwrap();
 
-        // Create repository
         let repo = Repository::new(
             workspace.id,
             "test-repo",
@@ -809,11 +825,9 @@ mod tests {
         let created = store.create_repository(repo).await.unwrap();
         assert_eq!(created.name, "test-repo");
 
-        // Get
         let fetched = store.get_repository(created.id).await.unwrap().unwrap();
         assert_eq!(fetched.remote_url, "https://github.com/test/test-repo");
 
-        // List by workspace
         let filter = RepositoryFilter {
             workspace_id: Some(workspace.id),
             ..Default::default()
@@ -822,7 +836,6 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(repos.len(), 1);
 
-        // Delete
         store.delete_repository(created.id).await.unwrap();
         assert!(store.get_repository(created.id).await.unwrap().is_none());
     }
@@ -831,42 +844,170 @@ mod tests {
     async fn test_unit_task_crud() {
         let store = MemoryTaskStore::new();
 
-        // Setup
         let workspace = Workspace::new("Test Workspace");
         let workspace = store.create_workspace(workspace).await.unwrap();
         let group = RepositoryGroup::new(workspace.id);
         let group = store.create_repository_group(group).await.unwrap();
-        let agent_task = AgentTask::new();
-        let agent_task = store.create_agent_task(agent_task).await.unwrap();
 
-        // Create unit task
-        let task = UnitTask::new(group.id, agent_task.id, "Fix the bug");
+        let task = UnitTask::new(workspace.id, group.id, "Fix the bug", "Fix auth bug");
         let created = store.create_unit_task(task).await.unwrap();
-        assert_eq!(created.prompt, "Fix the bug");
+        assert_eq!(created.title, "Fix the bug");
 
-        // Get
         let fetched = store.get_unit_task(created.id).await.unwrap().unwrap();
-        assert_eq!(fetched.prompt, "Fix the bug");
+        assert_eq!(fetched.prompt, "Fix auth bug");
 
-        // List
         let (tasks, count) = store.list_unit_tasks(TaskFilter::default()).await.unwrap();
         assert_eq!(count, 1);
         assert_eq!(tasks.len(), 1);
 
-        // Delete
         store.delete_unit_task(created.id).await.unwrap();
         assert!(store.get_unit_task(created.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sub_task_crud() {
+        let store = MemoryTaskStore::new();
+
+        let workspace = Workspace::new("Test");
+        let workspace = store.create_workspace(workspace).await.unwrap();
+        let group = RepositoryGroup::new(workspace.id);
+        let group = store.create_repository_group(group).await.unwrap();
+        let task = UnitTask::new(workspace.id, group.id, "Task", "Do something");
+        let task = store.create_unit_task(task).await.unwrap();
+
+        let sub_task = SubTask::new(task.id, SubTaskType::InitialImplementation, "Implement it");
+        let created = store.create_sub_task(sub_task).await.unwrap();
+        assert_eq!(created.unit_task_id, task.id);
+
+        let sub_tasks = store.list_sub_tasks(task.id).await.unwrap();
+        assert_eq!(sub_tasks.len(), 1);
+
+        // Test get_next_queued_sub_task
+        let next = store.get_next_queued_sub_task().await.unwrap();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().id, created.id);
+
+        store.delete_sub_task(created.id).await.unwrap();
+        assert!(store.get_sub_task(created.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_agent_session_crud() {
+        let store = MemoryTaskStore::new();
+
+        let workspace = Workspace::new("Test");
+        let workspace = store.create_workspace(workspace).await.unwrap();
+        let group = RepositoryGroup::new(workspace.id);
+        let group = store.create_repository_group(group).await.unwrap();
+        let task = UnitTask::new(workspace.id, group.id, "Task", "Do something");
+        let task = store.create_unit_task(task).await.unwrap();
+        let sub_task = SubTask::new(task.id, SubTaskType::InitialImplementation, "Implement");
+        let sub_task = store.create_sub_task(sub_task).await.unwrap();
+
+        let session = AgentSession::new(sub_task.id, AiAgentType::ClaudeCode);
+        let created = store.create_agent_session(session).await.unwrap();
+        assert_eq!(created.sub_task_id, sub_task.id);
+
+        let sessions = store.list_agent_sessions(sub_task.id).await.unwrap();
+        assert_eq!(sessions.len(), 1);
+
+        store.delete_agent_session(created.id).await.unwrap();
+        assert!(store.get_agent_session(created.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_session_output_events() {
+        let store = MemoryTaskStore::new();
+        let session_id = Uuid::new_v4();
+
+        let event1 = SessionOutputEvent::new(
+            session_id,
+            1,
+            entities::SessionOutputKind::Text,
+            "First output",
+        );
+        let event2 = SessionOutputEvent::new(
+            session_id,
+            2,
+            entities::SessionOutputKind::Text,
+            "Second output",
+        );
+
+        store.append_session_output(event1).await.unwrap();
+        store.append_session_output(event2).await.unwrap();
+
+        let all = store.list_session_outputs(session_id, None).await.unwrap();
+        assert_eq!(all.len(), 2);
+
+        let after_first = store
+            .list_session_outputs(session_id, Some(1))
+            .await
+            .unwrap();
+        assert_eq!(after_first.len(), 1);
+        assert_eq!(after_first[0].sequence, 2);
+    }
+
+    #[tokio::test]
+    async fn test_badge_theme_upsert() {
+        let store = MemoryTaskStore::new();
+        let workspace_id = Uuid::new_v4();
+
+        let theme = BadgeTheme::new(workspace_id, ActionType::CiFailed, BadgeColorKey::Red);
+        store.upsert_badge_theme(theme).await.unwrap();
+
+        let themes = store.list_badge_themes(workspace_id).await.unwrap();
+        assert_eq!(themes.len(), 1);
+        assert_eq!(themes[0].color_key, BadgeColorKey::Red);
+
+        // Upsert with a different color
+        let updated_theme =
+            BadgeTheme::new(workspace_id, ActionType::CiFailed, BadgeColorKey::Orange);
+        store.upsert_badge_theme(updated_theme).await.unwrap();
+
+        let themes = store.list_badge_themes(workspace_id).await.unwrap();
+        assert_eq!(themes.len(), 1);
+        assert_eq!(themes[0].color_key, BadgeColorKey::Orange);
+    }
+
+    #[tokio::test]
+    async fn test_notifications() {
+        let store = MemoryTaskStore::new();
+        let workspace_id = Uuid::new_v4();
+
+        let notif = Notification::new(
+            workspace_id,
+            NotificationType::TaskActionRequired,
+            "Action Required",
+            "Your task needs attention",
+        );
+        let created = store.create_notification(notif).await.unwrap();
+        assert!(!created.is_read());
+
+        let unread = store
+            .list_notifications(Some(workspace_id), true)
+            .await
+            .unwrap();
+        assert_eq!(unread.len(), 1);
+
+        store.mark_notification_read(created.id).await.unwrap();
+
+        let unread_after = store
+            .list_notifications(Some(workspace_id), true)
+            .await
+            .unwrap();
+        assert_eq!(unread_after.len(), 0);
+
+        let fetched = store.get_notification(created.id).await.unwrap().unwrap();
+        assert!(fetched.is_read());
     }
 
     #[tokio::test]
     async fn test_delete_repository_removes_from_groups() {
         let store = MemoryTaskStore::new();
 
-        // Create workspace
         let workspace = Workspace::new("Test Workspace");
         let workspace = store.create_workspace(workspace).await.unwrap();
 
-        // Create repositories
         let repo1 = Repository::new(
             workspace.id,
             "repo1",
@@ -883,22 +1024,16 @@ mod tests {
         );
         let repo2 = store.create_repository(repo2).await.unwrap();
 
-        // Create a repository group containing both repos
         let mut group = RepositoryGroup::new(workspace.id);
         group.add_repository(repo1.id);
         group.add_repository(repo2.id);
         let group = store.create_repository_group(group).await.unwrap();
 
-        // Verify both repos are in the group
         let fetched_group = store.get_repository_group(group.id).await.unwrap().unwrap();
         assert_eq!(fetched_group.repository_ids.len(), 2);
-        assert!(fetched_group.repository_ids.contains(&repo1.id));
-        assert!(fetched_group.repository_ids.contains(&repo2.id));
 
-        // Delete repo1
         store.delete_repository(repo1.id).await.unwrap();
 
-        // Verify repo1 was removed from the group
         let fetched_group = store.get_repository_group(group.id).await.unwrap().unwrap();
         assert_eq!(fetched_group.repository_ids.len(), 1);
         assert!(!fetched_group.repository_ids.contains(&repo1.id));

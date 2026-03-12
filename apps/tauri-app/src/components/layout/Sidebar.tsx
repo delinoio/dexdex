@@ -1,16 +1,13 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/uiStore";
-import { useNotificationCenterStore } from "@/stores/notificationCenterStore";
-import { WorkspaceSelector } from "@/components/workspace";
-import { useMode } from "@/hooks/useMode";
-import { useTabNavigation } from "@/hooks/useTabNavigation";
 import { useTheme } from "@/hooks/useTheme";
 import { ThemeMode } from "@/stores/themeStore";
+import { useNotifications } from "@/api/hooks/useNotifications";
 
 const navItems = [
   {
-    label: "Dashboard",
+    label: "Tasks",
     path: "/",
     icon: (
       <svg
@@ -28,46 +25,6 @@ const navItems = [
         <rect width="7" height="5" x="14" y="3" rx="1" />
         <rect width="7" height="9" x="14" y="12" rx="1" />
         <rect width="7" height="5" x="3" y="16" rx="1" />
-      </svg>
-    ),
-  },
-  {
-    label: "Repositories",
-    path: "/repositories",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-      </svg>
-    ),
-  },
-  {
-    label: "Groups",
-    path: "/repository-groups",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        <path d="M12 11v6" />
-        <path d="M9 14h6" />
       </svg>
     ),
   },
@@ -96,11 +53,12 @@ const navItems = [
 export function Sidebar() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  const { data: mode } = useMode();
-  const { handleLinkClick } = useTabNavigation();
-  const toggleNotifications = useNotificationCenterStore((s) => s.toggleOpen);
-  const unreadCount = useNotificationCenterStore((s) => s.getUnreadCount());
+  const currentWorkspaceId = useUiStore((state) => state.currentWorkspaceId);
   const { mode: themeMode, cycleMode: cycleTheme } = useTheme();
+  const { data: notificationsData } = useNotifications(currentWorkspaceId ?? "");
+
+  const unreadCount =
+    notificationsData?.notifications.filter((n) => !n.readAt).length ?? 0;
 
   const themeLabel =
     themeMode === ThemeMode.Light
@@ -145,14 +103,12 @@ export function Sidebar() {
         </button>
       </div>
 
-      <WorkspaceSelector collapsed={sidebarCollapsed} />
-
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            onClick={(e) => handleLinkClick(e, item.path, item.label)}
+            end={item.path === "/"}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
@@ -167,10 +123,47 @@ export function Sidebar() {
             {!sidebarCollapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
+
+        {/* Notifications nav item */}
+        <NavLink
+          to="/notifications"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              isActive
+                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]",
+              sidebarCollapsed && "justify-center px-2"
+            )
+          }
+        >
+          <span className="relative">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </span>
+          {!sidebarCollapsed && <span>Notifications</span>}
+        </NavLink>
       </nav>
 
       {/* Theme toggle */}
-      <div className="px-2 pb-1">
+      <div className="px-2 pb-2">
         <button
           onClick={cycleTheme}
           title={`Theme: ${themeLabel}`}
@@ -203,60 +196,6 @@ export function Sidebar() {
           )}
           {!sidebarCollapsed && <span>{themeLabel}</span>}
         </button>
-      </div>
-
-      {/* Notification bell */}
-      <div className="px-2 pb-1">
-        <button
-          onClick={toggleNotifications}
-          className={cn(
-            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-            "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]",
-            sidebarCollapsed && "justify-center px-2"
-          )}
-        >
-          <span className="relative">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-            </svg>
-            {unreadCount > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            )}
-          </span>
-          {!sidebarCollapsed && <span>Notifications</span>}
-        </button>
-      </div>
-
-      <div className="border-t border-[hsl(var(--border))] p-2">
-        <div
-          className={cn(
-            "flex items-center gap-3 rounded-md px-3 py-2",
-            sidebarCollapsed && "justify-center px-2"
-          )}
-        >
-          <div className="h-8 w-8 rounded-full bg-[hsl(var(--muted))]" />
-          {!sidebarCollapsed && (
-            <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium">User</p>
-              <p className="truncate text-xs text-[hsl(var(--muted-foreground))]">
-                {mode === "remote" ? "Remote Mode" : "Local Mode"}
-              </p>
-            </div>
-          )}
-        </div>
       </div>
     </aside>
   );

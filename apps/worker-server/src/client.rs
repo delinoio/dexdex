@@ -1,152 +1,98 @@
-//! Main server client for worker communication.
+//! HTTP client for communicating with the main server's WorkerService
+//! endpoints.
+//!
+//! Uses Connect RPC convention: POST `{base_url}/{ServiceName}/{MethodName}`
+//! with JSON body.
 
-use std::{collections::HashMap, sync::Arc};
-
-use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+use entities::{GeneratedCommit, SessionOutputEvent, SubTask, SubTaskStatus, UnitTask};
+use rpc_protocol::{
+    WorkerStatus,
+    requests::{
+        EmitSessionEventRequest, GetNextSubTaskRequest, HeartbeatRequest, RegisterWorkerRequest,
+        ReportSubTaskStatusRequest, UnregisterWorkerRequest,
+    },
+    responses::{GetNextSubTaskResponse, RegisterWorkerResponse},
+};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::{
-    error::{WorkerError, WorkerResult},
-    state::AppState,
-};
+use crate::error::{WorkerError, WorkerResult};
 
-/// Task assignment from main server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskAssignment {
-    /// Task ID.
-    pub task_id: Uuid,
-    /// Session ID.
-    pub session_id: Uuid,
-    /// Task prompt.
-    pub prompt: String,
-    /// Repository URL.
-    pub repository_url: String,
-    /// Branch name.
-    pub branch_name: String,
-    /// Agent type.
-    pub agent_type: String,
-    /// Optional agent model.
-    pub agent_model: Option<String>,
-}
-
-/// Worker registration response.
-#[derive(Debug, Deserialize)]
-pub struct RegistrationResponse {
-    /// Assigned worker ID.
-    pub worker_id: Uuid,
-}
-
-/// Task status update.
-#[derive(Debug, Serialize)]
-pub struct TaskStatusUpdate {
-    /// Task ID.
-    pub task_id: Uuid,
-    /// Session ID.
-    pub session_id: Uuid,
-    /// Status (running, completed, failed).
-    pub status: String,
-    /// Output log.
-    pub output: Option<String>,
-    /// Error message.
-    pub error: Option<String>,
-    /// End commit hash.
-    pub end_commit: Option<String>,
-    /// Git patch (unified diff) representing changes made by the AI agent.
-    pub git_patch: Option<String>,
-}
-
-/// Secrets response from main server.
-#[derive(Debug, Deserialize)]
-pub struct SecretsResponse {
-    /// Secrets as key-value pairs.
-    pub secrets: HashMap<String, String>,
-}
-
-/// TTY input request to main server.
-#[derive(Debug, Serialize)]
-pub struct TtyInputRequest {
-    /// Request ID.
-    pub request_id: Uuid,
-    /// Task ID.
-    pub task_id: Uuid,
-    /// Session ID.
-    pub session_id: Uuid,
-    /// Question being asked.
-    pub question: String,
-    /// Available options.
-    pub options: Option<Vec<String>>,
-}
-
-/// Main server client.
+/// HTTP client for the main server's WorkerService.
 pub struct MainServerClient {
-    state: Arc<AppState>,
+    base_url: String,
+    client: reqwest::Client,
+    worker_id: Uuid,
 }
 
 impl MainServerClient {
-    /// Creates a new main server client.
-    pub fn new(state: Arc<AppState>) -> Self {
-        Self { state }
-    }
+    /// Registers this worker with the main server and returns a connected
+    /// client.
+    pub async fn register(base_url: &str, name: &str) -> anyhow::Result<Self> {
+        let client = reqwest::Client::new();
+        let url = format!("{}/WorkerService/Register", base_url);
 
-    /// Registers this worker with the main server.
-    pub async fn register(&self) -> WorkerResult<Uuid> {
-        let url = format!("{}/api/worker/register", self.state.config.main_server_url);
-
-        let body = serde_json::json!({
-            "name": self.state.config.worker_name,
-            "endpoint_url": self.state.config.callback_url(),
-        });
+        let body = RegisterWorkerRequest {
+            name: name.to_string(),
+            // The worker is a polling client, no endpoint URL needed.
+            endpoint_url: String::new(),
+        };
 
         debug!("Registering worker at {}", url);
 
-        let response = self
-            .state
-            .http_client
+        let response = client
             .post(&url)
             .json(&body)
             .send()
             .await
-            .map_err(|e| WorkerError::Registration(e.to_string()))?;
+            .map_err(|e| anyhow::anyhow!("Failed to reach main server: {}", e))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(WorkerError::Registration(format!(
-                "Registration failed with status {}: {}",
-                status, text
-            )));
+            anyhow::bail!("Registration failed with status {}: {}", status, text);
         }
 
-        let reg_response: RegistrationResponse = response
+        let reg: RegisterWorkerResponse = response
             .json()
             .await
-            .map_err(|e| WorkerError::Registration(e.to_string()))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse registration response: {}", e))?;
 
-        info!("Registered with worker ID: {}", reg_response.worker_id);
-        Ok(reg_response.worker_id)
+        info!("Registered with main server, worker_id={}", reg.worker_id);
+
+        Ok(Self {
+            base_url: base_url.to_string(),
+            client,
+            worker_id: reg.worker_id,
+        })
+    }
+
+    /// Returns the worker ID assigned by the main server.
+    pub fn worker_id(&self) -> Uuid {
+        self.worker_id
     }
 
     /// Sends a heartbeat to the main server.
-    pub async fn heartbeat(&self) -> WorkerResult<()> {
-        let worker_id = self
-            .state
-            .get_worker_id()
+    pub async fn heartbeat(
+        &self,
+        status: WorkerStatus,
+        current_sub_task_id: Option<Uuid>,
+    ) -> WorkerResult<()> {
+        let url = format!("{}/WorkerService/Heartbeat", self.base_url);
+
+        let body = HeartbeatRequest {
+            worker_id: self.worker_id,
+            status,
+            current_sub_task_id,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
             .await
-            .ok_or_else(|| WorkerError::Registration("Worker not registered".to_string()))?;
-
-        let url = format!("{}/api/worker/heartbeat", self.state.config.main_server_url);
-
-        let status = self.state.get_status().await;
-        let current_task_id = self.state.get_current_task_id().await;
-
-        let body = serde_json::json!({
-            "worker_id": worker_id,
-            "status": status.as_str(),
-            "current_task_id": current_task_id,
-        });
-
-        let response = self.state.http_client.post(&url).json(&body).send().await?;
+            .map_err(WorkerError::Http)?;
 
         if !response.status().is_success() {
             warn!(
@@ -155,7 +101,117 @@ impl MainServerClient {
                 response.text().await.unwrap_or_default()
             );
         } else {
-            debug!("Heartbeat sent successfully");
+            debug!("Heartbeat sent successfully (worker_id={})", self.worker_id);
+        }
+
+        Ok(())
+    }
+
+    /// Polls the main server for the next available subtask.
+    ///
+    /// Returns `Some((sub_task, unit_task))` if a subtask is available, `None`
+    /// otherwise.
+    pub async fn get_next_sub_task(&self) -> WorkerResult<Option<(SubTask, UnitTask)>> {
+        let url = format!("{}/WorkerService/GetNextSubTask", self.base_url);
+
+        let body = GetNextSubTaskRequest {
+            worker_id: self.worker_id,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(WorkerError::Http)?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(WorkerError::TaskExecution(format!(
+                "GetNextSubTask failed with status {}: {}",
+                status, text
+            )));
+        }
+
+        let resp: GetNextSubTaskResponse = response.json().await.map_err(WorkerError::Http)?;
+
+        match (resp.sub_task, resp.unit_task) {
+            (Some(sub_task), Some(unit_task)) => {
+                debug!("Received subtask sub_task_id={}", sub_task.id);
+                Ok(Some((sub_task, unit_task)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Reports the completion status of a subtask to the main server.
+    pub async fn report_sub_task_status(
+        &self,
+        sub_task_id: Uuid,
+        status: SubTaskStatus,
+        commits: Vec<GeneratedCommit>,
+        error: Option<String>,
+    ) -> WorkerResult<()> {
+        let url = format!("{}/WorkerService/ReportSubTaskStatus", self.base_url);
+
+        let body = ReportSubTaskStatusRequest {
+            worker_id: self.worker_id,
+            sub_task_id,
+            status,
+            generated_commits: commits,
+            error,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(WorkerError::Http)?;
+
+        if !response.status().is_success() {
+            let status_code = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(WorkerError::TaskExecution(format!(
+                "ReportSubTaskStatus failed with status {}: {}",
+                status_code, text
+            )));
+        }
+
+        debug!(
+            "Reported subtask status sub_task_id={} status={:?}",
+            sub_task_id, status
+        );
+
+        Ok(())
+    }
+
+    /// Emits a session output event to the main server.
+    pub async fn emit_session_event(&self, event: SessionOutputEvent) -> WorkerResult<()> {
+        let url = format!("{}/WorkerService/EmitSessionEvent", self.base_url);
+
+        let body = EmitSessionEventRequest {
+            worker_id: self.worker_id,
+            event,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(WorkerError::Http)?;
+
+        if !response.status().is_success() {
+            warn!(
+                "EmitSessionEvent failed with status {}: {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
         }
 
         Ok(())
@@ -163,21 +219,19 @@ impl MainServerClient {
 
     /// Unregisters this worker from the main server.
     pub async fn unregister(&self) -> WorkerResult<()> {
-        let worker_id = match self.state.get_worker_id().await {
-            Some(id) => id,
-            None => return Ok(()), // Not registered
+        let url = format!("{}/WorkerService/Unregister", self.base_url);
+
+        let body = UnregisterWorkerRequest {
+            worker_id: self.worker_id,
         };
 
-        let url = format!(
-            "{}/api/worker/unregister",
-            self.state.config.main_server_url
-        );
-
-        let body = serde_json::json!({
-            "worker_id": worker_id,
-        });
-
-        let response = self.state.http_client.post(&url).json(&body).send().await?;
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(WorkerError::Http)?;
 
         if !response.status().is_success() {
             warn!(
@@ -186,137 +240,10 @@ impl MainServerClient {
                 response.text().await.unwrap_or_default()
             );
         } else {
-            info!("Unregistered from main server");
-        }
-
-        Ok(())
-    }
-
-    /// Gets the next task from the main server.
-    pub async fn get_task(&self) -> WorkerResult<Option<TaskAssignment>> {
-        let worker_id = self
-            .state
-            .get_worker_id()
-            .await
-            .ok_or_else(|| WorkerError::Registration("Worker not registered".to_string()))?;
-
-        let url = format!(
-            "{}/api/worker/get-task?worker_id={}",
-            self.state.config.main_server_url, worker_id
-        );
-
-        let response = self.state.http_client.get(&url).send().await?;
-
-        if response.status().as_u16() == 204 {
-            // No task available
-            return Ok(None);
-        }
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(WorkerError::TaskExecution(format!(
-                "Failed to get task: {} - {}",
-                status, text
-            )));
-        }
-
-        let task: TaskAssignment = response.json().await?;
-        debug!("Received task: {:?}", task.task_id);
-        Ok(Some(task))
-    }
-
-    /// Reports task status to the main server.
-    pub async fn report_status(&self, update: TaskStatusUpdate) -> WorkerResult<()> {
-        let worker_id = self
-            .state
-            .get_worker_id()
-            .await
-            .ok_or_else(|| WorkerError::Registration("Worker not registered".to_string()))?;
-
-        let url = format!(
-            "{}/api/worker/report-status",
-            self.state.config.main_server_url
-        );
-
-        let body = serde_json::json!({
-            "worker_id": worker_id,
-            "task_id": update.task_id,
-            "session_id": update.session_id,
-            "status": update.status,
-            "output": update.output,
-            "error": update.error,
-            "end_commit": update.end_commit,
-            "git_patch": update.git_patch,
-        });
-
-        let response = self.state.http_client.post(&url).json(&body).send().await?;
-
-        if !response.status().is_success() {
-            error!(
-                "Failed to report status: {} - {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
+            info!(
+                "Unregistered from main server (worker_id={})",
+                self.worker_id
             );
-        } else {
-            debug!("Status reported successfully for task {}", update.task_id);
-        }
-
-        Ok(())
-    }
-
-    /// Gets secrets for a task from the main server.
-    pub async fn get_secrets(&self, task_id: Uuid) -> WorkerResult<HashMap<String, String>> {
-        let worker_id = self
-            .state
-            .get_worker_id()
-            .await
-            .ok_or_else(|| WorkerError::Registration("Worker not registered".to_string()))?;
-
-        let url = format!(
-            "{}/api/worker/get-secrets?worker_id={}&task_id={}",
-            self.state.config.main_server_url, worker_id, task_id
-        );
-
-        let response = self.state.http_client.get(&url).send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(WorkerError::TaskExecution(format!(
-                "Failed to get secrets: {} - {}",
-                status, text
-            )));
-        }
-
-        let secrets_response: SecretsResponse = response.json().await?;
-        debug!("Received {} secrets", secrets_response.secrets.len());
-        Ok(secrets_response.secrets)
-    }
-
-    /// Creates a TTY input request on the main server.
-    pub async fn create_tty_input_request(&self, request: TtyInputRequest) -> WorkerResult<()> {
-        let url = format!(
-            "{}/api/session/tty-input-request",
-            self.state.config.main_server_url
-        );
-
-        let response = self
-            .state
-            .http_client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            error!(
-                "Failed to create TTY input request: {} - {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            );
-        } else {
-            debug!("TTY input request created: {}", request.request_id);
         }
 
         Ok(())

@@ -1,141 +1,100 @@
-//! Workspace management API endpoints.
-
-use std::sync::Arc;
+//! WorkspaceService handlers.
 
 use axum::{Json, extract::State};
 use entities::Workspace;
 use rpc_protocol::{requests::*, responses::*};
-use task_store::{TaskStore, WorkspaceFilter};
-use uuid::Uuid;
+use task_store::WorkspaceFilter;
 
 use crate::{
-    error::{ServerError, ServerResult},
-    state::AppState,
+    error::{AppError, AppResult},
+    state::SharedState,
 };
 
-/// Converts entity Workspace to RPC Workspace.
-fn entity_to_rpc_workspace(workspace: &Workspace) -> rpc_protocol::Workspace {
-    rpc_protocol::Workspace {
-        id: workspace.id.to_string(),
-        name: workspace.name.clone(),
-        description: workspace.description.clone(),
-        user_id: workspace.user_id.map(|id| id.to_string()),
-        created_at: workspace.created_at,
-        updated_at: workspace.updated_at,
+pub async fn create(
+    State(state): State<SharedState>,
+    Json(req): Json<CreateWorkspaceRequest>,
+) -> AppResult<Json<CreateWorkspaceResponse>> {
+    let mut workspace = Workspace::new(req.name);
+    if let Some(desc) = req.description {
+        workspace = workspace.with_description(desc);
     }
-}
-
-/// Creates a workspace.
-pub async fn create_workspace<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<CreateWorkspaceRequest>,
-) -> ServerResult<Json<CreateWorkspaceResponse>> {
-    let mut workspace = Workspace::new(request.name);
-    workspace.description = request.description;
-
+    if let Some(url) = req.endpoint_url {
+        workspace = workspace.with_endpoint_url(url);
+    }
     let workspace = state.store.create_workspace(workspace).await?;
-
     tracing::info!(workspace_id = %workspace.id, "Workspace created");
-
-    Ok(Json(CreateWorkspaceResponse {
-        workspace: entity_to_rpc_workspace(&workspace),
-    }))
+    Ok(Json(CreateWorkspaceResponse { workspace }))
 }
 
-/// Lists workspaces.
-pub async fn list_workspaces<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<ListWorkspacesRequest>,
-) -> ServerResult<Json<ListWorkspacesResponse>> {
+pub async fn list(
+    State(state): State<SharedState>,
+    Json(req): Json<ListWorkspacesRequest>,
+) -> AppResult<Json<ListWorkspacesResponse>> {
     let filter = WorkspaceFilter {
-        user_id: None, // TODO: Add user_id filtering when auth is integrated
-        limit: Some(request.limit as u32),
-        offset: Some(request.offset as u32),
+        limit: if req.limit > 0 {
+            Some(req.limit as u32)
+        } else {
+            None
+        },
+        offset: if req.offset > 0 {
+            Some(req.offset as u32)
+        } else {
+            None
+        },
     };
-
-    let (workspaces, total) = state.store.list_workspaces(filter).await?;
-
+    let (workspaces, total_count) = state.store.list_workspaces(filter).await?;
     Ok(Json(ListWorkspacesResponse {
-        workspaces: workspaces.iter().map(entity_to_rpc_workspace).collect(),
-        total_count: total as i32,
+        workspaces,
+        total_count: total_count as i32,
     }))
 }
 
-/// Gets a workspace by ID.
-pub async fn get_workspace<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<GetWorkspaceRequest>,
-) -> ServerResult<Json<GetWorkspaceResponse>> {
-    let workspace_id: Uuid = request
-        .workspace_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid workspace_id".to_string()))?;
-
+pub async fn get(
+    State(state): State<SharedState>,
+    Json(req): Json<GetWorkspaceRequest>,
+) -> AppResult<Json<GetWorkspaceResponse>> {
     let workspace = state
         .store
-        .get_workspace(workspace_id)
+        .get_workspace(req.workspace_id)
         .await?
-        .ok_or_else(|| ServerError::NotFound("Workspace not found".to_string()))?;
-
-    Ok(Json(GetWorkspaceResponse {
-        workspace: entity_to_rpc_workspace(&workspace),
-    }))
+        .ok_or_else(|| AppError::NotFound(format!("Workspace {} not found", req.workspace_id)))?;
+    Ok(Json(GetWorkspaceResponse { workspace }))
 }
 
-/// Updates a workspace.
-pub async fn update_workspace<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<UpdateWorkspaceRequest>,
-) -> ServerResult<Json<UpdateWorkspaceResponse>> {
-    let workspace_id: Uuid = request
-        .workspace_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid workspace_id".to_string()))?;
-
+pub async fn update(
+    State(state): State<SharedState>,
+    Json(req): Json<UpdateWorkspaceRequest>,
+) -> AppResult<Json<UpdateWorkspaceResponse>> {
     let mut workspace = state
         .store
-        .get_workspace(workspace_id)
+        .get_workspace(req.workspace_id)
         .await?
-        .ok_or_else(|| ServerError::NotFound("Workspace not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(format!("Workspace {} not found", req.workspace_id)))?;
 
-    // Update fields
-    if let Some(name) = request.name {
+    if let Some(name) = req.name {
         workspace.name = name;
     }
-    if let Some(description) = request.description {
-        workspace.description = Some(description);
+    if let Some(desc) = req.description {
+        workspace.description = Some(desc);
+    }
+    if let Some(url) = req.endpoint_url {
+        workspace.endpoint_url = Some(url);
+    }
+    if let Some(auth_id) = req.auth_profile_id {
+        workspace.auth_profile_id = Some(auth_id);
     }
     workspace.updated_at = chrono::Utc::now();
 
     let workspace = state.store.update_workspace(workspace).await?;
-
-    tracing::info!(workspace_id = %workspace_id, "Workspace updated");
-
-    Ok(Json(UpdateWorkspaceResponse {
-        workspace: entity_to_rpc_workspace(&workspace),
-    }))
+    tracing::info!(workspace_id = %workspace.id, "Workspace updated");
+    Ok(Json(UpdateWorkspaceResponse { workspace }))
 }
 
-/// Deletes a workspace.
-pub async fn delete_workspace<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<DeleteWorkspaceRequest>,
-) -> ServerResult<Json<DeleteWorkspaceResponse>> {
-    let workspace_id: Uuid = request
-        .workspace_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid workspace_id".to_string()))?;
-
-    // Verify workspace exists
-    state
-        .store
-        .get_workspace(workspace_id)
-        .await?
-        .ok_or_else(|| ServerError::NotFound("Workspace not found".to_string()))?;
-
-    state.store.delete_workspace(workspace_id).await?;
-
-    tracing::info!(workspace_id = %workspace_id, "Workspace deleted");
-
+pub async fn delete(
+    State(state): State<SharedState>,
+    Json(req): Json<DeleteWorkspaceRequest>,
+) -> AppResult<Json<DeleteWorkspaceResponse>> {
+    state.store.delete_workspace(req.workspace_id).await?;
+    tracing::info!(workspace_id = %req.workspace_id, "Workspace deleted");
     Ok(Json(DeleteWorkspaceResponse {}))
 }

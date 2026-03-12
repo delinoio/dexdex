@@ -1,58 +1,53 @@
-//! Secrets management API endpoints.
-
-use std::sync::Arc;
+//! SecretsService handlers.
 
 use axum::{Json, extract::State};
 use rpc_protocol::{requests::*, responses::*};
-use task_store::TaskStore;
-use uuid::Uuid;
 
 use crate::{
-    error::{ServerError, ServerResult},
-    state::AppState,
+    error::{AppError, AppResult},
+    state::SharedState,
 };
 
-/// Sends secrets from the client to the server for task execution.
-pub async fn send_secrets<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<SendSecretsRequest>,
-) -> ServerResult<Json<SendSecretsResponse>> {
-    let task_id: Uuid = request
-        .task_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
-
-    // Verify task exists
-    let task_exists = state.store.get_unit_task(task_id).await?.is_some()
-        || state.store.get_composite_task(task_id).await?.is_some();
-
-    if !task_exists {
-        return Err(ServerError::NotFound("Task not found".to_string()));
-    }
-
-    // Store secrets in cache
+/// Store secrets for a subtask (sent from the client before execution).
+pub async fn send(
+    State(state): State<SharedState>,
+    Json(req): Json<SendSecretsRequest>,
+) -> AppResult<Json<SendSecretsResponse>> {
     let mut cache = state.secrets_cache.write().await;
-    cache.store(task_id, request.secrets);
-
-    tracing::info!(task_id = %task_id, "Secrets stored for task");
-
+    cache.store(req.sub_task_id, req.secrets);
+    tracing::info!(sub_task_id = %req.sub_task_id, "Secrets stored");
     Ok(Json(SendSecretsResponse {}))
 }
 
-/// Clears cached secrets for a task.
-pub async fn clear_secrets<S: TaskStore>(
-    State(state): State<Arc<AppState<S>>>,
-    Json(request): Json<ClearSecretsRequest>,
-) -> ServerResult<Json<ClearSecretsResponse>> {
-    let task_id: Uuid = request
-        .task_id
-        .parse()
-        .map_err(|_| ServerError::InvalidRequest("Invalid task_id".to_string()))?;
-
+/// Clear secrets for a subtask.
+pub async fn clear(
+    State(state): State<SharedState>,
+    Json(req): Json<ClearSecretsRequest>,
+) -> AppResult<Json<ClearSecretsResponse>> {
     let mut cache = state.secrets_cache.write().await;
-    cache.clear(&task_id);
-
-    tracing::info!(task_id = %task_id, "Secrets cleared for task");
-
+    cache.clear(&req.sub_task_id);
+    tracing::info!(sub_task_id = %req.sub_task_id, "Secrets cleared");
     Ok(Json(ClearSecretsResponse {}))
+}
+
+/// Get secrets for a subtask (called by the worker during execution).
+pub async fn get(
+    State(state): State<SharedState>,
+    Json(req): Json<GetSecretsRequest>,
+) -> AppResult<Json<GetSecretsResponse>> {
+    // Verify the worker is registered.
+    {
+        let registry = state.worker_registry.read().await;
+        if registry.get(&req.worker_id).is_none() {
+            return Err(AppError::NotFound(format!(
+                "Worker {} not found",
+                req.worker_id
+            )));
+        }
+    }
+
+    let cache = state.secrets_cache.read().await;
+    let secrets = cache.get(&req.sub_task_id).cloned().unwrap_or_default();
+
+    Ok(Json(GetSecretsResponse { secrets }))
 }

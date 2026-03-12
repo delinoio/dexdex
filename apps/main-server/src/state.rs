@@ -2,18 +2,17 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use auth::JwtManager;
+use rpc_protocol::Secret;
 use task_store::TaskStore;
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{config::Config, services::worker_registry::WorkerRegistry};
+use crate::{broker::EventBroker, config::Config};
 
 /// Secrets cache for tasks (in-memory storage).
 #[derive(Debug, Default)]
 pub struct SecretsCache {
-    /// Map of task ID to secrets.
-    secrets: HashMap<Uuid, Vec<rpc_protocol::Secret>>,
+    secrets: HashMap<Uuid, Vec<Secret>>,
 }
 
 impl SecretsCache {
@@ -22,127 +21,111 @@ impl SecretsCache {
         Self::default()
     }
 
-    /// Stores secrets for a task.
-    pub fn store(&mut self, task_id: Uuid, secrets: Vec<rpc_protocol::Secret>) {
-        self.secrets.insert(task_id, secrets);
+    /// Stores secrets for a subtask.
+    pub fn store(&mut self, sub_task_id: Uuid, secrets: Vec<Secret>) {
+        self.secrets.insert(sub_task_id, secrets);
     }
 
-    /// Gets secrets for a task.
-    pub fn get(&self, task_id: &Uuid) -> Option<&Vec<rpc_protocol::Secret>> {
-        self.secrets.get(task_id)
+    /// Gets secrets for a subtask.
+    pub fn get(&self, sub_task_id: &Uuid) -> Option<&Vec<Secret>> {
+        self.secrets.get(sub_task_id)
     }
 
-    /// Clears secrets for a task.
-    pub fn clear(&mut self, task_id: &Uuid) {
-        self.secrets.remove(task_id);
+    /// Clears secrets for a subtask.
+    pub fn clear(&mut self, sub_task_id: &Uuid) {
+        self.secrets.remove(sub_task_id);
     }
 }
 
-/// TTY response relay for delivering user responses to workers.
-#[derive(Default)]
-pub struct TtyResponseRelay {
-    /// Map of request ID to response channel.
-    /// Workers wait on these channels for user responses.
-    pending: HashMap<Uuid, oneshot::Sender<String>>,
-    /// Map of request ID to responses that arrived before the worker polled.
-    /// This handles the case where the user responds before the worker checks.
-    early_responses: HashMap<Uuid, String>,
+/// Worker registry entry.
+#[derive(Debug, Clone)]
+pub struct WorkerEntry {
+    /// Worker ID.
+    pub id: Uuid,
+    /// Worker name.
+    pub name: String,
+    /// Worker endpoint URL.
+    pub endpoint_url: String,
+    /// Current subtask being executed.
+    pub current_sub_task_id: Option<Uuid>,
+    /// Last heartbeat time.
+    pub last_heartbeat: chrono::DateTime<chrono::Utc>,
 }
 
-impl TtyResponseRelay {
-    /// Creates a new TTY response relay.
+/// Worker registry.
+#[derive(Debug, Default)]
+pub struct WorkerRegistry {
+    workers: HashMap<Uuid, WorkerEntry>,
+}
+
+impl WorkerRegistry {
+    /// Creates a new worker registry.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registers a pending TTY input request.
-    /// Returns a receiver that the worker can use to wait for the response.
-    pub fn register(&mut self, request_id: Uuid) -> oneshot::Receiver<String> {
-        // Check if there's already an early response
-        if let Some(response) = self.early_responses.remove(&request_id) {
-            let (tx, rx) = oneshot::channel();
-            // Immediately send the early response
-            let _ = tx.send(response);
-            return rx;
-        }
-
-        let (tx, rx) = oneshot::channel();
-        self.pending.insert(request_id, tx);
-        rx
+    /// Registers a new worker and returns its ID.
+    pub fn register(&mut self, name: String, endpoint_url: String) -> Uuid {
+        let id = Uuid::new_v4();
+        let entry = WorkerEntry {
+            id,
+            name,
+            endpoint_url,
+            current_sub_task_id: None,
+            last_heartbeat: chrono::Utc::now(),
+        };
+        self.workers.insert(id, entry);
+        id
     }
 
-    /// Delivers a response to a pending TTY input request.
-    /// Returns true if the response was delivered successfully.
-    pub fn deliver(&mut self, request_id: Uuid, response: String) -> bool {
-        if let Some(tx) = self.pending.remove(&request_id) {
-            tx.send(response).is_ok()
-        } else {
-            // Worker hasn't polled yet, store as early response
-            self.early_responses.insert(request_id, response);
+    /// Updates a worker's heartbeat.
+    pub fn heartbeat(&mut self, worker_id: Uuid, current_sub_task_id: Option<Uuid>) -> bool {
+        if let Some(worker) = self.workers.get_mut(&worker_id) {
+            worker.last_heartbeat = chrono::Utc::now();
+            worker.current_sub_task_id = current_sub_task_id;
             true
+        } else {
+            false
         }
     }
 
-    /// Cancels a pending TTY input request.
-    pub fn cancel(&mut self, request_id: &Uuid) {
-        self.pending.remove(request_id);
-        self.early_responses.remove(request_id);
+    /// Unregisters a worker.
+    pub fn unregister(&mut self, worker_id: Uuid) -> bool {
+        self.workers.remove(&worker_id).is_some()
     }
 
-    /// Checks if there's a pending request.
-    pub fn is_pending(&self, request_id: &Uuid) -> bool {
-        self.pending.contains_key(request_id) || self.early_responses.contains_key(request_id)
-    }
-
-    /// Gets the number of pending requests.
-    pub fn pending_count(&self) -> usize {
-        self.pending.len() + self.early_responses.len()
+    /// Gets a worker by ID.
+    pub fn get(&self, worker_id: &Uuid) -> Option<&WorkerEntry> {
+        self.workers.get(worker_id)
     }
 }
 
 /// Shared application state.
-pub struct AppState<S: TaskStore> {
+pub struct AppState {
     /// Server configuration.
     pub config: Config,
     /// Task store.
-    pub store: S,
-    /// JWT manager (optional, only used in multi-user mode).
-    pub jwt_manager: Option<JwtManager>,
-    /// Worker registry.
-    pub worker_registry: RwLock<WorkerRegistry>,
+    pub store: Arc<dyn TaskStore>,
+    /// Event broker for SSE.
+    pub broker: EventBroker,
     /// Secrets cache.
     pub secrets_cache: RwLock<SecretsCache>,
-    /// TTY response relay.
-    pub tty_response_relay: RwLock<TtyResponseRelay>,
+    /// Worker registry.
+    pub worker_registry: RwLock<WorkerRegistry>,
 }
 
-impl<S: TaskStore> AppState<S> {
+impl AppState {
     /// Creates new application state.
-    pub fn new(config: Config, store: S, jwt_manager: Option<JwtManager>) -> Self {
+    pub fn new(config: Config, store: Arc<dyn TaskStore>) -> Self {
         Self {
             config,
             store,
-            jwt_manager,
-            worker_registry: RwLock::new(WorkerRegistry::new()),
+            broker: EventBroker::new(),
             secrets_cache: RwLock::new(SecretsCache::new()),
-            tty_response_relay: RwLock::new(TtyResponseRelay::new()),
+            worker_registry: RwLock::new(WorkerRegistry::new()),
         }
-    }
-
-    /// Returns true if authentication is enabled.
-    pub fn auth_enabled(&self) -> bool {
-        self.config.auth_enabled()
     }
 }
 
 /// Type alias for shared state.
-pub type SharedState<S> = Arc<AppState<S>>;
-
-/// Creates shared state from config and store.
-pub fn create_shared_state<S: TaskStore>(
-    config: Config,
-    store: S,
-    jwt_manager: Option<JwtManager>,
-) -> SharedState<S> {
-    Arc::new(AppState::new(config, store, jwt_manager))
-}
+pub type SharedState = Arc<AppState>;

@@ -4,36 +4,15 @@
 //! when the app is running in remote mode.
 
 use rpc_protocol::{
-    requests::*, responses::*, AiAgentType as RpcAiAgentType,
-    CompositeTaskStatus as RpcCompositeTaskStatus, UnitTaskStatus as RpcUnitTaskStatus,
+    requests::*, responses::*, AiAgentType as RpcAiAgentType, UnitTaskStatus as RpcUnitTaskStatus,
 };
 use serde::de::DeserializeOwned;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
 /// Remote client for making API calls to the main server.
-///
-/// # Authentication
-///
-/// The remote client supports JWT authentication via the `with_auth_token`
-/// method. According to the design docs, JWT authentication is required when
-/// connecting to a remote DexDex server in production. The token is obtained
-/// after successful OIDC authentication (see `docs/design.md` for details).
-///
-/// Currently, the auth token is not automatically injected because:
-/// 1. The OIDC authentication flow is not yet implemented in the Tauri client
-/// 2. Development/testing often uses servers with authentication disabled
-///
-/// Once OIDC authentication is implemented, the AppState should store the JWT
-/// token after login and pass it when creating the RemoteClient:
-/// ```ignore
-/// let client = RemoteClient::new(http_client, base_url)
-///     .with_auth_token(state.auth_token.clone());
-/// ```
-///
-/// TODO: Implement OIDC authentication flow and automatic token injection
 pub struct RemoteClient {
     http_client: reqwest::Client,
     base_url: String,
@@ -42,9 +21,6 @@ pub struct RemoteClient {
 
 impl RemoteClient {
     /// Creates a new remote client without authentication.
-    ///
-    /// For servers requiring authentication, use `with_auth_token` to set the
-    /// JWT token.
     pub fn new(http_client: reqwest::Client, base_url: String) -> Self {
         Self {
             http_client,
@@ -54,9 +30,6 @@ impl RemoteClient {
     }
 
     /// Sets the authentication token (JWT) for authenticated requests.
-    ///
-    /// The token will be sent as a Bearer token in the Authorization header
-    /// for all subsequent API requests.
     pub fn with_auth_token(mut self, token: String) -> Self {
         self.auth_token = Some(token);
         self
@@ -108,19 +81,8 @@ impl RemoteClient {
     // =========================================================================
 
     /// Creates a new unit task.
-    pub async fn create_unit_task(
-        &self,
-        request: CreateUnitTaskRequest,
-    ) -> AppResult<CreateUnitTaskResponse> {
-        self.post("/api/task/create-unit", &request).await
-    }
-
-    /// Creates a new composite task.
-    pub async fn create_composite_task(
-        &self,
-        request: CreateCompositeTaskRequest,
-    ) -> AppResult<CreateCompositeTaskResponse> {
-        self.post("/api/task/create-composite", &request).await
+    pub async fn create_task(&self, request: CreateTaskRequest) -> AppResult<CreateTaskResponse> {
+        self.post("/api/task/create", &request).await
     }
 
     /// Gets a task by ID.
@@ -133,56 +95,14 @@ impl RemoteClient {
         self.post("/api/task/list", &request).await
     }
 
-    /// Approves a task.
-    pub async fn approve_task(
-        &self,
-        request: ApproveTaskRequest,
-    ) -> AppResult<ApproveTaskResponse> {
-        self.post("/api/task/approve", &request).await
-    }
-
-    /// Rejects a task.
-    pub async fn reject_task(&self, request: RejectTaskRequest) -> AppResult<RejectTaskResponse> {
-        self.post("/api/task/reject", &request).await
+    /// Cancels a task.
+    pub async fn cancel_task(&self, request: CancelTaskRequest) -> AppResult<CancelTaskResponse> {
+        self.post("/api/task/cancel", &request).await
     }
 
     /// Deletes a task.
     pub async fn delete_task(&self, request: DeleteTaskRequest) -> AppResult<DeleteTaskResponse> {
         self.post("/api/task/delete", &request).await
-    }
-
-    /// Requests changes on a task.
-    pub async fn request_changes(
-        &self,
-        request: RequestChangesRequest,
-    ) -> AppResult<RequestChangesResponse> {
-        self.post("/api/task/request-changes", &request).await
-    }
-
-    /// Updates the plan for a composite task with new feedback.
-    pub async fn update_plan(&self, request: UpdatePlanRequest) -> AppResult<UpdatePlanResponse> {
-        self.post("/api/task/update-plan", &request).await
-    }
-
-    /// Dismisses approval for a task, moving it back to InReview.
-    pub async fn dismiss_approval(
-        &self,
-        request: DismissApprovalRequest,
-    ) -> AppResult<DismissApprovalResponse> {
-        self.post("/api/task/dismiss-approval", &request).await
-    }
-
-    /// Creates a pull request for an approved task.
-    pub async fn create_pr(&self, request: CreatePrRequest) -> AppResult<CreatePrResponse> {
-        self.post("/api/task/create-pr", &request).await
-    }
-
-    /// Commits approved task changes to the local git repository.
-    pub async fn commit_to_local(
-        &self,
-        request: CommitToLocalRequest,
-    ) -> AppResult<CommitToLocalResponse> {
-        self.post("/api/task/commit-to-local", &request).await
     }
 
     // =========================================================================
@@ -296,23 +216,6 @@ impl RemoteClient {
     ) -> AppResult<DeleteWorkspaceResponse> {
         self.post("/api/workspace/delete", &request).await
     }
-
-    // =========================================================================
-    // Session API
-    // =========================================================================
-
-    /// Submits TTY input.
-    pub async fn submit_tty_input(
-        &self,
-        request: SubmitTtyInputRequest,
-    ) -> AppResult<SubmitTtyInputResponse> {
-        self.post("/api/session/submit-tty-input", &request).await
-    }
-
-    /// Gets session log.
-    pub async fn get_session_log(&self, request: GetLogRequest) -> AppResult<GetLogResponse> {
-        self.post("/api/session/get-log", &request).await
-    }
 }
 
 // ============================================================================
@@ -402,257 +305,45 @@ pub fn validate_optional_uuid_string(value: Option<&str>, field_name: &str) -> A
 // Type conversion helpers
 // ============================================================================
 
-/// Parses a UUID from a string, returning an error with context if parsing
-/// fails.
-fn parse_uuid(id_str: &str, field_name: &str) -> AppResult<Uuid> {
-    id_str.parse().map_err(|e| {
-        warn!("Failed to parse {} UUID '{}': {}", field_name, id_str, e);
-        AppError::Remote(format!(
-            "Server returned invalid {}: '{}'",
-            field_name, id_str
-        ))
-    })
-}
-
-/// Parses a list of UUIDs, logging errors for invalid entries and collecting
-/// valid ones.
-///
-/// This is used for list fields where partial results are acceptable (e.g.,
-/// non-critical relationships). Invalid UUIDs are logged at error level to help
-/// identify potential server bugs or data corruption issues.
-///
-/// # Arguments
-///
-/// * `ids` - The list of UUID strings to parse
-/// * `field_name` - The name of the field being parsed (for logging context)
-///
-/// # Returns
-///
-/// A vector of successfully parsed UUIDs. Invalid UUIDs are excluded but
-/// logged.
-fn parse_uuid_list(ids: &[String], field_name: &str) -> Vec<Uuid> {
-    let mut valid_uuids = Vec::with_capacity(ids.len());
-    let mut invalid_count = 0;
-
-    for id in ids {
-        match id.parse() {
-            Ok(uuid) => valid_uuids.push(uuid),
-            Err(e) => {
-                error!(
-                    "Invalid {} UUID '{}': {} - this may indicate a server bug or data corruption",
-                    field_name, id, e
-                );
-                invalid_count += 1;
-            }
-        }
-    }
-
-    if invalid_count > 0 {
-        error!(
-            "Skipped {} invalid {} UUID(s) out of {} total",
-            invalid_count,
-            field_name,
-            ids.len()
-        );
-    }
-
-    valid_uuids
-}
-
 /// Converts entity AiAgentType to RPC AiAgentType.
+/// Since rpc_protocol re-exports from entities, these are the same type.
 pub fn entity_to_rpc_agent_type(agent_type: entities::AiAgentType) -> RpcAiAgentType {
-    match agent_type {
-        entities::AiAgentType::ClaudeCode => RpcAiAgentType::ClaudeCode,
-        entities::AiAgentType::OpenCode => RpcAiAgentType::OpenCode,
-        entities::AiAgentType::GeminiCli => RpcAiAgentType::GeminiCli,
-        entities::AiAgentType::CodexCli => RpcAiAgentType::CodexCli,
-        entities::AiAgentType::Aider => RpcAiAgentType::Aider,
-        entities::AiAgentType::Amp => RpcAiAgentType::Amp,
-    }
-}
-
-/// Converts RPC UnitTask to entity UnitTask.
-///
-/// Returns an error if required UUID fields cannot be parsed.
-pub fn rpc_to_entity_unit_task(rpc: rpc_protocol::UnitTask) -> AppResult<entities::UnitTask> {
-    Ok(entities::UnitTask {
-        id: parse_uuid(&rpc.id, "task id")?,
-        repository_group_id: parse_uuid(&rpc.repository_group_id, "repository group id")?,
-        agent_task_id: parse_uuid(&rpc.agent_task_id, "agent task id")?,
-        prompt: rpc.prompt,
-        title: rpc.title,
-        branch_name: rpc.branch_name,
-        linked_pr_url: rpc.linked_pr_url,
-        base_commit: rpc.base_commit,
-        end_commit: rpc.end_commit,
-        git_patch: rpc.git_patch,
-        auto_fix_task_ids: parse_uuid_list(&rpc.auto_fix_task_ids, "auto fix task id"),
-        status: rpc_to_entity_unit_status(rpc.status),
-        created_at: rpc.created_at,
-        updated_at: rpc.updated_at,
-    })
-}
-
-/// Converts RPC CompositeTask to entity CompositeTask.
-///
-/// Returns an error if required UUID fields cannot be parsed.
-pub fn rpc_to_entity_composite_task(
-    rpc: rpc_protocol::CompositeTask,
-) -> AppResult<entities::CompositeTask> {
-    Ok(entities::CompositeTask {
-        id: parse_uuid(&rpc.id, "composite task id")?,
-        repository_group_id: parse_uuid(&rpc.repository_group_id, "repository group id")?,
-        planning_task_id: parse_uuid(&rpc.planning_task_id, "planning task id")?,
-        prompt: rpc.prompt,
-        title: rpc.title,
-        plan_yaml: rpc.plan_yaml,
-        update_plan_feedback: rpc.update_plan_feedback,
-        node_ids: parse_uuid_list(&rpc.node_ids, "node id"),
-        status: rpc_to_entity_composite_status(rpc.status),
-        execution_agent_type: rpc.execution_agent_type.map(rpc_to_entity_agent_type),
-        created_at: rpc.created_at,
-        updated_at: rpc.updated_at,
-    })
-}
-
-/// Converts RPC UnitTaskStatus to entity UnitTaskStatus.
-pub fn rpc_to_entity_unit_status(status: RpcUnitTaskStatus) -> entities::UnitTaskStatus {
-    match status {
-        RpcUnitTaskStatus::Unspecified | RpcUnitTaskStatus::InProgress => {
-            entities::UnitTaskStatus::InProgress
-        }
-        RpcUnitTaskStatus::InReview => entities::UnitTaskStatus::InReview,
-        RpcUnitTaskStatus::Approved => entities::UnitTaskStatus::Approved,
-        RpcUnitTaskStatus::PrOpen => entities::UnitTaskStatus::PrOpen,
-        RpcUnitTaskStatus::Done => entities::UnitTaskStatus::Done,
-        RpcUnitTaskStatus::Rejected => entities::UnitTaskStatus::Rejected,
-        RpcUnitTaskStatus::Failed => entities::UnitTaskStatus::Failed,
-        RpcUnitTaskStatus::Cancelled => entities::UnitTaskStatus::Cancelled,
-    }
+    agent_type
 }
 
 /// Converts entity UnitTaskStatus to RPC UnitTaskStatus.
+/// Since rpc_protocol re-exports from entities, these are the same type.
 pub fn entity_to_rpc_unit_status(status: entities::UnitTaskStatus) -> RpcUnitTaskStatus {
-    match status {
-        entities::UnitTaskStatus::InProgress => RpcUnitTaskStatus::InProgress,
-        entities::UnitTaskStatus::InReview => RpcUnitTaskStatus::InReview,
-        entities::UnitTaskStatus::Approved => RpcUnitTaskStatus::Approved,
-        entities::UnitTaskStatus::PrOpen => RpcUnitTaskStatus::PrOpen,
-        entities::UnitTaskStatus::Done => RpcUnitTaskStatus::Done,
-        entities::UnitTaskStatus::Rejected => RpcUnitTaskStatus::Rejected,
-        entities::UnitTaskStatus::Failed => RpcUnitTaskStatus::Failed,
-        entities::UnitTaskStatus::Cancelled => RpcUnitTaskStatus::Cancelled,
-    }
-}
-
-/// Converts RPC CompositeTaskStatus to entity CompositeTaskStatus.
-pub fn rpc_to_entity_composite_status(
-    status: RpcCompositeTaskStatus,
-) -> entities::CompositeTaskStatus {
-    match status {
-        RpcCompositeTaskStatus::Unspecified | RpcCompositeTaskStatus::Planning => {
-            entities::CompositeTaskStatus::Planning
-        }
-        RpcCompositeTaskStatus::PendingApproval => entities::CompositeTaskStatus::PendingApproval,
-        RpcCompositeTaskStatus::InProgress => entities::CompositeTaskStatus::InProgress,
-        RpcCompositeTaskStatus::Done => entities::CompositeTaskStatus::Done,
-        RpcCompositeTaskStatus::Rejected => entities::CompositeTaskStatus::Rejected,
-        RpcCompositeTaskStatus::Failed => entities::CompositeTaskStatus::Failed,
-    }
-}
-
-/// Converts entity CompositeTaskStatus to RPC CompositeTaskStatus.
-pub fn entity_to_rpc_composite_status(
-    status: entities::CompositeTaskStatus,
-) -> RpcCompositeTaskStatus {
-    match status {
-        entities::CompositeTaskStatus::Planning => RpcCompositeTaskStatus::Planning,
-        entities::CompositeTaskStatus::PendingApproval => RpcCompositeTaskStatus::PendingApproval,
-        entities::CompositeTaskStatus::InProgress => RpcCompositeTaskStatus::InProgress,
-        entities::CompositeTaskStatus::Done => RpcCompositeTaskStatus::Done,
-        entities::CompositeTaskStatus::Rejected => RpcCompositeTaskStatus::Rejected,
-        entities::CompositeTaskStatus::Failed => RpcCompositeTaskStatus::Failed,
-    }
+    status
 }
 
 /// Converts RPC AiAgentType to entity AiAgentType.
+/// Since rpc_protocol re-exports from entities, these are the same type.
 pub fn rpc_to_entity_agent_type(agent_type: RpcAiAgentType) -> entities::AiAgentType {
-    match agent_type {
-        RpcAiAgentType::Unspecified | RpcAiAgentType::ClaudeCode => {
-            entities::AiAgentType::ClaudeCode
-        }
-        RpcAiAgentType::OpenCode => entities::AiAgentType::OpenCode,
-        RpcAiAgentType::GeminiCli => entities::AiAgentType::GeminiCli,
-        RpcAiAgentType::CodexCli => entities::AiAgentType::CodexCli,
-        RpcAiAgentType::Aider => entities::AiAgentType::Aider,
-        RpcAiAgentType::Amp => entities::AiAgentType::Amp,
-    }
+    agent_type
 }
 
 /// Converts RPC Repository to entity Repository.
 ///
-/// Returns an error if required UUID fields cannot be parsed.
+/// Since rpc_protocol re-exports entities, these are the same type.
 pub fn rpc_to_entity_repository(rpc: rpc_protocol::Repository) -> AppResult<entities::Repository> {
-    Ok(entities::Repository {
-        id: parse_uuid(&rpc.id, "repository id")?,
-        workspace_id: parse_uuid(&rpc.workspace_id, "workspace id")?,
-        name: rpc.name,
-        remote_url: rpc.remote_url,
-        default_branch: rpc.default_branch,
-        vcs_type: match rpc.vcs_type {
-            rpc_protocol::VcsType::Git => entities::VcsType::Git,
-            _ => entities::VcsType::Git,
-        },
-        vcs_provider_type: match rpc.vcs_provider_type {
-            rpc_protocol::VcsProviderType::Github => entities::VcsProviderType::Github,
-            rpc_protocol::VcsProviderType::Gitlab => entities::VcsProviderType::Gitlab,
-            rpc_protocol::VcsProviderType::Bitbucket => entities::VcsProviderType::Bitbucket,
-            _ => entities::VcsProviderType::Github,
-        },
-        created_at: rpc.created_at,
-        updated_at: rpc.updated_at,
-    })
+    Ok(rpc)
 }
 
 /// Converts RPC RepositoryGroup to entity RepositoryGroup.
 ///
-/// Returns an error if required UUID fields cannot be parsed.
+/// Since rpc_protocol re-exports entities, these are the same type.
 pub fn rpc_to_entity_repository_group(
     rpc: rpc_protocol::RepositoryGroup,
 ) -> AppResult<entities::RepositoryGroup> {
-    Ok(entities::RepositoryGroup {
-        id: parse_uuid(&rpc.id, "repository group id")?,
-        workspace_id: parse_uuid(&rpc.workspace_id, "workspace id")?,
-        name: rpc.name,
-        repository_ids: parse_uuid_list(&rpc.repository_ids, "repository id"),
-        created_at: rpc.created_at,
-        updated_at: rpc.updated_at,
-    })
+    Ok(rpc)
 }
 
 /// Converts RPC Workspace to entity Workspace.
 ///
-/// Returns an error if required UUID fields cannot be parsed.
+/// Since rpc_protocol re-exports entities, these are the same type.
 pub fn rpc_to_entity_workspace(rpc: rpc_protocol::Workspace) -> AppResult<entities::Workspace> {
-    // For user_id, log a warning if parsing fails but don't fail the entire
-    // conversion since user_id is optional and may legitimately be missing or
-    // invalid in some contexts
-    let user_id = rpc.user_id.as_ref().and_then(|id| match id.parse() {
-        Ok(uuid) => Some(uuid),
-        Err(e) => {
-            warn!("Failed to parse user_id UUID '{}': {}", id, e);
-            None
-        }
-    });
-
-    Ok(entities::Workspace {
-        id: parse_uuid(&rpc.id, "workspace id")?,
-        user_id,
-        name: rpc.name,
-        description: rpc.description,
-        created_at: rpc.created_at,
-        updated_at: rpc.updated_at,
-    })
+    Ok(rpc)
 }
 
 #[cfg(test)]
@@ -772,170 +463,5 @@ mod tests {
     #[test]
     fn test_validate_optional_uuid_string_invalid() {
         assert!(validate_optional_uuid_string(Some("not-a-uuid"), "id").is_err());
-    }
-
-    // =========================================================================
-    // UUID Parsing Tests
-    // =========================================================================
-
-    #[test]
-    fn test_parse_uuid_valid() {
-        let result = parse_uuid("550e8400-e29b-41d4-a716-446655440000", "test");
-        assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap().to_string(),
-            "550e8400-e29b-41d4-a716-446655440000"
-        );
-    }
-
-    #[test]
-    fn test_parse_uuid_invalid() {
-        let result = parse_uuid("not-a-uuid", "test");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid"));
-    }
-
-    #[test]
-    fn test_parse_uuid_list_all_valid() {
-        let ids = vec![
-            "550e8400-e29b-41d4-a716-446655440000".to_string(),
-            "550e8400-e29b-41d4-a716-446655440001".to_string(),
-        ];
-        let result = parse_uuid_list(&ids, "test");
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn test_parse_uuid_list_some_invalid() {
-        let ids = vec![
-            "550e8400-e29b-41d4-a716-446655440000".to_string(),
-            "invalid".to_string(),
-            "550e8400-e29b-41d4-a716-446655440001".to_string(),
-        ];
-        let result = parse_uuid_list(&ids, "test");
-        // Invalid UUIDs are skipped
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
-    fn test_parse_uuid_list_empty() {
-        let ids: Vec<String> = vec![];
-        let result = parse_uuid_list(&ids, "test");
-        assert!(result.is_empty());
-    }
-
-    // =========================================================================
-    // Type Conversion Tests
-    // =========================================================================
-
-    #[test]
-    fn test_entity_to_rpc_agent_type() {
-        assert!(matches!(
-            entity_to_rpc_agent_type(entities::AiAgentType::ClaudeCode),
-            RpcAiAgentType::ClaudeCode
-        ));
-        assert!(matches!(
-            entity_to_rpc_agent_type(entities::AiAgentType::OpenCode),
-            RpcAiAgentType::OpenCode
-        ));
-        assert!(matches!(
-            entity_to_rpc_agent_type(entities::AiAgentType::Aider),
-            RpcAiAgentType::Aider
-        ));
-    }
-
-    #[test]
-    fn test_rpc_to_entity_agent_type() {
-        assert!(matches!(
-            rpc_to_entity_agent_type(RpcAiAgentType::ClaudeCode),
-            entities::AiAgentType::ClaudeCode
-        ));
-        assert!(matches!(
-            rpc_to_entity_agent_type(RpcAiAgentType::OpenCode),
-            entities::AiAgentType::OpenCode
-        ));
-        // Unspecified defaults to ClaudeCode
-        assert!(matches!(
-            rpc_to_entity_agent_type(RpcAiAgentType::Unspecified),
-            entities::AiAgentType::ClaudeCode
-        ));
-    }
-
-    #[test]
-    fn test_rpc_to_entity_unit_status() {
-        assert!(matches!(
-            rpc_to_entity_unit_status(RpcUnitTaskStatus::InProgress),
-            entities::UnitTaskStatus::InProgress
-        ));
-        assert!(matches!(
-            rpc_to_entity_unit_status(RpcUnitTaskStatus::InReview),
-            entities::UnitTaskStatus::InReview
-        ));
-        assert!(matches!(
-            rpc_to_entity_unit_status(RpcUnitTaskStatus::Done),
-            entities::UnitTaskStatus::Done
-        ));
-        // Unspecified defaults to InProgress
-        assert!(matches!(
-            rpc_to_entity_unit_status(RpcUnitTaskStatus::Unspecified),
-            entities::UnitTaskStatus::InProgress
-        ));
-    }
-
-    #[test]
-    fn test_entity_to_rpc_unit_status() {
-        assert!(matches!(
-            entity_to_rpc_unit_status(entities::UnitTaskStatus::InProgress),
-            RpcUnitTaskStatus::InProgress
-        ));
-        assert!(matches!(
-            entity_to_rpc_unit_status(entities::UnitTaskStatus::Approved),
-            RpcUnitTaskStatus::Approved
-        ));
-        assert!(matches!(
-            entity_to_rpc_unit_status(entities::UnitTaskStatus::Failed),
-            RpcUnitTaskStatus::Failed
-        ));
-    }
-
-    #[test]
-    fn test_rpc_to_entity_composite_status() {
-        assert!(matches!(
-            rpc_to_entity_composite_status(RpcCompositeTaskStatus::Planning),
-            entities::CompositeTaskStatus::Planning
-        ));
-        assert!(matches!(
-            rpc_to_entity_composite_status(RpcCompositeTaskStatus::InProgress),
-            entities::CompositeTaskStatus::InProgress
-        ));
-        assert!(matches!(
-            rpc_to_entity_composite_status(RpcCompositeTaskStatus::Failed),
-            entities::CompositeTaskStatus::Failed
-        ));
-        // Unspecified defaults to Planning
-        assert!(matches!(
-            rpc_to_entity_composite_status(RpcCompositeTaskStatus::Unspecified),
-            entities::CompositeTaskStatus::Planning
-        ));
-    }
-
-    #[test]
-    fn test_entity_to_rpc_composite_status() {
-        assert!(matches!(
-            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Planning),
-            RpcCompositeTaskStatus::Planning
-        ));
-        assert!(matches!(
-            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Done),
-            RpcCompositeTaskStatus::Done
-        ));
-        assert!(matches!(
-            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Rejected),
-            RpcCompositeTaskStatus::Rejected
-        ));
-        assert!(matches!(
-            entity_to_rpc_composite_status(entities::CompositeTaskStatus::Failed),
-            RpcCompositeTaskStatus::Failed
-        ));
     }
 }

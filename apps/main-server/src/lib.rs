@@ -5,16 +5,13 @@
 //! interface for clients.
 
 pub mod api;
+pub mod broker;
 pub mod config;
 pub mod error;
-pub mod middleware;
-pub mod services;
 pub mod state;
-pub mod webhooks;
 
 use std::sync::Arc;
 
-use auth::{JwtConfig, JwtManager};
 use axum::Router;
 use task_store::TaskStore;
 use tower_http::{
@@ -24,36 +21,25 @@ use tower_http::{
 
 use crate::{
     config::Config,
-    state::{AppState, create_shared_state},
+    state::{AppState, SharedState},
 };
 
 /// Creates the application router with all routes configured.
-pub fn create_app<S: TaskStore + 'static>(state: Arc<AppState<S>>) -> Router {
+pub fn create_app(state: SharedState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
     api::create_router()
-        .merge(Router::new().nest("/webhooks", webhooks::webhook_router()))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
 }
 
 /// Creates the application state with the given configuration and store.
-pub fn create_state<S: TaskStore>(config: Config, store: S) -> Arc<AppState<S>> {
-    let jwt_manager = if config.auth_enabled() {
-        config.jwt_secret.as_ref().map(|secret| {
-            let jwt_config =
-                JwtConfig::new(secret).with_expiration_hours(config.jwt_expiration_hours);
-            JwtManager::new(jwt_config)
-        })
-    } else {
-        None
-    };
-
-    create_shared_state(config, store, jwt_manager)
+pub fn create_state<S: TaskStore + 'static>(config: Config, store: S) -> SharedState {
+    Arc::new(AppState::new(config, Arc::new(store)))
 }
 
 /// Initializes tracing with the given log level.

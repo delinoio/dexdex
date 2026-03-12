@@ -1,189 +1,19 @@
 //! RPC request types.
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::types::*;
 
 // ============================================================================
-// Task Service Requests
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateUnitTaskRequest {
-    pub repository_group_id: String,
-    pub prompt: String,
-    pub title: Option<String>,
-    pub branch_name: Option<String>,
-    pub ai_agent_type: Option<AiAgentType>,
-    pub ai_agent_model: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateCompositeTaskRequest {
-    pub repository_group_id: String,
-    pub prompt: String,
-    pub title: Option<String>,
-    pub execution_agent_type: Option<AiAgentType>,
-    pub planning_agent_type: Option<AiAgentType>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetTaskRequest {
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListTasksRequest {
-    pub repository_group_id: Option<String>,
-    pub unit_status: Option<UnitTaskStatus>,
-    pub composite_status: Option<CompositeTaskStatus>,
-    pub limit: i32,
-    pub offset: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateTaskStatusRequest {
-    pub task_id: String,
-    pub unit_status: Option<UnitTaskStatus>,
-    pub composite_status: Option<CompositeTaskStatus>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteTaskRequest {
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RetryTaskRequest {
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApproveTaskRequest {
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RejectTaskRequest {
-    pub task_id: String,
-    pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestChangesRequest {
-    pub task_id: String,
-    pub feedback: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdatePlanRequest {
-    pub task_id: String,
-    pub prompt: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DismissApprovalRequest {
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreatePrRequest {
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommitToLocalRequest {
-    pub task_id: String,
-}
-
-// ============================================================================
-// Session Service Requests
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLogRequest {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopSessionRequest {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubmitTtyInputRequest {
-    pub request_id: String,
-    pub response: String,
-}
-
-// ============================================================================
-// Repository Service Requests
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddRepositoryRequest {
-    pub workspace_id: String,
-    pub remote_url: String,
-    pub name: Option<String>,
-    pub default_branch: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListRepositoriesRequest {
-    pub workspace_id: Option<String>,
-    pub limit: i32,
-    pub offset: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetRepositoryRequest {
-    pub repository_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RemoveRepositoryRequest {
-    pub repository_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateRepositoryGroupRequest {
-    pub workspace_id: String,
-    pub name: Option<String>,
-    pub repository_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListRepositoryGroupsRequest {
-    pub workspace_id: Option<String>,
-    pub limit: i32,
-    pub offset: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetRepositoryGroupRequest {
-    pub group_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateRepositoryGroupRequest {
-    pub group_id: String,
-    pub name: Option<String>,
-    pub repository_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteRepositoryGroupRequest {
-    pub group_id: String,
-}
-
-// ============================================================================
-// Workspace Service Requests
+// WorkspaceService Requests
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkspaceRequest {
     pub name: String,
     pub description: Option<String>,
+    pub endpoint_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,92 +24,311 @@ pub struct ListWorkspacesRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetWorkspaceRequest {
-    pub workspace_id: String,
+    pub workspace_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateWorkspaceRequest {
-    pub workspace_id: String,
+    pub workspace_id: Uuid,
     pub name: Option<String>,
     pub description: Option<String>,
+    pub endpoint_url: Option<String>,
+    pub auth_profile_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteWorkspaceRequest {
-    pub workspace_id: String,
+    pub workspace_id: Uuid,
 }
 
 // ============================================================================
-// Todo Service Requests
+// RepositoryService Requests
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListTodoItemsRequest {
-    pub repository_id: Option<String>,
-    pub status: Option<TodoItemStatus>,
+pub struct AddRepositoryRequest {
+    pub workspace_id: Uuid,
+    pub remote_url: String,
+    pub name: Option<String>,
+    pub default_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListRepositoriesRequest {
+    pub workspace_id: Option<Uuid>,
     pub limit: i32,
     pub offset: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetTodoItemRequest {
-    pub item_id: String,
+pub struct GetRepositoryRequest {
+    pub repository_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateTodoStatusRequest {
-    pub item_id: String,
-    pub status: TodoItemStatus,
+pub struct RemoveRepositoryRequest {
+    pub repository_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DismissTodoRequest {
-    pub item_id: String,
+pub struct CreateRepositoryGroupRequest {
+    pub workspace_id: Uuid,
+    pub name: Option<String>,
+    pub repository_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListRepositoryGroupsRequest {
+    pub workspace_id: Option<Uuid>,
+    pub limit: i32,
+    pub offset: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetRepositoryGroupRequest {
+    pub group_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateRepositoryGroupRequest {
+    pub group_id: Uuid,
+    pub name: Option<String>,
+    pub repository_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteRepositoryGroupRequest {
+    pub group_id: Uuid,
 }
 
 // ============================================================================
-// Secrets Service Requests
+// TaskService Requests
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SendSecretsRequest {
-    pub task_id: String,
-    pub secrets: Vec<Secret>,
+pub struct CreateTaskRequest {
+    pub workspace_id: Uuid,
+    pub repository_group_id: Uuid,
+    pub title: String,
+    pub prompt: String,
+    pub branch_name: Option<String>,
+    pub agent_type: Option<AiAgentType>,
+    pub model: Option<String>,
+    pub plan_mode_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClearSecretsRequest {
-    pub task_id: String,
+pub struct GetTaskRequest {
+    pub task_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListTasksRequest {
+    pub workspace_id: Option<Uuid>,
+    pub repository_group_id: Option<Uuid>,
+    pub status: Option<UnitTaskStatus>,
+    pub limit: i32,
+    pub offset: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelTaskRequest {
+    pub task_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteTaskRequest {
+    pub task_id: Uuid,
 }
 
 // ============================================================================
-// Auth Service Requests
+// SubTaskService Requests
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLoginUrlRequest {
-    pub redirect_uri: String,
+pub struct GetSubTaskRequest {
+    pub sub_task_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandleCallbackRequest {
-    pub code: String,
-    pub state: String,
+pub struct ListSubTasksRequest {
+    pub unit_task_id: Uuid,
 }
 
+/// Approve a subtask (e.g., after reviewing the plan).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RefreshTokenRequest {
-    pub refresh_token: String,
+pub struct ApproveSubTaskRequest {
+    pub sub_task_id: Uuid,
 }
 
+/// Approve the generated plan for a subtask in plan mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetCurrentUserRequest {}
+pub struct ApprovePlanRequest {
+    pub sub_task_id: Uuid,
+}
 
+/// Reject the generated plan and provide feedback for revision.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogoutRequest {}
+pub struct RevisePlanRequest {
+    pub sub_task_id: Uuid,
+    pub feedback: String,
+}
+
+/// Manually retry a failed subtask.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrySubTaskRequest {
+    pub sub_task_id: Uuid,
+}
 
 // ============================================================================
-// Worker Service Requests
+// SessionService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSessionRequest {
+    pub session_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSessionsRequest {
+    pub sub_task_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetSessionOutputRequest {
+    pub session_id: Uuid,
+    pub after_sequence: Option<u64>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StopSessionRequest {
+    pub session_id: Uuid,
+}
+
+// ============================================================================
+// PrManagementService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePrTrackingRequest {
+    pub unit_task_id: Uuid,
+    pub provider: VcsProviderType,
+    pub repository_id: String,
+    pub pr_number: u64,
+    pub pr_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetPrTrackingRequest {
+    pub pr_tracking_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPrTrackingsRequest {
+    pub unit_task_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggerAutoFixRequest {
+    pub pr_tracking_id: Uuid,
+}
+
+// ============================================================================
+// ReviewAssistService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListReviewAssistItemsRequest {
+    pub unit_task_id: Uuid,
+    pub status: Option<ReviewAssistItemStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcknowledgeReviewAssistItemRequest {
+    pub item_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DismissReviewAssistItemRequest {
+    pub item_id: Uuid,
+}
+
+// ============================================================================
+// ReviewCommentService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListReviewInlineCommentsRequest {
+    pub unit_task_id: Uuid,
+    pub status: Option<ReviewInlineCommentStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReviewInlineCommentRequest {
+    pub unit_task_id: Uuid,
+    pub sub_task_id: Option<Uuid>,
+    pub file_path: String,
+    pub side: String,
+    pub line_number: u32,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveReviewInlineCommentRequest {
+    pub comment_id: Uuid,
+}
+
+// ============================================================================
+// BadgeThemeService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListBadgeThemesRequest {
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertBadgeThemeRequest {
+    pub workspace_id: Uuid,
+    pub action_type: ActionType,
+    pub color_key: BadgeColorKey,
+}
+
+// ============================================================================
+// NotificationService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListNotificationsRequest {
+    pub workspace_id: Uuid,
+    pub unread_only: bool,
+    pub limit: i32,
+    pub offset: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkNotificationReadRequest {
+    pub notification_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkAllNotificationsReadRequest {
+    pub workspace_id: Uuid,
+}
+
+// ============================================================================
+// EventStreamService Requests
+// ============================================================================
+
+/// Subscribe to the event stream for a workspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscribeRequest {
+    pub workspace_id: Uuid,
+}
+
+// ============================================================================
+// WorkerService Requests
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,34 +339,56 @@ pub struct RegisterWorkerRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatRequest {
-    pub worker_id: String,
+    pub worker_id: Uuid,
     pub status: WorkerStatus,
-    pub current_task_id: Option<String>,
+    pub current_sub_task_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnregisterWorkerRequest {
-    pub worker_id: String,
+    pub worker_id: Uuid,
 }
 
+/// Request the next available subtask for a worker to execute.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetNextTaskRequest {
-    pub worker_id: String,
+pub struct GetNextSubTaskRequest {
+    pub worker_id: Uuid,
 }
 
+/// Report the completion status of a subtask.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReportTaskStatusRequest {
-    pub worker_id: String,
-    pub task_id: String,
-    pub status: UnitTaskStatus,
-    pub output_log: Option<String>,
+pub struct ReportSubTaskStatusRequest {
+    pub worker_id: Uuid,
+    pub sub_task_id: Uuid,
+    pub status: SubTaskStatus,
+    pub generated_commits: Vec<GeneratedCommit>,
     pub error: Option<String>,
-    /// Git patch (unified diff) representing the changes made by the AI agent.
-    pub git_patch: Option<String>,
+}
+
+/// Emit a session output event from a worker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmitSessionEventRequest {
+    pub worker_id: Uuid,
+    pub event: SessionOutputEvent,
+}
+
+// ============================================================================
+// SecretsService Requests
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendSecretsRequest {
+    pub sub_task_id: Uuid,
+    pub secrets: Vec<Secret>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClearSecretsRequest {
+    pub sub_task_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetSecretsRequest {
-    pub worker_id: String,
-    pub task_id: String,
+    pub worker_id: Uuid,
+    pub sub_task_id: Uuid,
 }

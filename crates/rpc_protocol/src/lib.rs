@@ -4,10 +4,9 @@
 //! The API is designed to be compatible with Connect RPC protocol.
 
 mod error;
-mod types;
-
 pub mod requests;
 pub mod responses;
+pub mod types;
 
 pub use error::*;
 pub use types::*;

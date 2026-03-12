@@ -7,12 +7,11 @@ describe("uiStore", () => {
     useUiStore.setState({
       sidebarCollapsed: false,
       currentWorkspaceId: null,
-      tabs: [{ id: "dashboard", title: "Dashboard", path: "/", closable: false }],
-      activeTabId: "dashboard",
+      tabs: [{ id: "home", type: "workspace", title: "Tasks", path: "/", closable: false }],
+      activeTabId: "home",
       isCommandPaletteOpen: false,
       isTaskCreationOpen: false,
       isSettingsOpen: false,
-      selectedPanel: "dashboard",
     });
   });
 
@@ -54,6 +53,7 @@ describe("uiStore", () => {
   describe("tabs", () => {
     it("adds a new tab and makes it active", () => {
       const newTabId = useUiStore.getState().addTab({
+        type: "task",
         title: "New Tab",
         path: "/new",
         closable: true,
@@ -67,6 +67,7 @@ describe("uiStore", () => {
 
     it("removes a closable tab", () => {
       const newTabId = useUiStore.getState().addTab({
+        type: "task",
         title: "Closable Tab",
         path: "/closable",
         closable: true,
@@ -79,18 +80,20 @@ describe("uiStore", () => {
     });
 
     it("does not remove a non-closable tab", () => {
-      useUiStore.getState().removeTab("dashboard");
-      expect(useUiStore.getState().tabs.find((t) => t.id === "dashboard")).toBeDefined();
+      useUiStore.getState().removeTab("home");
+      expect(useUiStore.getState().tabs.find((t) => t.id === "home")).toBeDefined();
     });
 
     it("selects previous tab when active tab is removed", () => {
       // Add two tabs
       const tab1Id = useUiStore.getState().addTab({
+        type: "task",
         title: "Tab 1",
         path: "/tab1",
         closable: true,
       });
       const tab2Id = useUiStore.getState().addTab({
+        type: "task",
         title: "Tab 2",
         path: "/tab2",
         closable: true,
@@ -108,25 +111,27 @@ describe("uiStore", () => {
 
     it("sets active tab", () => {
       const newTabId = useUiStore.getState().addTab({
+        type: "task",
         title: "New Tab",
         path: "/new",
         closable: true,
       });
 
-      useUiStore.getState().setActiveTab("dashboard");
-      expect(useUiStore.getState().activeTabId).toBe("dashboard");
+      useUiStore.getState().setActiveTab("home");
+      expect(useUiStore.getState().activeTabId).toBe("home");
 
       useUiStore.getState().setActiveTab(newTabId);
       expect(useUiStore.getState().activeTabId).toBe(newTabId);
     });
 
     it("updates tab title", () => {
-      useUiStore.getState().updateTabTitle("dashboard", "Home");
-      expect(useUiStore.getState().tabs.find((t) => t.id === "dashboard")?.title).toBe("Home");
+      useUiStore.getState().updateTabTitle("home", "Tasks Home");
+      expect(useUiStore.getState().tabs.find((t) => t.id === "home")?.title).toBe("Tasks Home");
     });
 
     it("updates tab path", () => {
       const tabId = useUiStore.getState().addTab({
+        type: "task",
         title: "Test Tab",
         path: "/test",
         closable: true,
@@ -138,6 +143,7 @@ describe("uiStore", () => {
 
     it("updates multiple tab properties with updateTab", () => {
       const tabId = useUiStore.getState().addTab({
+        type: "task",
         title: "Test Tab",
         path: "/test",
         closable: true,
@@ -187,15 +193,5 @@ describe("uiStore", () => {
     });
   });
 
-  describe("panel selection", () => {
-    it("sets selected panel", () => {
-      expect(useUiStore.getState().selectedPanel).toBe("dashboard");
-
-      useUiStore.getState().setSelectedPanel("repositories");
-      expect(useUiStore.getState().selectedPanel).toBe("repositories");
-
-      useUiStore.getState().setSelectedPanel("settings");
-      expect(useUiStore.getState().selectedPanel).toBe("settings");
-    });
-  });
+  // Note: selectedPanel was removed in the new entity model rewrite
 });

@@ -2,36 +2,17 @@
 
 use async_trait::async_trait;
 use entities::{
-    AgentSession, AgentTask, CompositeTask, CompositeTaskNode, CompositeTaskStatus, Repository,
-    RepositoryGroup, TodoItem, TodoItemStatus, TtyInputRequest, TtyInputStatus, UnitTask,
-    UnitTaskStatus, User, Workspace,
+    AgentSession, BadgeTheme, Notification, PullRequestTracking, Repository, RepositoryGroup,
+    ReviewAssistItem, ReviewInlineComment, SessionOutputEvent, SubTask, UnitTask, UnitTaskStatus,
+    Workspace,
 };
 use uuid::Uuid;
 
-use crate::{TaskStoreError, TaskStoreResult};
+use crate::TaskStoreResult;
 
-/// Filter options for listing tasks.
+/// Filter options for listing workspaces.
 #[derive(Debug, Clone, Default)]
-pub struct TaskFilter {
-    /// Filter by repository group ID.
-    pub repository_group_id: Option<Uuid>,
-    /// Filter by unit task status.
-    pub unit_status: Option<UnitTaskStatus>,
-    /// Filter by composite task status.
-    pub composite_status: Option<CompositeTaskStatus>,
-    /// Maximum number of results.
-    pub limit: Option<u32>,
-    /// Offset for pagination.
-    pub offset: Option<u32>,
-}
-
-/// Filter options for listing todo items.
-#[derive(Debug, Clone, Default)]
-pub struct TodoFilter {
-    /// Filter by repository ID.
-    pub repository_id: Option<Uuid>,
-    /// Filter by status.
-    pub status: Option<TodoItemStatus>,
+pub struct WorkspaceFilter {
     /// Maximum number of results.
     pub limit: Option<u32>,
     /// Offset for pagination.
@@ -49,17 +30,6 @@ pub struct RepositoryFilter {
     pub offset: Option<u32>,
 }
 
-/// Filter options for listing workspaces.
-#[derive(Debug, Clone, Default)]
-pub struct WorkspaceFilter {
-    /// Filter by user ID.
-    pub user_id: Option<Uuid>,
-    /// Maximum number of results.
-    pub limit: Option<u32>,
-    /// Offset for pagination.
-    pub offset: Option<u32>,
-}
-
 /// Filter options for listing repository groups.
 #[derive(Debug, Clone, Default)]
 pub struct RepositoryGroupFilter {
@@ -71,15 +41,15 @@ pub struct RepositoryGroupFilter {
     pub offset: Option<u32>,
 }
 
-/// Filter options for listing TTY input requests.
+/// Filter options for listing unit tasks.
 #[derive(Debug, Clone, Default)]
-pub struct TtyInputFilter {
-    /// Filter by task ID.
-    pub task_id: Option<Uuid>,
-    /// Filter by session ID.
-    pub session_id: Option<Uuid>,
-    /// Filter by status.
-    pub status: Option<TtyInputStatus>,
+pub struct TaskFilter {
+    /// Filter by workspace ID.
+    pub workspace_id: Option<Uuid>,
+    /// Filter by repository group ID.
+    pub repository_group_id: Option<Uuid>,
+    /// Filter by unit task status.
+    pub status: Option<UnitTaskStatus>,
     /// Maximum number of results.
     pub limit: Option<u32>,
     /// Offset for pagination.
@@ -89,25 +59,6 @@ pub struct TtyInputFilter {
 /// Trait for task storage operations.
 #[async_trait]
 pub trait TaskStore: Send + Sync {
-    // =========================================================================
-    // User operations
-    // =========================================================================
-
-    /// Creates a new user.
-    async fn create_user(&self, user: User) -> TaskStoreResult<User>;
-
-    /// Gets a user by ID.
-    async fn get_user(&self, id: Uuid) -> TaskStoreResult<Option<User>>;
-
-    /// Gets a user by email.
-    async fn get_user_by_email(&self, email: &str) -> TaskStoreResult<Option<User>>;
-
-    /// Updates a user.
-    async fn update_user(&self, user: User) -> TaskStoreResult<User>;
-
-    /// Deletes a user.
-    async fn delete_user(&self, id: Uuid) -> TaskStoreResult<()>;
-
     // =========================================================================
     // Workspace operations
     // =========================================================================
@@ -135,7 +86,7 @@ pub trait TaskStore: Send + Sync {
     // =========================================================================
 
     /// Creates a new repository.
-    async fn create_repository(&self, repository: Repository) -> TaskStoreResult<Repository>;
+    async fn create_repository(&self, repo: Repository) -> TaskStoreResult<Repository>;
 
     /// Gets a repository by ID.
     async fn get_repository(&self, id: Uuid) -> TaskStoreResult<Option<Repository>>;
@@ -147,13 +98,13 @@ pub trait TaskStore: Send + Sync {
     ) -> TaskStoreResult<(Vec<Repository>, u32)>;
 
     /// Updates a repository.
-    async fn update_repository(&self, repository: Repository) -> TaskStoreResult<Repository>;
+    async fn update_repository(&self, repo: Repository) -> TaskStoreResult<Repository>;
 
     /// Deletes a repository.
     async fn delete_repository(&self, id: Uuid) -> TaskStoreResult<()>;
 
     // =========================================================================
-    // Repository Group operations
+    // RepositoryGroup operations
     // =========================================================================
 
     /// Creates a new repository group.
@@ -181,42 +132,7 @@ pub trait TaskStore: Send + Sync {
     async fn delete_repository_group(&self, id: Uuid) -> TaskStoreResult<()>;
 
     // =========================================================================
-    // Agent Task operations
-    // =========================================================================
-
-    /// Creates a new agent task.
-    async fn create_agent_task(&self, task: AgentTask) -> TaskStoreResult<AgentTask>;
-
-    /// Gets an agent task by ID.
-    async fn get_agent_task(&self, id: Uuid) -> TaskStoreResult<Option<AgentTask>>;
-
-    /// Updates an agent task.
-    async fn update_agent_task(&self, task: AgentTask) -> TaskStoreResult<AgentTask>;
-
-    /// Deletes an agent task.
-    async fn delete_agent_task(&self, id: Uuid) -> TaskStoreResult<()>;
-
-    // =========================================================================
-    // Agent Session operations
-    // =========================================================================
-
-    /// Creates a new agent session.
-    async fn create_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession>;
-
-    /// Gets an agent session by ID.
-    async fn get_agent_session(&self, id: Uuid) -> TaskStoreResult<Option<AgentSession>>;
-
-    /// Lists agent sessions by agent task ID.
-    async fn list_agent_sessions(&self, agent_task_id: Uuid) -> TaskStoreResult<Vec<AgentSession>>;
-
-    /// Updates an agent session.
-    async fn update_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession>;
-
-    /// Deletes an agent session.
-    async fn delete_agent_session(&self, id: Uuid) -> TaskStoreResult<()>;
-
-    // =========================================================================
-    // Unit Task operations
+    // UnitTask operations
     // =========================================================================
 
     /// Creates a new unit task.
@@ -235,109 +151,188 @@ pub trait TaskStore: Send + Sync {
     async fn delete_unit_task(&self, id: Uuid) -> TaskStoreResult<()>;
 
     // =========================================================================
-    // Composite Task operations
+    // SubTask operations
     // =========================================================================
 
-    /// Creates a new composite task.
-    async fn create_composite_task(&self, task: CompositeTask) -> TaskStoreResult<CompositeTask>;
+    /// Creates a new subtask.
+    async fn create_sub_task(&self, sub_task: SubTask) -> TaskStoreResult<SubTask>;
 
-    /// Gets a composite task by ID.
-    async fn get_composite_task(&self, id: Uuid) -> TaskStoreResult<Option<CompositeTask>>;
+    /// Gets a subtask by ID.
+    async fn get_sub_task(&self, id: Uuid) -> TaskStoreResult<Option<SubTask>>;
 
-    /// Lists composite tasks with optional filters.
-    async fn list_composite_tasks(
-        &self,
-        filter: TaskFilter,
-    ) -> TaskStoreResult<(Vec<CompositeTask>, u32)>;
+    /// Lists subtasks belonging to a unit task.
+    async fn list_sub_tasks(&self, unit_task_id: Uuid) -> TaskStoreResult<Vec<SubTask>>;
 
-    /// Updates a composite task.
-    async fn update_composite_task(&self, task: CompositeTask) -> TaskStoreResult<CompositeTask>;
+    /// Updates a subtask.
+    async fn update_sub_task(&self, sub_task: SubTask) -> TaskStoreResult<SubTask>;
 
-    /// Deletes a composite task.
-    async fn delete_composite_task(&self, id: Uuid) -> TaskStoreResult<()>;
+    /// Deletes a subtask.
+    async fn delete_sub_task(&self, id: Uuid) -> TaskStoreResult<()>;
+
+    /// Returns the oldest queued subtask, if any.
+    async fn get_next_queued_sub_task(&self) -> TaskStoreResult<Option<SubTask>>;
 
     // =========================================================================
-    // Composite Task Node operations
+    // AgentSession operations
     // =========================================================================
 
-    /// Creates a new composite task node.
-    async fn create_composite_task_node(
+    /// Creates a new agent session.
+    async fn create_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession>;
+
+    /// Gets an agent session by ID.
+    async fn get_agent_session(&self, id: Uuid) -> TaskStoreResult<Option<AgentSession>>;
+
+    /// Lists agent sessions belonging to a subtask.
+    async fn list_agent_sessions(&self, sub_task_id: Uuid) -> TaskStoreResult<Vec<AgentSession>>;
+
+    /// Updates an agent session.
+    async fn update_agent_session(&self, session: AgentSession) -> TaskStoreResult<AgentSession>;
+
+    /// Deletes an agent session.
+    async fn delete_agent_session(&self, id: Uuid) -> TaskStoreResult<()>;
+
+    // =========================================================================
+    // SessionOutputEvent operations
+    // =========================================================================
+
+    /// Appends a session output event.
+    async fn append_session_output(
         &self,
-        node: CompositeTaskNode,
-    ) -> TaskStoreResult<CompositeTaskNode>;
+        event: SessionOutputEvent,
+    ) -> TaskStoreResult<SessionOutputEvent>;
 
-    /// Gets a composite task node by ID.
-    async fn get_composite_task_node(&self, id: Uuid)
-        -> TaskStoreResult<Option<CompositeTaskNode>>;
-
-    /// Lists composite task nodes by composite task ID.
-    async fn list_composite_task_nodes(
+    /// Lists session output events for a session, optionally filtered by
+    /// sequence number.
+    async fn list_session_outputs(
         &self,
-        composite_task_id: Uuid,
-    ) -> TaskStoreResult<Vec<CompositeTaskNode>>;
+        session_id: Uuid,
+        since_sequence: Option<u64>,
+    ) -> TaskStoreResult<Vec<SessionOutputEvent>>;
 
-    /// Finds the composite task ID that contains the given unit task.
-    /// Returns `None` if the unit task is not part of any composite task.
-    async fn find_composite_task_id_by_unit_task_id(
+    // =========================================================================
+    // PullRequestTracking operations
+    // =========================================================================
+
+    /// Creates a new pull request tracking record.
+    async fn create_pr_tracking(
+        &self,
+        pr: PullRequestTracking,
+    ) -> TaskStoreResult<PullRequestTracking>;
+
+    /// Gets a pull request tracking record by ID.
+    async fn get_pr_tracking(&self, id: Uuid) -> TaskStoreResult<Option<PullRequestTracking>>;
+
+    /// Lists pull request tracking records, optionally filtered by unit task
+    /// ID.
+    async fn list_pr_trackings(
+        &self,
+        unit_task_id: Option<Uuid>,
+    ) -> TaskStoreResult<Vec<PullRequestTracking>>;
+
+    /// Updates a pull request tracking record.
+    async fn update_pr_tracking(
+        &self,
+        pr: PullRequestTracking,
+    ) -> TaskStoreResult<PullRequestTracking>;
+
+    /// Deletes a pull request tracking record.
+    async fn delete_pr_tracking(&self, id: Uuid) -> TaskStoreResult<()>;
+
+    // =========================================================================
+    // ReviewAssistItem operations
+    // =========================================================================
+
+    /// Creates a new review assist item.
+    async fn create_review_assist_item(
+        &self,
+        item: ReviewAssistItem,
+    ) -> TaskStoreResult<ReviewAssistItem>;
+
+    /// Gets a review assist item by ID.
+    async fn get_review_assist_item(&self, id: Uuid) -> TaskStoreResult<Option<ReviewAssistItem>>;
+
+    /// Lists review assist items, optionally filtered by unit task ID.
+    async fn list_review_assist_items(
+        &self,
+        unit_task_id: Option<Uuid>,
+    ) -> TaskStoreResult<Vec<ReviewAssistItem>>;
+
+    /// Updates a review assist item.
+    async fn update_review_assist_item(
+        &self,
+        item: ReviewAssistItem,
+    ) -> TaskStoreResult<ReviewAssistItem>;
+
+    /// Deletes a review assist item.
+    async fn delete_review_assist_item(&self, id: Uuid) -> TaskStoreResult<()>;
+
+    // =========================================================================
+    // ReviewInlineComment operations
+    // =========================================================================
+
+    /// Creates a new review inline comment.
+    async fn create_review_inline_comment(
+        &self,
+        comment: ReviewInlineComment,
+    ) -> TaskStoreResult<ReviewInlineComment>;
+
+    /// Gets a review inline comment by ID.
+    async fn get_review_inline_comment(
+        &self,
+        id: Uuid,
+    ) -> TaskStoreResult<Option<ReviewInlineComment>>;
+
+    /// Lists review inline comments for a unit task.
+    async fn list_review_inline_comments(
         &self,
         unit_task_id: Uuid,
-    ) -> TaskStoreResult<Option<Uuid>>;
+    ) -> TaskStoreResult<Vec<ReviewInlineComment>>;
 
-    /// Updates a composite task node.
-    async fn update_composite_task_node(
+    /// Updates a review inline comment.
+    async fn update_review_inline_comment(
         &self,
-        node: CompositeTaskNode,
-    ) -> TaskStoreResult<CompositeTaskNode>;
+        comment: ReviewInlineComment,
+    ) -> TaskStoreResult<ReviewInlineComment>;
 
-    /// Deletes a composite task node.
-    async fn delete_composite_task_node(&self, id: Uuid) -> TaskStoreResult<()>;
+    /// Deletes a review inline comment.
+    async fn delete_review_inline_comment(&self, id: Uuid) -> TaskStoreResult<()>;
 
     // =========================================================================
-    // Todo Item operations
+    // BadgeTheme operations
     // =========================================================================
 
-    /// Creates a new todo item.
-    async fn create_todo_item(&self, item: TodoItem) -> TaskStoreResult<TodoItem>;
+    /// Lists badge themes for a workspace.
+    async fn list_badge_themes(&self, workspace_id: Uuid) -> TaskStoreResult<Vec<BadgeTheme>>;
 
-    /// Gets a todo item by ID.
-    async fn get_todo_item(&self, id: Uuid) -> TaskStoreResult<Option<TodoItem>>;
-
-    /// Lists todo items with optional filters.
-    async fn list_todo_items(&self, filter: TodoFilter) -> TaskStoreResult<(Vec<TodoItem>, u32)>;
-
-    /// Updates a todo item.
-    async fn update_todo_item(&self, item: TodoItem) -> TaskStoreResult<TodoItem>;
-
-    /// Deletes a todo item.
-    async fn delete_todo_item(&self, id: Uuid) -> TaskStoreResult<()>;
+    /// Upserts a badge theme (insert or update by workspace_id + action_type).
+    async fn upsert_badge_theme(&self, theme: BadgeTheme) -> TaskStoreResult<BadgeTheme>;
 
     // =========================================================================
-    // TTY Input Request operations
+    // Notification operations
     // =========================================================================
 
-    /// Creates a new TTY input request.
-    async fn create_tty_input_request(
+    /// Creates a new notification.
+    async fn create_notification(
         &self,
-        request: TtyInputRequest,
-    ) -> TaskStoreResult<TtyInputRequest>;
+        notification: Notification,
+    ) -> TaskStoreResult<Notification>;
 
-    /// Gets a TTY input request by ID.
-    async fn get_tty_input_request(&self, id: Uuid) -> TaskStoreResult<Option<TtyInputRequest>>;
+    /// Gets a notification by ID.
+    async fn get_notification(&self, id: Uuid) -> TaskStoreResult<Option<Notification>>;
 
-    /// Lists TTY input requests with optional filters.
-    async fn list_tty_input_requests(
+    /// Lists notifications, optionally filtered by workspace ID and read
+    /// status.
+    async fn list_notifications(
         &self,
-        filter: TtyInputFilter,
-    ) -> TaskStoreResult<Vec<TtyInputRequest>>;
+        workspace_id: Option<Uuid>,
+        unread_only: bool,
+    ) -> TaskStoreResult<Vec<Notification>>;
 
-    /// Updates a TTY input request.
-    async fn update_tty_input_request(
-        &self,
-        request: TtyInputRequest,
-    ) -> TaskStoreResult<TtyInputRequest>;
+    /// Marks a notification as read.
+    async fn mark_notification_read(&self, id: Uuid) -> TaskStoreResult<()>;
 
-    /// Deletes a TTY input request.
-    async fn delete_tty_input_request(&self, id: Uuid) -> TaskStoreResult<()>;
+    /// Marks all notifications in a workspace as read.
+    async fn mark_all_notifications_read(&self, workspace_id: Uuid) -> TaskStoreResult<()>;
 
     // =========================================================================
     // Cascade delete operations
@@ -349,116 +344,40 @@ pub trait TaskStore: Send + Sync {
     // transaction or adding a periodic cleanup job.
     // =========================================================================
 
-    /// Deletes an agent task and all its associated sessions.
+    /// Deletes a unit task and all associated subtasks and their sessions.
     ///
-    /// This is a best-effort cascade: session deletion failures are logged
-    /// but do not prevent the agent task from being deleted.
-    async fn delete_agent_task_cascade(&self, id: Uuid) -> TaskStoreResult<()> {
-        // Delete all sessions belonging to this agent task
-        let sessions = self.list_agent_sessions(id).await.unwrap_or_default();
-        for session in &sessions {
-            if let Err(e) = self.delete_agent_session(session.id).await {
-                tracing::warn!(
-                    agent_task_id = %id,
-                    session_id = %session.id,
-                    error = %e,
-                    "Failed to delete agent session during cascade delete"
-                );
-            }
-        }
-
-        self.delete_agent_task(id).await
-    }
-
-    /// Deletes a unit task and all associated resources (agent task, sessions,
-    /// auto-fix agent tasks).
-    ///
-    /// This is a best-effort cascade: child resource deletion failures are
-    /// logged but do not prevent the unit task itself from being deleted.
+    /// This is a best-effort cascade: child deletion failures are logged
+    /// but do not prevent the unit task from being deleted.
     async fn delete_unit_task_cascade(&self, id: Uuid) -> TaskStoreResult<()> {
-        let unit_task = self
-            .get_unit_task(id)
-            .await?
-            .ok_or_else(|| TaskStoreError::not_found("UnitTask", id.to_string()))?;
+        // Delete all subtasks (each cascades to sessions)
+        let sub_tasks = self.list_sub_tasks(id).await.unwrap_or_default();
+        for sub_task in &sub_tasks {
+            // Delete agent sessions belonging to this subtask
+            let sessions = self
+                .list_agent_sessions(sub_task.id)
+                .await
+                .unwrap_or_default();
+            for session in &sessions {
+                if let Err(e) = self.delete_agent_session(session.id).await {
+                    tracing::warn!(
+                        sub_task_id = %sub_task.id,
+                        session_id = %session.id,
+                        error = %e,
+                        "Failed to delete agent session during cascade delete"
+                    );
+                }
+            }
 
-        // Delete the associated agent task and its sessions
-        if let Err(e) = self
-            .delete_agent_task_cascade(unit_task.agent_task_id)
-            .await
-        {
-            tracing::warn!(
-                task_id = %id,
-                agent_task_id = %unit_task.agent_task_id,
-                error = %e,
-                "Failed to delete agent task during unit task cascade delete"
-            );
-        }
-
-        // Delete auto-fix agent tasks and their sessions
-        for auto_fix_id in &unit_task.auto_fix_task_ids {
-            if let Err(e) = self.delete_agent_task_cascade(*auto_fix_id).await {
+            if let Err(e) = self.delete_sub_task(sub_task.id).await {
                 tracing::warn!(
-                    task_id = %id,
-                    auto_fix_agent_task_id = %auto_fix_id,
+                    unit_task_id = %id,
+                    sub_task_id = %sub_task.id,
                     error = %e,
-                    "Failed to delete auto-fix agent task during unit task cascade delete"
+                    "Failed to delete subtask during cascade delete"
                 );
             }
         }
 
         self.delete_unit_task(id).await
-    }
-
-    /// Deletes a composite task and all associated resources (child nodes,
-    /// their unit tasks, all agent tasks and sessions, and the planning task).
-    ///
-    /// This is a best-effort cascade: child resource deletion failures are
-    /// logged but do not prevent the composite task itself from being deleted.
-    async fn delete_composite_task_cascade(&self, id: Uuid) -> TaskStoreResult<()> {
-        let composite_task = self
-            .get_composite_task(id)
-            .await?
-            .ok_or_else(|| TaskStoreError::not_found("CompositeTask", id.to_string()))?;
-
-        // Delete all child nodes and their associated unit tasks + agent tasks
-        let nodes = self.list_composite_task_nodes(id).await.unwrap_or_default();
-        for node in &nodes {
-            // Delete the unit task associated with this node (cascades to agent
-            // tasks and sessions)
-            if let Err(e) = self.delete_unit_task_cascade(node.unit_task_id).await {
-                tracing::warn!(
-                    composite_task_id = %id,
-                    unit_task_id = %node.unit_task_id,
-                    error = %e,
-                    "Failed to delete unit task during composite task cascade delete"
-                );
-            }
-
-            // Delete the node itself
-            if let Err(e) = self.delete_composite_task_node(node.id).await {
-                tracing::warn!(
-                    composite_task_id = %id,
-                    node_id = %node.id,
-                    error = %e,
-                    "Failed to delete composite task node during cascade delete"
-                );
-            }
-        }
-
-        // Delete the planning agent task and its sessions
-        if let Err(e) = self
-            .delete_agent_task_cascade(composite_task.planning_task_id)
-            .await
-        {
-            tracing::warn!(
-                composite_task_id = %id,
-                planning_task_id = %composite_task.planning_task_id,
-                error = %e,
-                "Failed to delete planning agent task during composite task cascade delete"
-            );
-        }
-
-        // Delete the composite task itself
-        self.delete_composite_task(id).await
     }
 }

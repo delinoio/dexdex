@@ -1,167 +1,230 @@
-// Types that mirror the Rust entity definitions
+// Types mirroring the new Rust entity definitions
 
-// Enums
+export type UnitTaskStatus =
+  | 'queued'
+  | 'in_progress'
+  | 'action_required'
+  | 'blocked'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
-export enum VcsType {
-  Unspecified = "unspecified",
-  Git = "git",
-}
+export type SubTaskType =
+  | 'initial_implementation'
+  | 'request_changes'
+  | 'pr_create'
+  | 'pr_review_fix'
+  | 'pr_ci_fix'
+  | 'manual_retry';
 
-export enum VcsProviderType {
-  Unspecified = "unspecified",
-  Github = "github",
-  Gitlab = "gitlab",
-  Bitbucket = "bitbucket",
-}
+export type SubTaskStatus =
+  | 'queued'
+  | 'in_progress'
+  | 'waiting_for_plan_approval'
+  | 'waiting_for_user_input'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
-export enum AiAgentType {
-  Unspecified = "unspecified",
-  ClaudeCode = "claude_code",
-  OpenCode = "open_code",
-  GeminiCli = "gemini_cli",
-  CodexCli = "codex_cli",
-  Aider = "aider",
-  Amp = "amp",
-}
+export type AgentSessionStatus =
+  | 'starting'
+  | 'running'
+  | 'waiting_for_input'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
-export enum UnitTaskStatus {
-  Unspecified = "unspecified",
-  InProgress = "in_progress",
-  InReview = "in_review",
-  Approved = "approved",
-  PrOpen = "pr_open",
-  Done = "done",
-  Rejected = "rejected",
-  Failed = "failed",
-  Cancelled = "cancelled",
-}
+export type SessionOutputKind =
+  | 'text'
+  | 'plan_update'
+  | 'tool_call'
+  | 'tool_result'
+  | 'progress'
+  | 'warning'
+  | 'error';
 
-export enum CompositeTaskStatus {
-  Unspecified = "unspecified",
-  Planning = "planning",
-  PendingApproval = "pending_approval",
-  InProgress = "in_progress",
-  Done = "done",
-  Rejected = "rejected",
-  Failed = "failed",
-}
+export type ActionType =
+  | 'review_requested'
+  | 'pr_creation_ready'
+  | 'plan_approval_required'
+  | 'ci_failed'
+  | 'merge_conflict'
+  | 'security_alert'
+  | 'user_input_required';
 
-export enum TtyInputType {
-  Unspecified = "unspecified",
-  Text = "text",
-  Select = "select",
-  Confirm = "confirm",
-  Password = "password",
-}
+export type PrStatus =
+  | 'open'
+  | 'approved'
+  | 'changes_requested'
+  | 'merged'
+  | 'closed'
+  | 'ci_failed';
 
-export enum TtyInputStatus {
-  Unspecified = "unspecified",
-  Pending = "pending",
-  Responded = "responded",
-  Timeout = "timeout",
-  Cancelled = "cancelled",
-}
+export type BadgeColorKey =
+  | 'blue'
+  | 'green'
+  | 'yellow'
+  | 'orange'
+  | 'red'
+  | 'gray';
 
-export enum TodoItemType {
-  Unspecified = "unspecified",
-  IssueTriage = "issue_triage",
-  PrReview = "pr_review",
-}
+export type StreamEventType =
+  | 'task_updated'
+  | 'subtask_updated'
+  | 'session_output'
+  | 'session_state_changed'
+  | 'pr_updated'
+  | 'review_assist_updated'
+  | 'inline_comment_updated'
+  | 'notification_created';
 
-export enum TodoItemStatus {
-  Unspecified = "unspecified",
-  Pending = "pending",
-  InProgress = "in_progress",
-  Completed = "completed",
-  Dismissed = "dismissed",
-}
+export type NotificationType =
+  | 'task_action_required'
+  | 'plan_action_required'
+  | 'pr_review_activity'
+  | 'pr_ci_failure'
+  | 'agent_session_failed';
 
-// Entities
-
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  totalCostUsd: number;
-  durationMs: number;
-  numTurns: number;
-}
-
-export interface BaseRemote {
-  gitRemoteUrl: string;
-  gitBranchName: string;
-}
-
-export interface AgentSession {
-  id: string;
-  agentTaskId: string;
-  aiAgentType: AiAgentType;
-  aiAgentModel?: string;
-  startedAt?: string;
-  completedAt?: string;
-  outputLog?: string;
-  tokenUsage?: TokenUsage;
-  createdAt: string;
-}
-
-export interface AgentTask {
-  id: string;
-  baseRemotes: BaseRemote[];
-  agentSessions: AgentSession[];
-  aiAgentType?: AiAgentType;
-  aiAgentModel?: string;
-  createdAt: string;
+export interface GeneratedCommit {
+  sha: string;
+  parentShas: string[];
+  title: string;
+  body?: string;
+  authoredAt: string;
 }
 
 export interface UnitTask {
   id: string;
+  workspaceId: string;
   repositoryGroupId: string;
-  agentTaskId: string;
+  title: string;
   prompt: string;
-  title?: string;
   branchName?: string;
-  linkedPrUrl?: string;
-  baseCommit?: string;
-  endCommit?: string;
-  /** Git patch (unified diff) representing the changes made by the AI agent. */
-  gitPatch?: string;
-  autoFixTaskIds: string[];
   status: UnitTaskStatus;
+  actionTypes: ActionType[];
+  prTrackingIds: string[];
+  latestCommitSha?: string;
+  generatedCommitCount: number;
+  latestPatchRef?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CompositeTaskNode {
+export interface SubTask {
   id: string;
-  compositeTaskId: string;
   unitTaskId: string;
-  dependsOnIds: string[];
+  taskType: SubTaskType;
+  prompt: string;
+  status: SubTaskStatus;
+  planModeEnabled: boolean;
+  targetActionType?: ActionType;
+  baseCommitSha?: string;
+  headCommitSha?: string;
+  generatedCommits: GeneratedCommit[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TokenUsageMetrics {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+}
+
+export interface AgentSession {
+  id: string;
+  subTaskId: string;
+  agentType: string;
+  model?: string;
+  status: AgentSessionStatus;
+  tokenUsage?: TokenUsageMetrics;
+  startedAt?: string;
+  completedAt?: string;
   createdAt: string;
 }
 
-export interface CompositeTaskNodeWithUnitTask {
-  node: CompositeTaskNode;
-  unitTask: UnitTask;
-}
-
-export interface CompositeTaskNodesResult {
-  nodes: CompositeTaskNodeWithUnitTask[];
-}
-
-export interface CompositeTask {
+export interface SessionOutputEvent {
   id: string;
-  repositoryGroupId: string;
-  planningTaskId: string;
-  prompt: string;
-  title?: string;
-  /** Raw PLAN.yaml content persisted after planning completes. */
-  planYaml?: string;
-  /** User feedback for re-planning (set by Update Plan, cleared after re-planning). */
-  updatePlanFeedback?: string;
-  nodeIds: string[];
-  status: CompositeTaskStatus;
-  executionAgentType?: AiAgentType;
+  sessionId: string;
+  sequence: number;
+  kind: SessionOutputKind;
+  message: string;
+  attributes: Record<string, string>;
+  emittedAt: string;
+}
+
+export interface PullRequestTracking {
+  id: string;
+  unitTaskId: string;
+  provider: string;
+  repositoryId: string;
+  prNumber: number;
+  prUrl: string;
+  status: PrStatus;
+  lastPolledAt?: string;
+  autoFixEnabled: boolean;
+  maxAutoFixAttempts: number;
+  autoFixAttemptsUsed: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewAssistItem {
+  id: string;
+  unitTaskId: string;
+  prTrackingId: string;
+  sourceType: string;
+  title: string;
+  details?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewInlineComment {
+  id: string;
+  unitTaskId: string;
+  subTaskId?: string;
+  filePath: string;
+  side: string;
+  lineNumber: number;
+  body: string;
+  status: string;
+  authorUserId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BadgeTheme {
+  id: string;
+  workspaceId: string;
+  actionType: ActionType;
+  colorKey: BadgeColorKey;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Notification {
+  id: string;
+  workspaceId: string;
+  notificationType: NotificationType;
+  title: string;
+  body: string;
+  deepLink?: string;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  endpointUrl?: string;
+  authProfileId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -169,11 +232,9 @@ export interface CompositeTask {
 export interface Repository {
   id: string;
   workspaceId: string;
-  name: string;
   remoteUrl: string;
   defaultBranch: string;
-  vcsType: VcsType;
-  vcsProviderType: VcsProviderType;
+  vcsProvider: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -181,362 +242,199 @@ export interface Repository {
 export interface RepositoryGroup {
   id: string;
   workspaceId: string;
-  name?: string;
+  name: string;
   repositoryIds: string[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface Workspace {
-  id: string;
-  name: string;
-  description?: string;
-  userId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface TtyInputRequest {
-  id: string;
-  taskId: string;
-  sessionId: string;
-  prompt: string;
-  inputType: TtyInputType;
-  options: string[];
-  status: TtyInputStatus;
-  response?: string;
-  createdAt: string;
-  respondedAt?: string;
-}
-
-export interface IssueTriageData {
-  issueUrl: string;
-  issueTitle: string;
-  suggestedLabels: string[];
-  suggestedAssignees: string[];
-}
-
-export interface PrReviewData {
-  prUrl: string;
-  prTitle: string;
-  changedFilesCount: number;
-  aiSummary?: string;
-}
-
-export interface TodoItem {
-  id: string;
-  itemType: TodoItemType;
-  status: TodoItemStatus;
-  repositoryId: string;
-  issueTriage?: IssueTriageData;
-  prReview?: PrReviewData;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// App settings types
-
-export interface GlobalSettings {
-  mode: "local" | "remote";
-  serverUrl?: string;
-  hotkey: {
-    openChat: string;
-  };
-  notification: {
-    enabled: boolean;
-    approvalRequest: boolean;
-    userQuestion: boolean;
-    reviewReady: boolean;
-  };
-  agent: {
-    planning: {
-      type: AiAgentType;
-      model: string;
-    };
-    execution: {
-      type: AiAgentType;
-      model: string;
-    };
-    chat: {
-      type: AiAgentType;
-      model: string;
-    };
-  };
-}
-
-export interface RepositorySettings {
-  branch: {
-    template: string;
-  };
-  automation: {
-    autoFixReviewComments: boolean;
-    autoFixReviewCommentsFilter: string;
-    autoFixCIFailures: boolean;
-    maxAutoFixAttempts: number;
-  };
-  compositeTask: {
-    autoApprove: boolean;
-  };
+export interface StreamEvent {
+  eventType: StreamEventType;
+  workspaceId: string;
+  payload: unknown;
 }
 
 // API Request/Response types
 
-export interface CreateUnitTaskParams {
-  repositoryGroupId: string;
-  prompt: string;
-  title?: string;
-  branchName?: string;
-  aiAgentType?: string;
-  aiAgentModel?: string;
-}
-
-export interface CreateCompositeTaskParams {
-  repositoryGroupId: string;
-  prompt: string;
-  title?: string;
-  executionAgentType?: string;
-  planningAgentType?: string;
-}
-
-export interface ListTasksParams {
+export interface ListTasksRequest {
+  workspaceId?: string;
   repositoryGroupId?: string;
-  unitStatus?: string;
-  compositeStatus?: string;
+  status?: UnitTaskStatus;
   limit?: number;
   offset?: number;
 }
 
-export interface ListTasksResult {
-  unitTasks: UnitTask[];
-  compositeTasks: CompositeTask[];
+export interface ListTasksResponse {
+  tasks: UnitTask[];
   totalCount: number;
 }
 
-export interface TaskResponse {
-  unitTask?: UnitTask;
-  compositeTask?: CompositeTask;
+export interface GetTaskRequest {
+  taskId: string;
 }
 
-export interface AddRepositoryParams {
-  workspaceId?: string;
-  remoteUrl: string;
-  name?: string;
-  defaultBranch?: string;
+export interface GetTaskResponse {
+  task: UnitTask;
 }
 
-export interface ListRepositoriesParams {
-  workspaceId?: string;
+export interface CreateTaskRequest {
+  workspaceId: string;
+  repositoryGroupId: string;
+  title: string;
+  prompt: string;
+  branchName?: string;
+}
+
+export interface CreateTaskResponse {
+  task: UnitTask;
+}
+
+export interface DeleteTaskRequest {
+  taskId: string;
+}
+
+export interface StopTaskRequest {
+  taskId: string;
+}
+
+export interface ApproveSubTaskRequest {
+  subTaskId: string;
+}
+
+export interface RequestChangesRequest {
+  subTaskId: string;
+  feedback: string;
+}
+
+export interface ApprovePlanRequest {
+  subTaskId: string;
+}
+
+export interface RevisePlanRequest {
+  subTaskId: string;
+  feedback: string;
+}
+
+export interface CreatePrRequest {
+  taskId: string;
+}
+
+export interface RetrySubTaskRequest {
+  subTaskId: string;
+}
+
+export interface ListSubTasksRequest {
+  unitTaskId: string;
+}
+
+export interface ListSubTasksResponse {
+  subTasks: SubTask[];
+}
+
+export interface GetSubTaskRequest {
+  subTaskId: string;
+}
+
+export interface GetSubTaskResponse {
+  subTask: SubTask;
+}
+
+export interface ListAgentSessionsRequest {
+  subTaskId: string;
+}
+
+export interface ListAgentSessionsResponse {
+  sessions: AgentSession[];
+}
+
+export interface ListSessionOutputsRequest {
+  sessionId: string;
+  afterSequence?: number;
+}
+
+export interface ListSessionOutputsResponse {
+  events: SessionOutputEvent[];
+}
+
+export interface ListNotificationsRequest {
+  workspaceId: string;
+  unreadOnly?: boolean;
   limit?: number;
   offset?: number;
 }
 
-export interface ListRepositoriesResult {
-  repositories: Repository[];
+export interface ListNotificationsResponse {
+  notifications: Notification[];
   totalCount: number;
 }
 
-export interface CreateWorkspaceParams {
-  name: string;
-  description?: string;
+export interface MarkNotificationReadRequest {
+  notificationId: string;
 }
 
-export interface UpdateWorkspaceParams {
-  name?: string;
-  description?: string;
+export interface MarkAllNotificationsReadRequest {
+  workspaceId: string;
 }
 
-export interface ListWorkspacesParams {
+export interface ListWorkspacesRequest {
   limit?: number;
   offset?: number;
 }
 
-export interface ListWorkspacesResult {
+export interface ListWorkspacesResponse {
   workspaces: Workspace[];
   totalCount: number;
 }
 
-// Repository Group Request/Response types
-
-export interface CreateRepositoryGroupParams {
-  workspaceId?: string;
-  name?: string;
-  repositoryIds: string[];
+export interface GetWorkspaceRequest {
+  workspaceId: string;
 }
 
-export interface ListRepositoryGroupsParams {
+export interface GetWorkspaceResponse {
+  workspace: Workspace;
+}
+
+export interface CreateWorkspaceRequest {
+  name: string;
+  endpointUrl?: string;
+}
+
+export interface UpdateWorkspaceRequest {
+  workspaceId: string;
+  name?: string;
+  endpointUrl?: string;
+}
+
+export interface DeleteWorkspaceRequest {
+  workspaceId: string;
+}
+
+export interface ListRepositoriesRequest {
   workspaceId?: string;
   limit?: number;
   offset?: number;
 }
 
-export interface ListRepositoryGroupsResult {
+export interface ListRepositoriesResponse {
+  repositories: Repository[];
+  totalCount: number;
+}
+
+export interface ListRepositoryGroupsRequest {
+  workspaceId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListRepositoryGroupsResponse {
   groups: RepositoryGroup[];
   totalCount: number;
 }
 
-export interface UpdateRepositoryGroupParams {
-  name?: string;
-  repositoryIds: string[];
+export interface ListPrTrackingsRequest {
+  unitTaskId: string;
 }
 
-// Normalized Event Types (from coding_agents crate)
-
-export enum FileChangeType {
-  Create = "create",
-  Modify = "modify",
-  Delete = "delete",
-  Rename = "rename",
-}
-
-export interface TextOutputEvent {
-  type: "text_output";
-  content: string;
-  stream: boolean;
-}
-
-export interface ErrorOutputEvent {
-  type: "error_output";
-  content: string;
-}
-
-export interface ToolUseEvent {
-  type: "tool_use";
-  tool_name: string;
-  input: unknown;
-}
-
-export interface ToolResultEvent {
-  type: "tool_result";
-  tool_name: string;
-  output: unknown;
-  is_error: boolean;
-}
-
-export interface FileChangeEvent {
-  type: "file_change";
-  path: string;
-  change_type: FileChangeType | { rename: { from: string } };
-  content?: string;
-}
-
-export interface CommandExecutionEvent {
-  type: "command_execution";
-  command: string;
-  exit_code?: number;
-  output?: string;
-}
-
-export interface AskUserQuestionEvent {
-  type: "ask_user_question";
-  question: string;
-  options?: string[];
-}
-
-export interface UserResponseEvent {
-  type: "user_response";
-  response: string;
-}
-
-export interface SessionStartEvent {
-  type: "session_start";
-  agent_type: string;
-  model?: string;
-}
-
-export interface SessionEndEvent {
-  type: "session_end";
-  success: boolean;
-  error?: string;
-  token_usage?: TokenUsage;
-}
-
-export interface ThinkingEvent {
-  type: "thinking";
-  content: string;
-}
-
-export interface RawEvent {
-  type: "raw";
-  content: string;
-}
-
-export type NormalizedEvent =
-  | TextOutputEvent
-  | ErrorOutputEvent
-  | ToolUseEvent
-  | ToolResultEvent
-  | FileChangeEvent
-  | CommandExecutionEvent
-  | AskUserQuestionEvent
-  | UserResponseEvent
-  | SessionStartEvent
-  | SessionEndEvent
-  | ThinkingEvent
-  | RawEvent;
-
-export interface NormalizedEventEntry {
-  id: number | string;
-  timestamp: string;
-  event: NormalizedEvent;
-}
-
-/** A group of log events belonging to a single agent session. */
-export interface SessionLogsGroup {
-  sessionId: string;
-  /** Human-readable label, e.g. "Main Execution" or "Subtask 1". */
-  label: string;
-  events: NormalizedEventEntry[];
-  isComplete: boolean;
-  createdAt: string;
-}
-
-export interface TaskLogsResponse {
-  events: NormalizedEventEntry[];
-  isComplete: boolean;
-  lastEventId?: number;
-  /** All sessions for this agent task, each with their own events. */
-  sessions: SessionLogsGroup[];
-}
-
-export interface RespondTtyInputParams {
-  requestId: string;
-  response: string;
-}
-
-// Tauri Event Types (emitted from backend)
-
-export interface TtyInputRequestEvent {
-  requestId: string;
-  taskId: string;
-  sessionId: string;
-  question: string;
-  options?: string[];
-}
-
-export interface AgentOutputEvent {
-  taskId: string;
-  sessionId: string;
-  event: NormalizedEvent;
-}
-
-export interface TaskStatusChangedEvent {
-  taskId: string;
-  taskType: "unit_task" | "composite_task";
-  oldStatus: string;
-  newStatus: string;
-}
-
-export interface TaskCompletedEvent {
-  taskId: string;
-  taskType: "unit_task" | "composite_task";
-  success: boolean;
-  error?: string;
+export interface ListPrTrackingsResponse {
+  prTrackings: PullRequestTracking[];
 }

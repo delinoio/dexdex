@@ -57,8 +57,16 @@ pub async fn add_repository(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let workspace_id = params
+            .workspace_id
+            .as_deref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
+            .unwrap_or_default();
+
         let request = requests::AddRepositoryRequest {
-            workspace_id: params.workspace_id.unwrap_or_default(),
+            workspace_id,
             remote_url: params.remote_url,
             name: params.name,
             default_branch: params.default_branch,
@@ -133,8 +141,15 @@ pub async fn list_repositories(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let workspace_id = params
+            .workspace_id
+            .as_deref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
         let request = requests::ListRepositoriesRequest {
-            workspace_id: params.workspace_id,
+            workspace_id,
             limit: params.limit.unwrap_or(100),
             offset: params.offset.unwrap_or(0),
         };
@@ -212,8 +227,11 @@ pub async fn remove_repository(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let repo_uuid = Uuid::parse_str(&repository_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+
         let request = requests::RemoveRepositoryRequest {
-            repository_id: repository_id.clone(),
+            repository_id: repo_uuid,
         };
 
         client.remove_repository(request).await?;
@@ -381,10 +399,25 @@ pub async fn create_repository_group(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let workspace_id = params
+            .workspace_id
+            .as_deref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?
+            .unwrap_or_default();
+
+        let repository_ids = params
+            .repository_ids
+            .iter()
+            .map(|s| Uuid::parse_str(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+
         let request = requests::CreateRepositoryGroupRequest {
-            workspace_id: params.workspace_id.unwrap_or_default(),
+            workspace_id,
             name: params.name,
-            repository_ids: params.repository_ids,
+            repository_ids,
         };
 
         let response = client.create_repository_group(request).await?;
@@ -483,8 +516,15 @@ pub async fn list_repository_groups(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let workspace_id = params
+            .workspace_id
+            .as_deref()
+            .map(|s| Uuid::parse_str(s))
+            .transpose()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid workspace ID: {}", e)))?;
+
         let request = requests::ListRepositoryGroupsRequest {
-            workspace_id: params.workspace_id,
+            workspace_id,
             limit: params.limit.unwrap_or(100),
             offset: params.offset.unwrap_or(0),
         };
@@ -567,8 +607,11 @@ pub async fn get_repository_group(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let group_uuid = Uuid::parse_str(&group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
         let request = requests::GetRepositoryGroupRequest {
-            group_id: group_id.clone(),
+            group_id: group_uuid,
         };
 
         let response = client.get_repository_group(request).await?;
@@ -613,10 +656,20 @@ pub async fn update_repository_group(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let group_uuid = Uuid::parse_str(&group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
+        let repo_uuids = params
+            .repository_ids
+            .iter()
+            .map(|s| Uuid::parse_str(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid repository ID: {}", e)))?;
+
         let request = requests::UpdateRepositoryGroupRequest {
-            group_id: group_id.clone(),
+            group_id: group_uuid,
             name: params.name,
-            repository_ids: params.repository_ids,
+            repository_ids: repo_uuids,
         };
 
         let response = client.update_repository_group(request).await?;
@@ -712,8 +765,11 @@ pub async fn delete_repository_group(
     if state.mode == AppMode::Remote {
         let client = state.get_remote_client()?;
 
+        let group_uuid = Uuid::parse_str(&group_id)
+            .map_err(|e| AppError::InvalidRequest(format!("Invalid group ID: {}", e)))?;
+
         let request = requests::DeleteRepositoryGroupRequest {
-            group_id: group_id.clone(),
+            group_id: group_uuid,
         };
 
         client.delete_repository_group(request).await?;
