@@ -45,3 +45,9 @@ Both types use the same:
 
 Mobile clients use the same workspace concept.
 A mobile app can connect to local endpoints (same network or tunneled) and remote endpoints.
+
+Capability rollout is phased:
+
+1. baseline mobile flow focuses on remote monitoring, logs, plan actions, and stop actions
+2. expanded mobile flow adds broader remediation and review interactions
+3. connectivity contract stays identical across desktop and mobile

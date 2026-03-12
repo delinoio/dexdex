@@ -185,6 +185,34 @@ enum StreamEventType {
 }
 ```
 
+## PRD Terminology Mapping
+
+| PRD term | Canonical entity model |
+|---|---|
+| Task | UnitTask |
+| Session | AgentSession (scoped by SubTask) |
+| PR Creation step | SubTask (`type = PR_CREATE`) |
+| Review/CI remediation step | SubTask (`type = PR_REVIEW_FIX` or `PR_CI_FIX`) |
+
+## PRD Task State Mapping (Derived UI Labels)
+
+PRD task labels are presentation-oriented states.
+Persisted source of truth remains `UnitTaskStatus`, `SubTaskStatus`, and `AgentSessionStatus`.
+
+| PRD label | Derived mapping in canonical model |
+|---|---|
+| Draft | client-side draft before UnitTask is created |
+| Queued | `UnitTaskStatus = QUEUED` and initial `SubTaskStatus = QUEUED` |
+| Running | `UnitTaskStatus = IN_PROGRESS` with active `SubTaskStatus = IN_PROGRESS` |
+| WaitingForHuman | `UnitTaskStatus = ACTION_REQUIRED` with `SubTaskStatus = WAITING_FOR_USER_INPUT` or `WAITING_FOR_PLAN_APPROVAL` |
+| PlanReady | `UnitTaskStatus = ACTION_REQUIRED` with `SubTaskStatus = WAITING_FOR_PLAN_APPROVAL` |
+| Approved | derived UI checkpoint after plan approval; persisted execution continues as `UnitTaskStatus = IN_PROGRESS` |
+| Building | derived UI checkpoint while build-phase SubTask is `IN_PROGRESS` |
+| PRCreating | derived UI checkpoint while `SubTaskType = PR_CREATE` and `SubTaskStatus = IN_PROGRESS` |
+| Completed | `UnitTaskStatus = COMPLETED` |
+| Failed | `UnitTaskStatus = FAILED` or active SubTask/session failed |
+| Canceled | `UnitTaskStatus = CANCELLED` or `SubTaskStatus = CANCELLED` |
+
 ## Core Entities
 
 ### Workspace
