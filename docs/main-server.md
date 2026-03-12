@@ -1,4 +1,4 @@
-# Main Server (Go)
+# Main Server (Rust)
 
 Main Server is the control plane for DexDex.
 It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
@@ -19,7 +19,7 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Main Server (Go)                                             │
+│ Main Server (Rust)                                           │
 │                                                              │
 │  Connect RPC Handlers                                        │
 │   ├── WorkspaceService                                       │
@@ -52,6 +52,7 @@ It exposes Connect RPC APIs and coordinates task, PR, and event lifecycles.
 
 Main server is the canonical business interface.
 No client workflow requires Tauri-only business contracts.
+Client business flows and streaming subscriptions are routed through main server; direct client-to-worker business channels are not part of the contract.
 
 ## Data Ownership
 

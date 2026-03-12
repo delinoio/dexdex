@@ -1,4 +1,4 @@
-# Worker Server (Go)
+# Worker Server (Rust)
 
 Worker Server executes SubTasks using AI coding agents in isolated worktree environments.
 
@@ -22,7 +22,7 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Worker Server (Go)                                           │
+│ Worker Server (Rust)                                         │
 │                                                              │
 │  Job Receiver (Connect RPC client/server)                    │
 │    └── SubTask Runner                                        │
@@ -49,6 +49,12 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 7. create and persist real git commits in branch history
 8. export patch and metadata derived from commits
 9. cleanup according to retention policy
+
+Execution mode note:
+
+1. remote and local modes may use different repository bootstrap strategies
+2. both modes execute task runs in worktrees after bootstrap
+3. worker does not expose a direct business API for client-side calls
 
 Path convention:
 

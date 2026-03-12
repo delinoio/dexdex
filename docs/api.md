@@ -3,6 +3,11 @@
 This document defines the DexDex API contract.
 All business communication is Connect RPC-based.
 
+## Contract Alignment Note
+
+This document is the product and architecture source of truth for API behavior.
+Proto/code synchronization may lag this document and is tracked as follow-up work.
+
 ## Protocol
 
 - Transport: HTTP/2 (fallback HTTP/1.1 where needed)
@@ -17,6 +22,8 @@ All business communication is Connect RPC-based.
 3. Public requests and responses use enums for known variants.
 4. Streaming channels emit typed events with monotonic sequence IDs.
 5. Coding-agent session output contracts are normalized and provider-agnostic.
+6. Main server is the canonical business API boundary for clients.
+7. Client applications do not call worker-server internals directly for business flows.
 
 ## Service Overview
 
