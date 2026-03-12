@@ -1,8 +1,8 @@
 [package]
 name = "tauri-app"
 version = "0.1.0"
-description = "DeliDev - AI Coding Agent Orchestrator"
-authors = ["DeliDev Team"]
+description = "DexDex - AI Coding Agent Orchestrator"
+authors = ["DexDex Team"]
 edition = "2021"
 publish = false
 

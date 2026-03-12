@@ -1,4 +1,4 @@
-//! Mobile-specific functionality for DeliDev.
+//! Mobile-specific functionality for DexDex.
 //!
 //! This module provides mobile platform detection, remote-only mode
 //! enforcement, and mobile-specific features like biometric authentication and

@@ -1,6 +1,6 @@
-# DeliDev User Guide
+# DexDex User Guide
 
-This guide explains the DeliDev user workflow.
+This guide explains the DexDex user workflow.
 
 ## 1. Create a Workspace
 
@@ -26,7 +26,7 @@ This guide explains the DeliDev user workflow.
 3. enter title and prompt
 4. submit
 
-DeliDev creates the initial SubTask and starts AgentSession execution.
+DexDex creates the initial SubTask and starts AgentSession execution.
 
 ## 4. Monitor Execution
 
@@ -82,7 +82,7 @@ If the session enters plan wait:
 After you approve the AI diff in UnitTask detail:
 
 1. click `Create PR`
-2. DeliDev starts SubTask `PR_CREATE`
+2. DexDex starts SubTask `PR_CREATE`
 3. coding agent receives prompt `Create A PR`
 4. worker creates real git commits for the result
 5. PR appears in PR Management when completed
@@ -116,7 +116,7 @@ In UnitTask detail or PR review diff:
 
 ## 13. Notifications
 
-DeliDev sends:
+DexDex sends:
 
 1. in-app notifications
 2. Web Notification API notifications when permission is granted
@@ -127,7 +127,7 @@ Manage notification behavior in Settings.
 
 ## 14. Product Rules
 
-1. DeliDev uses workspace connectivity
+1. DexDex uses workspace connectivity
 2. all business communication is Connect RPC-based
 3. direct local folder execution is not supported
 4. work is executed through task-specific worktrees

@@ -5,7 +5,7 @@
 //!
 //! # Data Persistence
 //!
-//! Task data is persisted to a SQLite database at ~/.delidev/data/tasks.db.
+//! Task data is persisted to a SQLite database at ~/.dexdex/data/tasks.db.
 //! Data is preserved across application restarts.
 
 use std::{path::PathBuf, sync::Arc};

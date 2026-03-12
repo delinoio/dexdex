@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "DeliDev",
+        "title": "DexDex",
         "width": 1280,
         "height": 800,
         "maximized": true

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Known secret keys used by DeliDev and its supported AI agents.
+/// Known secret keys used by DexDex and its supported AI agents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SecretKey {
     /// Claude Code OAuth token.

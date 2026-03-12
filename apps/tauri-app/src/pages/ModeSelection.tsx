@@ -62,9 +62,9 @@ export function ModeSelection() {
     <div className="flex min-h-screen flex-col items-center justify-center p-8">
       <div className="w-full max-w-2xl space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold">Welcome to DeliDev</h1>
+          <h1 className="text-3xl font-bold">Welcome to DexDex</h1>
           <p className="mt-2 text-[hsl(var(--muted-foreground))]">
-            Choose how you want to run DeliDev
+            Choose how you want to run DexDex
           </p>
         </div>
 
@@ -187,7 +187,7 @@ export function ModeSelection() {
                 <div>
                   <CardTitle>Remote Mode</CardTitle>
                   <CardDescription>
-                    Connect to a remote DeliDev server
+                    Connect to a remote DexDex server
                   </CardDescription>
                 </div>
               </div>

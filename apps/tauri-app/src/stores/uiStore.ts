@@ -140,7 +140,7 @@ export const useUiStore = create<UiState>()(
       setSelectedPanel: (panel) => set({ selectedPanel: panel }),
     }),
     {
-      name: "delidev-ui-store",
+      name: "dexdex-ui-store",
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         currentWorkspaceId: state.currentWorkspaceId,

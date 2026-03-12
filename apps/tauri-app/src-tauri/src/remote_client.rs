@@ -19,7 +19,7 @@ use crate::error::{AppError, AppResult};
 ///
 /// The remote client supports JWT authentication via the `with_auth_token`
 /// method. According to the design docs, JWT authentication is required when
-/// connecting to a remote DeliDev server in production. The token is obtained
+/// connecting to a remote DexDex server in production. The token is obtained
 /// after successful OIDC authentication (see `docs/design.md` for details).
 ///
 /// Currently, the auth token is not automatically injected because:

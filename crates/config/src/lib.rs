@@ -1,9 +1,9 @@
-//! Configuration management for DeliDev.
+//! Configuration management for DexDex.
 //!
 //! This crate handles configuration loading and parsing for:
-//! - Global settings (`~/.delidev/config.toml`)
-//! - Repository settings (`.delidev/config.toml`)
-//! - VCS credentials (`~/.delidev/credentials.toml`)
+//! - Global settings (`~/.dexdex/config.toml`)
+//! - Repository settings (`.dexdex/config.toml`)
+//! - VCS credentials (`~/.dexdex/credentials.toml`)
 
 mod credentials;
 mod error;
@@ -17,7 +17,7 @@ pub use error::*;
 pub use global::*;
 pub use repository::*;
 
-/// Validates that a path is within the DeliDev configuration directory.
+/// Validates that a path is within the DexDex configuration directory.
 ///
 /// This prevents path traversal attacks where an attacker could manipulate
 /// a path to write files outside the expected directory.
@@ -68,33 +68,33 @@ pub fn validate_config_path(path: &Path) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Returns the default DeliDev configuration directory path.
+/// Returns the default DexDex configuration directory path.
 ///
-/// On Unix-like systems: `~/.delidev`
-/// On Windows: `%USERPROFILE%\.delidev`
+/// On Unix-like systems: `~/.dexdex`
+/// On Windows: `%USERPROFILE%\.dexdex`
 pub fn config_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".delidev"))
+    dirs::home_dir().map(|home| home.join(".dexdex"))
 }
 
 /// Returns the path to the global configuration file.
 ///
-/// `~/.delidev/config.toml`
+/// `~/.dexdex/config.toml`
 pub fn global_config_path() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("config.toml"))
 }
 
 /// Returns the path to the credentials file.
 ///
-/// `~/.delidev/credentials.toml`
+/// `~/.dexdex/credentials.toml`
 pub fn credentials_path() -> Option<PathBuf> {
     config_dir().map(|dir| dir.join("credentials.toml"))
 }
 
 /// Returns the path to the repository configuration file.
 ///
-/// `.delidev/config.toml` relative to the repository root.
+/// `.dexdex/config.toml` relative to the repository root.
 pub fn repository_config_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".delidev").join("config.toml")
+    repo_root.join(".dexdex").join("config.toml")
 }
 
 /// Merged configuration with precedence handling.
@@ -285,7 +285,7 @@ mod tests {
     fn test_config_dir() {
         let dir = config_dir();
         assert!(dir.is_some());
-        assert!(dir.unwrap().ends_with(".delidev"));
+        assert!(dir.unwrap().ends_with(".dexdex"));
     }
 
     #[test]
@@ -306,10 +306,7 @@ mod tests {
     fn test_repository_config_path() {
         let repo_root = Path::new("/home/user/myrepo");
         let path = repository_config_path(repo_root);
-        assert_eq!(
-            path,
-            PathBuf::from("/home/user/myrepo/.delidev/config.toml")
-        );
+        assert_eq!(path, PathBuf::from("/home/user/myrepo/.dexdex/config.toml"));
     }
 
     #[test]

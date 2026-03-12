@@ -1,6 +1,6 @@
-//! DeliDev Tauri App - Desktop and Mobile Application
+//! DexDex Tauri App - Desktop and Mobile Application
 //!
-//! This crate provides the Tauri backend for the DeliDev desktop and mobile
+//! This crate provides the Tauri backend for the DexDex desktop and mobile
 //! applications. It supports both local (single-process) and remote modes.
 
 pub mod commands;
@@ -25,7 +25,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
     init_tracing();
 
-    info!("DeliDev Tauri app starting...");
+    info!("DexDex Tauri app starting...");
 
     // Create application state
     let rt = tokio::runtime::Runtime::new()?;
@@ -50,7 +50,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    info!("DeliDev Tauri app initialized");
+    info!("DexDex Tauri app initialized");
 
     Ok(())
 }
@@ -124,7 +124,7 @@ pub fn run() {
                     if let Err(notif_err) = app
                         .notification()
                         .builder()
-                        .title("DeliDev Hotkey Error")
+                        .title("DexDex Hotkey Error")
                         .body(format!(
                             "Could not register {} hotkey. The app will still work, but the \
                              global shortcut is unavailable.",

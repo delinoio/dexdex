@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * E2E tests for DeliDev main application flows.
+ * E2E tests for DexDex main application flows.
  */
 
 test.describe('Application', () => {

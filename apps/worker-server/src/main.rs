@@ -1,4 +1,4 @@
-//! DeliDev Worker Server entry point.
+//! DexDex Worker Server entry point.
 
 use tracing_subscriber::EnvFilter;
 use worker_server::config::WorkerConfig;
@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    tracing::info!("Starting DeliDev Worker Server");
+    tracing::info!("Starting DexDex Worker Server");
     tracing::info!("Main server: {}", config.main_server_url);
     tracing::info!("Worker name: {}", config.worker_name);
     tracing::info!("Worker port: {}", config.worker_port);

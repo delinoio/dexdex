@@ -1,4 +1,4 @@
-//! Cross-platform keychain access for DeliDev.
+//! Cross-platform keychain access for DexDex.
 //!
 //! This crate provides:
 //! - Trait-based keychain abstraction

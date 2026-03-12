@@ -56,12 +56,12 @@ impl DockerManager {
 
     /// Checks if a custom Dockerfile exists in the repository.
     pub fn has_custom_dockerfile(repo_path: &Path) -> bool {
-        repo_path.join(".delidev/setup/Dockerfile").exists()
+        repo_path.join(".dexdex/setup/Dockerfile").exists()
     }
 
     /// Builds a Docker image from the repository's custom Dockerfile.
     pub async fn build_custom_image(&self, repo_path: &Path, tag: &str) -> WorkerResult<String> {
-        let dockerfile_path = repo_path.join(".delidev/setup/Dockerfile");
+        let dockerfile_path = repo_path.join(".dexdex/setup/Dockerfile");
         if !dockerfile_path.exists() {
             return Err(WorkerError::Config(format!(
                 "Custom Dockerfile not found at {:?}",
@@ -71,8 +71,8 @@ impl DockerManager {
 
         info!("Building custom Docker image from {:?}", dockerfile_path);
 
-        // Create build context from the .delidev/setup directory
-        let context_path = repo_path.join(".delidev/setup");
+        // Create build context from the .dexdex/setup directory
+        let context_path = repo_path.join(".dexdex/setup");
         let tar = self.create_build_context(&context_path).await?;
 
         let options = BuildImageOptions {

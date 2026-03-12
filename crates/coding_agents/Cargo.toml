@@ -3,7 +3,7 @@ name = "coding_agents"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "AI coding agent abstraction and output normalization for DeliDev"
+description = "AI coding agent abstraction and output normalization for DexDex"
 
 [dependencies]
 # Core

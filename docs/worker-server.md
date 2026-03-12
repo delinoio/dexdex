@@ -52,8 +52,8 @@ Worker Server executes SubTasks using AI coding agents in isolated worktree envi
 
 Path convention:
 
-- cache: `~/.delidev/repo-cache/<repo-hash>/`
-- worktree: `~/.delidev/worktrees/<unit-task-id>/<sub-task-id>/<repo-id>/`
+- cache: `~/.dexdex/repo-cache/<repo-hash>/`
+- worktree: `~/.dexdex/worktrees/<unit-task-id>/<sub-task-id>/<repo-id>/`
 
 ## SubTask and Session Flow
 
@@ -173,12 +173,12 @@ Provider-native raw usage payload may be retained only in worker-local debug sto
 
 | Key | Required | Description |
 |---|---|---|
-| `DELIDEV_WORKER_ID` | Y | Stable worker identifier |
-| `DELIDEV_MAIN_SERVER_URL` | Y | Main server endpoint |
-| `DELIDEV_WORKTREE_ROOT` | N | Worktree base path |
-| `DELIDEV_REPO_CACHE_ROOT` | N | Repository cache root |
-| `DELIDEV_MAX_PARALLEL_SUBTASKS` | N | Concurrency cap |
-| `DELIDEV_AGENT_EXEC_TIMEOUT_SEC` | N | Session timeout |
+| `DEXDEX_WORKER_ID` | Y | Stable worker identifier |
+| `DEXDEX_MAIN_SERVER_URL` | Y | Main server endpoint |
+| `DEXDEX_WORKTREE_ROOT` | N | Worktree base path |
+| `DEXDEX_REPO_CACHE_ROOT` | N | Repository cache root |
+| `DEXDEX_MAX_PARALLEL_SUBTASKS` | N | Concurrency cap |
+| `DEXDEX_AGENT_EXEC_TIMEOUT_SEC` | N | Session timeout |
 
 ## Logging Requirements
 

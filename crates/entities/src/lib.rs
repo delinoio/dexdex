@@ -1,6 +1,6 @@
-//! Core entity definitions for DeliDev.
+//! Core entity definitions for DexDex.
 //!
-//! This crate defines all the core data types used across the DeliDev
+//! This crate defines all the core data types used across the DexDex
 //! application, including entities for tasks, repositories, workspaces, and
 //! more.
 

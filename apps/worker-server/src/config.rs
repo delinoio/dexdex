@@ -43,7 +43,7 @@ impl Default for WorkerConfig {
             heartbeat_interval_secs: 30,
             default_docker_image: "node:20-slim".to_string(),
             workdir: std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
-                + "/.delidev/worktrees",
+                + "/.dexdex/worktrees",
         }
     }
 }
@@ -54,26 +54,26 @@ impl WorkerConfig {
         let default = Self::default();
 
         Self {
-            main_server_url: std::env::var("DELIDEV_MAIN_SERVER_URL")
+            main_server_url: std::env::var("DEXDEX_MAIN_SERVER_URL")
                 .unwrap_or(default.main_server_url),
-            worker_name: std::env::var("DELIDEV_WORKER_NAME").unwrap_or(default.worker_name),
-            worker_port: std::env::var("DELIDEV_WORKER_PORT")
+            worker_name: std::env::var("DEXDEX_WORKER_NAME").unwrap_or(default.worker_name),
+            worker_port: std::env::var("DEXDEX_WORKER_PORT")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(default.worker_port),
-            docker_socket: std::env::var("DELIDEV_DOCKER_SOCKET").unwrap_or(default.docker_socket),
-            container_memory_limit: std::env::var("DELIDEV_CONTAINER_MEMORY_LIMIT")
+            docker_socket: std::env::var("DEXDEX_DOCKER_SOCKET").unwrap_or(default.docker_socket),
+            container_memory_limit: std::env::var("DEXDEX_CONTAINER_MEMORY_LIMIT")
                 .unwrap_or(default.container_memory_limit),
-            container_cpu_limit: std::env::var("DELIDEV_CONTAINER_CPU_LIMIT")
+            container_cpu_limit: std::env::var("DEXDEX_CONTAINER_CPU_LIMIT")
                 .unwrap_or(default.container_cpu_limit),
-            log_level: std::env::var("DELIDEV_LOG_LEVEL").unwrap_or(default.log_level),
-            heartbeat_interval_secs: std::env::var("DELIDEV_HEARTBEAT_INTERVAL")
+            log_level: std::env::var("DEXDEX_LOG_LEVEL").unwrap_or(default.log_level),
+            heartbeat_interval_secs: std::env::var("DEXDEX_HEARTBEAT_INTERVAL")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(default.heartbeat_interval_secs),
-            default_docker_image: std::env::var("DELIDEV_DEFAULT_DOCKER_IMAGE")
+            default_docker_image: std::env::var("DEXDEX_DEFAULT_DOCKER_IMAGE")
                 .unwrap_or(default.default_docker_image),
-            workdir: std::env::var("DELIDEV_WORKDIR").unwrap_or(default.workdir),
+            workdir: std::env::var("DEXDEX_WORKDIR").unwrap_or(default.workdir),
         }
     }
 

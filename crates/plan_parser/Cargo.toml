@@ -3,7 +3,7 @@ name = "plan_parser"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "PLAN.yaml parsing and validation for DeliDev"
+description = "PLAN.yaml parsing and validation for DexDex"
 
 [dependencies]
 entities = { path = "../entities" }

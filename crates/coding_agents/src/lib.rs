@@ -1,4 +1,4 @@
-//! AI coding agent abstraction and output normalization for DeliDev.
+//! AI coding agent abstraction and output normalization for DexDex.
 //!
 //! This crate provides:
 //! - A unified interface for running various AI coding agents

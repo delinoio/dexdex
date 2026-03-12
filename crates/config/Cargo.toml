@@ -3,7 +3,7 @@ name = "config"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Configuration management for DeliDev"
+description = "Configuration management for DexDex"
 
 [dependencies]
 entities = { path = "../entities" }

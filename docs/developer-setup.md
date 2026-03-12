@@ -1,6 +1,6 @@
 # Developer Setup
 
-This guide describes the development setup for DeliDev.
+This guide describes the development setup for DexDex.
 
 ## Repository Layout
 
@@ -57,24 +57,24 @@ This guide describes the development setup for DeliDev.
 
 | Key | Example |
 |---|---|
-| `DELIDEV_DEPLOYMENT_MODE` | `SINGLE_INSTANCE` |
-| `DELIDEV_HTTP_ADDR` | `127.0.0.1:4621` |
-| `DELIDEV_DATABASE_URL` | `sqlite:///Users/<user>/.delidev/main-server.db` |
-| `DELIDEV_REDIS_URL` | `(unset for SINGLE_INSTANCE)` |
-| `DELIDEV_PR_POLL_INTERVAL_SEC` | `30` |
-| `DELIDEV_WORKTREE_ROOT` | `~/.delidev/worktrees` |
+| `DEXDEX_DEPLOYMENT_MODE` | `SINGLE_INSTANCE` |
+| `DEXDEX_HTTP_ADDR` | `127.0.0.1:4621` |
+| `DEXDEX_DATABASE_URL` | `sqlite:///Users/<user>/.dexdex/main-server.db` |
+| `DEXDEX_REDIS_URL` | `(unset for SINGLE_INSTANCE)` |
+| `DEXDEX_PR_POLL_INTERVAL_SEC` | `30` |
+| `DEXDEX_WORKTREE_ROOT` | `~/.dexdex/worktrees` |
 
 Deployment mode options:
 
 1. Single-instance mode:
-- `DELIDEV_DEPLOYMENT_MODE=SINGLE_INSTANCE`
-- `DELIDEV_DATABASE_URL=sqlite:///Users/<user>/.delidev/main-server.db`
+- `DEXDEX_DEPLOYMENT_MODE=SINGLE_INSTANCE`
+- `DEXDEX_DATABASE_URL=sqlite:///Users/<user>/.dexdex/main-server.db`
 - Redis is not required
 
 2. Scale mode:
-- `DELIDEV_DEPLOYMENT_MODE=SCALE`
-- `DELIDEV_DATABASE_URL=postgres://localhost:5432/delidev`
-- `DELIDEV_REDIS_URL=redis://localhost:6379/0`
+- `DEXDEX_DEPLOYMENT_MODE=SCALE`
+- `DEXDEX_DATABASE_URL=postgres://localhost:5432/dexdex`
+- `DEXDEX_REDIS_URL=redis://localhost:6379/0`
 
 ## Validation Checklist
 

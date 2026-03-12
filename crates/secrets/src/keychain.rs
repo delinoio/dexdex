@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use crate::{SecretKey, SecretsResult};
 
 /// Service name used for keychain entries.
-pub const KEYCHAIN_SERVICE: &str = "com.delidev.app";
+pub const KEYCHAIN_SERVICE: &str = "com.dexdex.app";
 
 /// Trait for keychain operations.
 #[async_trait]

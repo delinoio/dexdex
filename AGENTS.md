@@ -35,7 +35,7 @@ Shared Rust crates live in `crates/`:
 
 ### API Reference
 
-The RPC API is defined in `crates/rpc_protocol/proto/delidev.proto`. When you need to find or modify an RPC method or message type, read this file first — it lists all method names and message types, eliminating the need to guess and grep.
+The RPC API is defined in `crates/rpc_protocol/proto/dexdex.proto`. When you need to find or modify an RPC method or message type, read this file first — it lists all method names and message types, eliminating the need to guess and grep.
 
 ### Types and Schemas
 

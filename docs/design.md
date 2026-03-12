@@ -1,12 +1,12 @@
-# DeliDev Design
+# DexDex Design
 
-DeliDev uses a Connect RPC-first architecture with Tauri clients and Go servers.
+DexDex uses a Connect RPC-first architecture with Tauri clients and Rust servers.
 This document is the primary architecture reference.
 
 ## Product Goals
 
 1. Use Tauri as the desktop and mobile app container.
-2. Use Go for `main-server` and `worker-server`.
+2. Use Rust for `main-server` and `worker-server`.
 3. Use `Workspace` as the primary connectivity and scope concept.
 4. Use UnitTask-centric workflows with nested SubTask and AgentSession history.
 5. Make PR management and PR review assist first-class workflows.
@@ -24,7 +24,7 @@ This document is the primary architecture reference.
 ```
                         Connect RPC + Event Streams
 ┌───────────────────────┐   https://api endpoint   ┌───────────────────────┐
-│ Tauri Client          │ <----------------------> │ Main Server (Go)      │
+│ Tauri Client          │ <----------------------> │ Main Server (Rust)    │
 │ (Desktop / iOS /      │                          │ - RPC API             │
 │  Android)             │                          │ - Workspace/Task/PR   │
 │ - React UI            │                          │ - Event broker        │
@@ -34,7 +34,7 @@ This document is the primary architecture reference.
             │                                                   │ Connect RPC
             │                                                   │
             │                                         ┌─────────▼──────────┐
-            │                                         │ Worker Server (Go) │
+            │                                         │ Worker Server (Rust) │
             │                                         │ - Worktree exec    │
             │                                         │ - Agent sessions   │
             │                                         │ - Log stream       │
@@ -43,10 +43,10 @@ This document is the primary architecture reference.
 
 ## Monorepo Structure
 
-- `apps/main-server/` (Go)
-- `apps/worker-server/` (Go)
+- `apps/main-server/` (Rust)
+- `apps/worker-server/` (Rust)
 - `apps/tauri-app/` (Tauri + React)
-- single root `go.mod` for server apps
+- shared Rust crates under `crates/` with Cargo workspace management
 
 ## Deployment Profiles
 
@@ -84,7 +84,7 @@ Web client rule:
 
 ## Workspace Model
 
-DeliDev uses workspace switching.
+DexDex uses workspace switching.
 Each workspace points to a main server endpoint.
 
 ### Workspace Types
@@ -164,7 +164,7 @@ Worker-produced code changes must be represented as real git commits.
 
 ## Worktree-Only Policy
 
-DeliDev does not support editing directly against arbitrary local folders.
+DexDex does not support editing directly against arbitrary local folders.
 
 All code execution paths must:
 
@@ -187,14 +187,14 @@ RepositoryGroup is the execution unit for agent runs.
 
 PR management is part of the standard lifecycle:
 
-1. DeliDev tracks PRs created by DeliDev tasks.
+1. DexDex tracks PRs created by DexDex tasks.
 2. When a user approves AI diff on a UnitTask, UI shows a `Create PR` button.
 3. Clicking `Create PR` creates a SubTask with type `PR_CREATE` and prompt `Create A PR`.
 4. PR creation uses the SubTask real commit chain, not a synthetic patch-only payload.
 5. Commit to Local also applies the same commit chain into the destination repository.
 6. Pollers fetch PR state, review comments, and CI status.
 7. On actionable events (review requested changes, CI failure), UI shows `Fix with Agent`.
-8. If auto-run is enabled, DeliDev starts remediation SubTask automatically.
+8. If auto-run is enabled, DexDex starts remediation SubTask automatically.
 
 See `docs/pr-management.md`.
 
@@ -239,7 +239,7 @@ See `docs/plan-yaml.md`.
 
 ## Event Streaming
 
-DeliDev uses event streaming for low-latency UI updates and automation triggers.
+DexDex uses event streaming for low-latency UI updates and automation triggers.
 Main server supports two event propagation backends by deployment mode.
 
 1. single-instance mode: in-memory event propagation

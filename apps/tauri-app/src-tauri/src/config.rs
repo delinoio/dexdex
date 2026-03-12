@@ -92,7 +92,7 @@ impl GlobalSettings {
 
 /// Repository-specific settings.
 ///
-/// These settings are loaded from `.delidev/config.toml` in the repository.
+/// These settings are loaded from `.dexdex/config.toml` in the repository.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositorySettings {
@@ -163,7 +163,7 @@ impl From<ReviewCommentFilterSetting> for ReviewCommentFilter {
     }
 }
 
-/// Configuration file structure for ~/.delidev/config.toml
+/// Configuration file structure for ~/.dexdex/config.toml
 ///
 /// This is a simplified version for the Tauri app that includes mode
 /// configuration. For the full configuration, use `GlobalConfig` from the
@@ -202,7 +202,7 @@ pub struct AgentConfig {
     pub default_model: Option<String>,
 }
 
-/// Gets the DeliDev configuration directory.
+/// Gets the DexDex configuration directory.
 pub fn config_dir() -> AppResult<PathBuf> {
     config::config_dir().ok_or_else(|| AppError::Config("Cannot find home directory".to_string()))
 }

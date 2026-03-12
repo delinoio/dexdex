@@ -1,4 +1,4 @@
-//! DeliDev Worker Server.
+//! DexDex Worker Server.
 //!
 //! The Worker Server executes AI coding agents in isolated Docker containers
 //! and reports progress to the Main Server.

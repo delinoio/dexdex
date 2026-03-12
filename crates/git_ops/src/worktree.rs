@@ -152,7 +152,7 @@ pub fn worktree_path_for_task(base_dir: impl AsRef<Path>, task_id: &str) -> Path
 
 /// Generates a branch name from a task.
 pub fn branch_name_for_task(task_id: &str, slug: Option<&str>, template: Option<&str>) -> String {
-    let template = template.unwrap_or("delidev/${taskId}");
+    let template = template.unwrap_or("dexdex/${taskId}");
 
     let mut result = template.replace("${taskId}", task_id);
     if let Some(slug) = slug {
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_branch_name_generation() {
-        assert_eq!(branch_name_for_task("abc123", None, None), "delidev/abc123");
+        assert_eq!(branch_name_for_task("abc123", None, None), "dexdex/abc123");
 
         assert_eq!(
             branch_name_for_task("abc123", Some("fix-bug"), Some("feature/${taskId}-${slug}")),
@@ -196,10 +196,7 @@ mod tests {
 
     #[test]
     fn test_worktree_path_for_task() {
-        let path = worktree_path_for_task("/home/user/.delidev", "task-123");
-        assert_eq!(
-            path,
-            PathBuf::from("/home/user/.delidev/worktrees/task-123")
-        );
+        let path = worktree_path_for_task("/home/user/.dexdex", "task-123");
+        assert_eq!(path, PathBuf::from("/home/user/.dexdex/worktrees/task-123"));
     }
 }

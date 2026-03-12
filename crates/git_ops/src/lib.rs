@@ -1,4 +1,4 @@
-//! Git operations for DeliDev.
+//! Git operations for DexDex.
 //!
 //! This crate provides:
 //! - Repository cloning and fetching

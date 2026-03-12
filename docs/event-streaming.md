@@ -1,6 +1,6 @@
 # Event Streaming
 
-DeliDev uses server-streamed workspace events for near-real-time synchronization.
+DexDex uses server-streamed workspace events for near-real-time synchronization.
 
 ## Goals
 

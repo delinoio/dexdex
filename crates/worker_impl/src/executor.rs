@@ -306,7 +306,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let branch_name = task
             .branch_name
             .clone()
-            .unwrap_or_else(|| format!("delidev/{}", task_id));
+            .unwrap_or_else(|| format!("dexdex/{}", task_id));
 
         // Create the execution config
         let config = TaskExecutionConfig {
@@ -771,7 +771,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let session_id = session.id;
 
         // Use a branch name for the composite planning
-        let branch_name = format!("delidev/composite/{}", composite_task_id);
+        let branch_name = format!("dexdex/composite/{}", composite_task_id);
 
         // Generate the plan YAML filename before creating the prompt, so the
         // agent is told exactly which file to create (instead of choosing its own
@@ -1930,7 +1930,7 @@ impl<E: EventEmitter + 'static> LocalExecutor<E> {
         let branch_name = task
             .branch_name
             .clone()
-            .unwrap_or_else(|| format!("delidev/{}", task_id));
+            .unwrap_or_else(|| format!("dexdex/{}", task_id));
 
         // Find the existing worktree path
         let worktree_path = git_ops::worktree_path_for_task_with_cache(
@@ -2449,10 +2449,10 @@ mod tests {
 
     #[test]
     fn test_find_pr_url_github() {
-        let url = find_pr_url_in_text("Created PR: https://github.com/delinoio/delidev/pull/123");
+        let url = find_pr_url_in_text("Created PR: https://github.com/delinoio/dexdex/pull/123");
         assert_eq!(
             url,
-            Some("https://github.com/delinoio/delidev/pull/123".to_string())
+            Some("https://github.com/delinoio/dexdex/pull/123".to_string())
         );
     }
 
@@ -2507,11 +2507,11 @@ mod tests {
         let logs = vec![
             make_text_log("Starting PR creation..."),
             make_text_log("Pushing branch to remote..."),
-            make_text_log("Created PR: https://github.com/delinoio/delidev/pull/217"),
+            make_text_log("Created PR: https://github.com/delinoio/dexdex/pull/217"),
         ];
         assert_eq!(
             extract_pr_url_from_logs(&logs),
-            Some("https://github.com/delinoio/delidev/pull/217".to_string())
+            Some("https://github.com/delinoio/dexdex/pull/217".to_string())
         );
     }
 

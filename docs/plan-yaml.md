@@ -1,6 +1,6 @@
 # Plan Mode Interaction Spec
 
-This document defines how DeliDev supports plan-mode capable coding agents.
+This document defines how DexDex supports plan-mode capable coding agents.
 
 ## Scope
 

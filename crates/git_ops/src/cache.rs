@@ -36,7 +36,7 @@ impl RepositoryCache {
     /// Creates a new repository cache manager.
     ///
     /// # Arguments
-    /// * `data_dir` - The base data directory (e.g., `~/.delidev`)
+    /// * `data_dir` - The base data directory (e.g., `~/.dexdex`)
     pub fn new(data_dir: impl AsRef<Path>) -> Self {
         let data_dir = data_dir.as_ref();
         Self {
@@ -847,10 +847,10 @@ mod tests {
 
     #[test]
     fn test_cached_repo_path() {
-        let cache = RepositoryCache::new("/home/user/.delidev");
+        let cache = RepositoryCache::new("/home/user/.dexdex");
         let path = cache.cached_repo_path("https://github.com/user/repo.git");
         // Path should be in cache dir with a hash name
-        assert!(path.starts_with("/home/user/.delidev/repo-cache/"));
+        assert!(path.starts_with("/home/user/.dexdex/repo-cache/"));
         // The hash component should be 32 characters
         let hash = path.file_name().unwrap().to_str().unwrap();
         assert_eq!(hash.len(), 32);

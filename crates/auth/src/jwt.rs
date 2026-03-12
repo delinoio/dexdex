@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{AuthError, AuthResult, DEFAULT_JWT_EXPIRATION_HOURS, DEFAULT_JWT_ISSUER};
 
-/// JWT claims for DeliDev access tokens.
+/// JWT claims for DexDex access tokens.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     /// Subject (user ID).

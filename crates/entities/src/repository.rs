@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{VcsProviderType, VcsType};
 
-/// A repository tracked by DeliDev.
+/// A repository tracked by DexDex.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repository {

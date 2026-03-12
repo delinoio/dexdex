@@ -1,6 +1,6 @@
 //! VCS provider credentials.
 //!
-//! Location: `~/.delidev/credentials.toml`
+//! Location: `~/.dexdex/credentials.toml`
 
 use std::path::Path;
 
@@ -11,7 +11,7 @@ use crate::{validate_config_path, ConfigError};
 
 /// VCS provider credentials.
 ///
-/// Stored at `~/.delidev/credentials.toml`.
+/// Stored at `~/.dexdex/credentials.toml`.
 /// This file should NOT be committed to version control.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VcsCredentials {
@@ -44,8 +44,8 @@ impl VcsCredentials {
 
     /// Saves VCS credentials to a file.
     ///
-    /// The path must be within the DeliDev configuration directory
-    /// (`~/.delidev`) to prevent path traversal attacks.
+    /// The path must be within the DexDex configuration directory
+    /// (`~/.dexdex`) to prevent path traversal attacks.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         // Validate path is within the config directory
         validate_config_path(path)?;

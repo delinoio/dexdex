@@ -3,7 +3,7 @@ name = "entities"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Core entity definitions for DeliDev"
+description = "Core entity definitions for DexDex"
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }

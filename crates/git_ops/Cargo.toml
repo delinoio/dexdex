@@ -3,7 +3,7 @@ name = "git_ops"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Git operations for DeliDev"
+description = "Git operations for DexDex"
 
 [dependencies]
 entities = { path = "../entities" }

@@ -262,7 +262,7 @@ impl TaskExecutor {
         info!("Using Docker image: {}", image);
 
         // 6. Create and start container
-        let container_name = format!("delidev-{}", task.session_id);
+        let container_name = format!("dexdex-{}", task.session_id);
         let repo_name = self.extract_repo_name(&task.repository_url)?;
 
         let container_id = self
@@ -494,7 +494,7 @@ impl TaskExecutor {
         use crate::docker::DockerManager;
 
         if DockerManager::has_custom_dockerfile(worktree_path) {
-            let tag = format!("delidev-custom:{}", Uuid::new_v4());
+            let tag = format!("dexdex-custom:{}", Uuid::new_v4());
             self.state
                 .docker
                 .build_custom_image(worktree_path, &tag)

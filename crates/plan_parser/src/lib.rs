@@ -1,4 +1,4 @@
-//! PLAN.yaml parsing and validation for DeliDev.
+//! PLAN.yaml parsing and validation for DexDex.
 //!
 //! This crate provides functionality to parse, validate, and execute
 //! PLAN.yaml files that define task graphs for CompositeTask execution.

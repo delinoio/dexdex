@@ -1821,7 +1821,7 @@ pub async fn commit_to_local(
             .title
             .as_deref()
             .filter(|t| !t.is_empty())
-            .unwrap_or("Apply changes from DeliDev task");
+            .unwrap_or("Apply changes from DexDex task");
 
         // Apply the patch and commit directly (no AI involved)
         git_ops::apply_patch_and_commit(&path, git_patch, commit_message)

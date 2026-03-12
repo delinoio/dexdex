@@ -3,7 +3,7 @@ name = "auth"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "JWT and OIDC authentication for DeliDev"
+description = "JWT and OIDC authentication for DexDex"
 
 [dependencies]
 async-trait = "0.1"

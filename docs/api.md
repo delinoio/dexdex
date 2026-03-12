@@ -1,6 +1,6 @@
-# DeliDev API Reference (Connect RPC)
+# DexDex API Reference (Connect RPC)
 
-This document defines the DeliDev API contract.
+This document defines the DexDex API contract.
 All business communication is Connect RPC-based.
 
 ## Protocol

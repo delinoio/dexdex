@@ -1,6 +1,6 @@
 //! Global configuration settings.
 //!
-//! Location: `~/.delidev/config.toml`
+//! Location: `~/.dexdex/config.toml`
 
 use std::path::Path;
 
@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ConfigError;
 
-/// Global configuration for DeliDev.
+/// Global configuration for DexDex.
 ///
-/// Stored at `~/.delidev/config.toml`.
+/// Stored at `~/.dexdex/config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlobalConfig {
     /// Learning settings.
@@ -59,8 +59,8 @@ impl GlobalConfig {
 
     /// Saves global configuration to a file.
     ///
-    /// The path must be within the DeliDev configuration directory
-    /// (`~/.delidev`) to prevent path traversal attacks.
+    /// The path must be within the DexDex configuration directory
+    /// (`~/.dexdex`) to prevent path traversal attacks.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         // Validate path is within the config directory
         crate::validate_config_path(path)?;

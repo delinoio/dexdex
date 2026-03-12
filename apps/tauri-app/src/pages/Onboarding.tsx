@@ -97,7 +97,7 @@ export function Onboarding() {
     <div className="flex min-h-screen flex-col items-center justify-center p-8" onKeyDown={handleKeyDown}>
       <div className="w-full max-w-lg space-y-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Welcome to DeliDev</h1>
+          <h1 className="text-2xl font-bold">Welcome to DexDex</h1>
           <p className="mt-2 text-[hsl(var(--muted-foreground))]">
             {step === 1 ? "Connect your VCS Provider" : "Add Your First Repository"}
           </p>

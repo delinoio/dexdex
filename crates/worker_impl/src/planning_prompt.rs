@@ -36,7 +36,7 @@ pub fn plan_yaml_filename(suffix: &str) -> String {
 /// A complete prompt string that instructs the AI agent to generate PLAN.yaml
 pub fn build_planning_prompt(user_prompt: &str, plan_filename: &str) -> String {
     format!(
-        r#"You are a planning agent for DeliDev, an AI coding orchestration tool. Your task is to analyze the user's request and generate a PLAN.yaml file that breaks down the work into smaller, executable tasks.
+        r#"You are a planning agent for DexDex, an AI coding orchestration tool. Your task is to analyze the user's request and generate a PLAN.yaml file that breaks down the work into smaller, executable tasks.
 
 ## Your Goal
 
@@ -158,7 +158,7 @@ pub fn build_update_planning_prompt(
     plan_filename: &str,
 ) -> String {
     format!(
-        r#"You are a planning agent for DeliDev, an AI coding orchestration tool. Your task is to revise an existing PLAN.yaml file based on the user's feedback.
+        r#"You are a planning agent for DexDex, an AI coding orchestration tool. Your task is to revise an existing PLAN.yaml file based on the user's feedback.
 
 ## Your Goal
 
