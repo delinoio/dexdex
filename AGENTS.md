@@ -17,8 +17,8 @@ This is a monorepo with three main components:
 
 | Component | Path | Description |
 |-----------|------|-------------|
-| Main Server | `apps/main-server/` | Rust backend (Axum), task management, RPC server |
-| Worker Server | `apps/worker-server/` | Rust worker, runs AI agents in Docker sandboxes |
+| Main Server | `apps/main-server/` | Go backend, task management, RPC server |
+| Worker Server | `apps/worker-server/` | Go worker, runs AI agents in Docker sandboxes |
 | Desktop App | `apps/tauri-app/` | Tauri + React frontend |
 
 Shared Rust crates live in `crates/`:
